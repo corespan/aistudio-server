@@ -12,7 +12,7 @@ class ManifestBuilder:
         from app.config import settings, get_workload_registry
 
         gpu_count = config.get("gpu_count", 1)
-        image = "%s/llm-inference:%s" % (get_workload_registry(), settings.WORKLOAD_IMAGE_TAG)
+        image = "%s/llminference:%s" % (get_workload_registry(), settings.WORKLOAD_IMAGE_TAG)
 
         # Build volume mount based on MODEL_STORAGE_MODE
         volume_flag = ""

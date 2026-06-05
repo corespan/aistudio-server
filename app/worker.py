@@ -104,7 +104,7 @@ def install_dependencies(self, workload_id):
                 install_task = Task(
                     workload_id=workload.id,
                     node_id=node.id,
-                    run_name="%s-install" % workload_id,
+                    run_name="%s-%s-install" % (workload_id, node.machine_id),
                     task_config={},
                     status="running",
                 )

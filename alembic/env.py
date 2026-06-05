@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import our models and config
-from app.config import settings, get_sync_database_url, get_database_url
+from app.config import get_sync_database_url, get_database_url
 from app.database import Base
 from app.models import *  # This ensures all models are loaded
 
@@ -35,10 +35,6 @@ def include_object(object, name, type_, reflected, compare_to):
     return True
 
 
-# Inject the sync database URL from our settings
-config.set_main_option("sqlalchemy.url", get_sync_database_url())
-
-
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -51,6 +47,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
+    config.set_main_option("sqlalchemy.url", get_sync_database_url())
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,

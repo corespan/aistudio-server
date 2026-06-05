@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from urllib.parse import quote
 
 
 class Settings(BaseSettings):
@@ -58,31 +59,28 @@ settings = get_settings()
 
 # Computed URL helpers (plain functions, compatible with Pydantic v2)
 
-def get_database_url():
+def _pg_authority() -> str:
     s = settings
-    return "postgresql+asyncpg://%s:%s@%s:%d/%s" % (
-        s.POSTGRES_USERNAME, s.POSTGRES_PASSWORD,
-        s.POSTGRES_HOST, s.POSTGRES_PORT, s.POSTGRES_DATABASE)
+    user = quote(s.POSTGRES_USERNAME, safe="")
+    pwd  = quote(s.POSTGRES_PASSWORD, safe="")
+    return "%s:%s@%s:%d/%s" % (user, pwd, s.POSTGRES_HOST, s.POSTGRES_PORT, s.POSTGRES_DATABASE)
 
-def get_sync_database_url():
+def get_database_url() -> str:
+    return "postgresql+asyncpg://" + _pg_authority()
+
+def get_sync_database_url() -> str:
+    return "postgresql://" + _pg_authority()
+
+def get_celery_broker_url() -> str:
     s = settings
-    return "postgresql://%s:%s@%s:%d/%s" % (
-        s.POSTGRES_USERNAME, s.POSTGRES_PASSWORD,
-        s.POSTGRES_HOST, s.POSTGRES_PORT, s.POSTGRES_DATABASE)
+    user = quote(s.RABBITMQ_USERNAME, safe="")
+    pwd  = quote(s.RABBITMQ_PASSWORD, safe="")
+    return "amqp://%s:%s@%s:%d/" % (user, pwd, s.RABBITMQ_URL, s.RABBITMQ_PORT)
 
-def get_celery_broker_url():
-    s = settings
-    return "amqp://%s:%s@%s:%d/" % (
-        s.RABBITMQ_USERNAME, s.RABBITMQ_PASSWORD,
-        s.RABBITMQ_URL, s.RABBITMQ_PORT)
+def get_celery_result_backend() -> str:
+    return "db+postgresql://" + _pg_authority()
 
-def get_celery_result_backend():
-    s = settings
-    return "db+postgresql://%s:%s@%s:%d/%s" % (
-        s.POSTGRES_USERNAME, s.POSTGRES_PASSWORD,
-        s.POSTGRES_HOST, s.POSTGRES_PORT, s.POSTGRES_DATABASE)
-
-def get_workload_registry():
+def get_workload_registry() -> str:
     s = settings
     return "%s/%s/%s/%s" % (
         s.GCP_REGISTRY_URL, s.GCP_PROJECT_ID,

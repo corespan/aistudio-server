@@ -160,4 +160,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_benchmark_results_gpu_type'), table_name='benchmark_results')
     op.drop_index(op.f('ix_benchmark_results_concurrency'), table_name='benchmark_results')
     op.drop_table('benchmark_results')
+    op.execute("DROP TYPE IF EXISTS node_state")
+    op.execute("DROP TYPE IF EXISTS workload_state")
     # ### end Alembic commands ###
