@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import our models and config
-from app.config import settings
+from app.config import settings, get_sync_database_url, get_database_url
 from app.database import Base
 from app.models import *  # This ensures all models are loaded
 
@@ -25,8 +25,18 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
+# Celery result-backend tables — managed by Celery, not by our migrations
+EXCLUDE_TABLES = {"celery_taskmeta", "celery_tasksetmeta"}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table" and name in EXCLUDE_TABLES:
+        return False
+    return True
+
+
 # Inject the sync database URL from our settings
-config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+config.set_main_option("sqlalchemy.url", get_sync_database_url())
 
 
 def run_migrations_offline() -> None:
@@ -47,6 +57,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -54,7 +65,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, include_object=include_object)
 
     with context.begin_transaction():
         context.run_migrations()
@@ -71,7 +82,7 @@ async def run_async_migrations() -> None:
     # Alembic handles async via async_engine_from_config
     # We need to swap the sync URL to async URL for this block
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database_url
+    configuration["sqlalchemy.url"] = get_database_url()
 
     connectable = async_engine_from_config(
         configuration,

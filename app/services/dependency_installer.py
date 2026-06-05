@@ -10,9 +10,9 @@ class DependencyInstaller:
 
     @staticmethod
     def install_vllm(ip: str, username: str, task_id: uuid.UUID) -> bool:
-        from app.config import settings
+        from app.config import settings, get_workload_registry
 
-        image = "%s/llm-inference:%s" % (settings.WORKLOAD_REGISTRY, settings.WORKLOAD_IMAGE_TAG)
+        image = "%s/llm-inference:%s" % (get_workload_registry(), settings.WORKLOAD_IMAGE_TAG)
 
         script = (
             'echo "Checking Docker..." && '

@@ -38,8 +38,8 @@
     }
   ],
   "images": {
-    "llm_inference": "gcr.io/aistudio-oss/llm-inference",
-    "benchmark_client": "gcr.io/aistudio-oss/benchmark-client"
+    "llm_inference": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference",
+    "benchmark_client": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/benchmark-client"
   },
   "datasets": {
     "sharegpt": "gs://aistudio-datasets/sharegpt.json",

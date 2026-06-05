@@ -1,10 +1,10 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from celery import Celery, chain
 from celery.exceptions import SoftTimeLimitExceeded
 
-from app.config import settings
+from app.config import settings, get_celery_broker_url, get_celery_result_backend
 from app.database import SyncSessionLocal
 from app.models.workload import Workload, WorkloadState
 from app.models.node import Node
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # Celery App Configuration
 celery_app = Celery(
     "aistudio_worker",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
+    broker=get_celery_broker_url(),
+    backend=get_celery_result_backend(),
 )
 
 celery_app.conf.update(
@@ -45,7 +45,12 @@ def _fail_workload(workload_id, trigger, error):
                 trigger=trigger, message=error,
             )
     except Exception:
-        logger.exception("Failed to mark workload %s as FAILED", workload_id)
+        logger.critical(
+            "WORKLOAD %s STUCK: could not write FAILED state (trigger=%s). "
+            "Manual DB intervention required.",
+            workload_id, trigger,
+            exc_info=True,
+        )
 
 
 @celery_app.task(bind=True, soft_time_limit=600, time_limit=660)
@@ -96,14 +101,26 @@ def install_dependencies(self, workload_id):
             nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
             for node in nodes:
                 node.state = "INSTALLING"
+                install_task = Task(
+                    workload_id=workload.id,
+                    node_id=node.id,
+                    run_name="%s-install" % workload_id,
+                    task_config={},
+                    status="running",
+                )
+                db.add(install_task)
                 db.commit()
                 success = DependencyInstaller.install_vllm(
-                    node.machine_ip, node.machine_username, workload.id,
+                    node.machine_ip, node.machine_username, install_task.id,
                 )
                 if success:
+                    install_task.status = "success"
+                    install_task.completed_at = datetime.now(timezone.utc)
                     node.sw_installed = True
                     node.state = "READY"
                 else:
+                    install_task.status = "failed"
+                    install_task.completed_at = datetime.now(timezone.utc)
                     node.state = "FAILED"
                     db.commit()
                     raise RuntimeError(
@@ -163,11 +180,13 @@ def execute_benchmark(self, workload_id):
                 )
             if exit_code != 0:
                 task.status = "failed"
-                task.completed_at = datetime.utcnow()
+                task.completed_at = datetime.now(timezone.utc)
+                node.state = "READY"
+                node.running_task = None
                 db.commit()
                 raise RuntimeError("Benchmark exited with code %d" % exit_code)
             task.status = "success"
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
             node.state = "READY"
             node.running_task = None
             db.commit()

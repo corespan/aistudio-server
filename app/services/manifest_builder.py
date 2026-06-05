@@ -9,10 +9,10 @@ class ManifestBuilder:
 
     @staticmethod
     def build_vllm_command(model_name: str, config: Dict[str, Any]) -> str:
-        from app.config import settings
+        from app.config import settings, get_workload_registry
 
         gpu_count = config.get("gpu_count", 1)
-        image = "%s/llm-inference:%s" % (settings.WORKLOAD_REGISTRY, settings.WORKLOAD_IMAGE_TAG)
+        image = "%s/llm-inference:%s" % (get_workload_registry(), settings.WORKLOAD_IMAGE_TAG)
 
         # Build volume mount based on MODEL_STORAGE_MODE
         volume_flag = ""
