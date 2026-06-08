@@ -13,6 +13,51 @@ make setup                   # starts all services, runs migrations, seeds catal
 
 That's it. API is at **http://localhost:8001/docs** (Swagger UI).
 
+### Alternative Setup (Without `make`)
+If you don't have the `make` utility installed, copy the `.env` file and execute the underlying Docker commands manually:
+
+* **Ubuntu / WSL (Linux):**
+  ```bash
+  cp .env.example .env
+  docker compose up --build -d
+  docker compose exec api alembic upgrade head
+  docker compose exec api python -m app.services.catalog_seeder
+  ```
+
+* **Windows (PowerShell):**
+  ```powershell
+  copy .env.example .env
+  docker compose up --build -d
+  docker compose exec api alembic upgrade head
+  docker compose exec api python -m app.services.catalog_seeder
+  ```
+
+### Installing `make` in WSL/Ubuntu
+If you are using WSL/Ubuntu and want to utilize `make` shortcuts, install it with:
+```bash
+sudo apt update && sudo apt install -y make
+```
+
+## Verifying Your Setup
+You can verify if the server is running and database ingestion is working by sending a dummy metrics payload using the included `test_metric.json` file.
+
+* **Ubuntu / WSL (Linux):**
+  ```bash
+  curl -X POST http://localhost:8001/api/v1/metrics \
+    -H "Content-Type: application/json" \
+    -d @test_metric.json
+  ```
+
+* **Windows (PowerShell):**
+  *(Note: You must use `curl.exe` in PowerShell to bypass the default `Invoke-WebRequest` alias, and use a backtick ` ` ` for multi-line commands).*
+  ```powershell
+  curl.exe -X POST http://localhost:8001/api/v1/metrics `
+    -H "Content-Type: application/json" `
+    -d @test_metric.json
+  ```
+
+If successful, you will receive a response: `{"status":"success","run_id":"newfile-1234","message":"Ingested successfully into PostgreSQL."}`.
+
 ## Run a Benchmark
 
 ```bash
