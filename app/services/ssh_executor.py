@@ -1,9 +1,14 @@
+import re
 import uuid
 import paramiko
 from typing import Generator, Optional
 
 from app.database import SyncSessionLocal
 from app.models.task_log import TaskLog
+
+# Strips ANSI/VT100 escape codes (cursor movement, color, erase-line, etc.)
+# These leak through when Docker or other tools detect a PTY and emit progress animations.
+_ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]|\x1b[()][AB012]|\r')
 
 class SSHExecutor:
     """
@@ -49,7 +54,7 @@ class SSHExecutor:
         # We stream the logs directly to the DB so the SSE endpoint can pick them up
         with SyncSessionLocal() as session:
             for line in iter(stdout.readline, ""):
-                clean_line = line.strip('\r\n')
+                clean_line = _ANSI_ESCAPE.sub('', line).strip('\r\n').strip()
                 if not clean_line:
                     continue
                 

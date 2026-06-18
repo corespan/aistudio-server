@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIStudio — Inference Benchmark Dashboard</title>
+  <meta name="description" content="Compare AI inference throughput, latency, and TTFT across GPUs. AIStudio benchmark dashboard.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary: #06090f;
+      --bg-secondary: #0c1220;
+      --bg-card: rgba(14, 22, 38, 0.65);
+      --bg-card-hover: rgba(20, 30, 52, 0.75);
+      --border-subtle: rgba(56, 78, 122, 0.25);
+      --border-hover: rgba(80, 110, 170, 0.35);
+      --text-primary: #e8ecf4;
+      --text-secondary: #8492a6;
+      --text-muted: #5a6b82;
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-purple: #8b5cf6;
+      --accent-pink: #ec4899;
+      --gradient-brand: linear-gradient(135deg, #3b82f6, #06b6d4);
+      --gradient-card: linear-gradient(135deg, rgba(59, 130, 246, 0.04), rgba(6, 182, 212, 0.02));
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-xs: 6px;
+      --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 0 20px rgba(59, 130, 246, 0.03);
+      --shadow-glow: 0 0 30px rgba(59, 130, 246, 0.08);
+      --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Circuit board background pattern */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0;
+      width: 50%; height: 100%;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.06) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(6, 182, 212, 0.04) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: -1;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: 0; right: 0;
+      width: 50%; height: 100%;
+      background:
+        radial-gradient(circle at 70% 80%, rgba(139, 92, 246, 0.04) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    /* ── Header ── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(6, 9, 15, 0.8);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 32px; height: 32px;
+      border-radius: var(--radius-sm);
+      background: var(--gradient-brand);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: -0.5px;
+      color: white;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    }
+    .brand-text {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .brand-text span {
+      color: var(--text-secondary);
+      font-weight: 400;
+      margin-left: 6px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition);
+    }
+    .status-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status-badge.online {
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    .status-badge.online::before { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+    .status-badge.offline {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--accent-red);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .status-badge.offline::before { background: var(--accent-red); }
+    .api-url {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── Navigation Tabs ── */
+    .nav-tabs {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 16px 24px 0;
+      display: flex;
+      gap: 4px;
+    }
+    .nav-tab {
+      padding: 8px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: var(--transition);
+      border: 1px solid transparent;
+      background: transparent;
+      user-select: none;
+    }
+    .nav-tab:hover {
+      color: var(--text-primary);
+      background: rgba(59, 130, 246, 0.06);
+    }
+    .nav-tab.active {
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--accent-blue);
+      border-color: rgba(59, 130, 246, 0.2);
+    }
+
+    /* ── Main Container ── */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 24px 40px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: var(--shadow-card);
+      transition: var(--transition);
+    }
+    .card:hover {
+      border-color: var(--border-hover);
+    }
+
+    /* ── Metric Cards Row ── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      opacity: 0.7;
+      transition: opacity var(--transition);
+    }
+    .metric-card:hover::before { opacity: 1; }
+    .metric-card:nth-child(1)::before { background: var(--gradient-brand); }
+    .metric-card:nth-child(2)::before { background: linear-gradient(135deg, #10b981, #06b6d4); }
+    .metric-card:nth-child(3)::before { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+    .metric-card:nth-child(4)::before { background: linear-gradient(135deg, #8b5cf6, #ec4899); }
+    .metric-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .metric-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+    .metric-unit {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 400;
+      margin-top: 4px;
+    }
+    .metric-value.green { color: var(--accent-green); }
+    .metric-value.amber { color: var(--accent-amber); }
+    .metric-value.blue { color: var(--accent-cyan); }
+    .metric-value.purple { color: var(--accent-purple); }
+
+    /* ── Filter Bar ── */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      padding: 14px 18px;
+    }
+    .filter-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-right: 4px;
+    }
+    .filter-select {
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 28px 6px 12px;
+      border-radius: var(--radius-xs);
+      border: 1px solid var(--border-subtle);
+      background: rgba(14, 22, 38, 0.8);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: var(--transition);
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a6b82' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+    }
+    .filter-select:hover {
+      border-color: var(--border-hover);
+      background-color: rgba(20, 30, 52, 0.9);
+    }
+    .filter-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    }
+    .filter-select option {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+    .filter-reset {
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--accent-blue);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-xs);
+      transition: var(--transition);
+    }
+    .filter-reset:hover {
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    /* ── Data Table ── */
+    .table-card {
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead {
+      background: rgba(14, 22, 38, 0.5);
+    }
+    thead th {
+      padding: 12px 16px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+    }
+    tbody tr {
+      transition: background var(--transition);
+      border-bottom: 1px solid rgba(56, 78, 122, 0.1);
+    }
+    tbody tr:hover {
+      background: rgba(59, 130, 246, 0.04);
+    }
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+    tbody td {
+      padding: 10px 16px;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .cell-run-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--accent-blue);
+    }
+    .cell-model {
+      font-weight: 500;
+    }
+    .cell-gpu {
+      text-transform: uppercase;
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+    }
+    .cell-mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .cell-throughput {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent-cyan);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .pill-success {
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    .pill-failed {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--accent-red);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .pill-jsonb {
+      background: rgba(139, 92, 246, 0.12);
+      color: var(--accent-purple);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      font-size: 10px;
+      padding: 2px 8px;
+    }
+    .pill-precision {
+      background: rgba(59, 130, 246, 0.08);
+      color: var(--accent-blue);
+      border: 1px solid rgba(59, 130, 246, 0.15);
+      font-size: 10px;
+      padding: 2px 8px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state code {
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--accent-blue);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+    .error-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--accent-red);
+      font-size: 13px;
+    }
+
+    /* ── Chart Section ── */
+    .chart-section {
+      padding: 24px;
+    }
+    .chart-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .chart-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+    .chart-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .chart-container {
+      position: relative;
+      height: 340px;
+    }
+
+    /* ── Compare Tab ── */
+    .compare-controls {
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      margin-bottom: 24px;
+    }
+    .compare-field {
+      flex: 1;
+      max-width: 320px;
+    }
+    .compare-field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .compare-select {
+      width: 100%;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: rgba(14, 22, 38, 0.8);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .compare-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    }
+    .btn-primary {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 20px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: var(--gradient-brand);
+      color: white;
+      cursor: pointer;
+      transition: var(--transition);
+      white-space: nowrap;
+    }
+    .btn-primary:hover {
+      opacity: 0.9;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      transform: translateY(-1px);
+    }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0;
+    }
+    .compare-header-cell {
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .compare-cell {
+      padding: 12px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(56, 78, 122, 0.1);
+    }
+    .compare-label {
+      color: var(--text-secondary);
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+      font-size: 13px;
+    }
+    .compare-winner {
+      color: var(--accent-green);
+      font-weight: 700;
+    }
+
+    /* ── Start Run Tab ── */
+    .run-form {
+      max-width: 640px;
+      padding: 28px;
+    }
+    .run-form h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .form-field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .form-input, .form-select {
+      width: 100%;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: rgba(14, 22, 38, 0.8);
+      color: var(--text-primary);
+      transition: var(--transition);
+    }
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    }
+    .run-status {
+      margin-top: 20px;
+      display: none;
+    }
+    .run-status.visible { display: block; }
+    .run-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border-subtle);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .log-box {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      max-height: 340px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 1.75;
+    }
+    .log-line { white-space: pre-wrap; word-break: break-word; }
+    .log-section {
+      color: var(--accent-blue);
+      font-weight: 700;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(59,130,246,0.2);
+    }
+    .log-section:first-child { margin-top: 0; border-top: none; }
+    .log-success { color: var(--accent-green); }
+    .log-error   { color: var(--accent-red); }
+    .log-warn    { color: var(--accent-amber); }
+    .log-metric  { color: var(--accent-cyan); font-weight: 600; }
+    .log-divider { color: var(--text-muted); }
+    .log-muted   { color: var(--text-muted); }
+    .log-default { color: var(--text-secondary); }
+
+    /* ── Tabs Content ── */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── Animations ── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-in {
+      animation: fadeIn 0.4s ease forwards;
+    }
+    .metrics-grid .metric-card:nth-child(1) { animation-delay: 0ms; }
+    .metrics-grid .metric-card:nth-child(2) { animation-delay: 60ms; }
+    .metrics-grid .metric-card:nth-child(3) { animation-delay: 120ms; }
+    .metrics-grid .metric-card:nth-child(4) { animation-delay: 180ms; }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+      .header-inner { padding: 0 16px; }
+      .container { padding: 16px; }
+      .nav-tabs { padding: 12px 16px 0; }
+      .compare-controls { flex-direction: column; align-items: stretch; }
+      .compare-field { max-width: 100%; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ Header ═══ -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">AI</div>
+        <div class="brand-text">AIStudio<span>Benchmark Dashboard</span></div>
+      </div>
+      <div class="header-right">
+        <div id="api-status" class="status-badge offline">Connecting...</div>
+        <span class="api-url">API: <span id="api-url-display">localhost:8002</span></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ Tabs ═══ -->
+  <nav class="nav-tabs">
+    <div class="nav-tab active" data-tab="leaderboard" onclick="switchTab('leaderboard')">Leaderboard</div>
+    <div class="nav-tab" data-tab="compare" onclick="switchTab('compare')">Compare</div>
+    <div class="nav-tab" data-tab="run" onclick="switchTab('run')">Start Run</div>
+  </nav>
+
+  <div class="container">
+
+    <!-- ═══ TAB: Leaderboard ═══ -->
+    <div id="tab-leaderboard" class="tab-content active">
+
+      <!-- Metric Cards -->
+      <div class="metrics-grid">
+        <div class="card metric-card animate-in">
+          <div class="metric-label">Total Runs</div>
+          <div class="metric-value blue" id="stat-total">—</div>
+          <div class="metric-unit">last 30 days</div>
+        </div>
+        <div class="card metric-card animate-in">
+          <div class="metric-label">Success Rate</div>
+          <div class="metric-value green" id="stat-success">—</div>
+          <div class="metric-unit">% of all runs</div>
+        </div>
+        <div class="card metric-card animate-in">
+          <div class="metric-label">Avg Throughput</div>
+          <div class="metric-value amber" id="stat-throughput">—</div>
+          <div class="metric-unit">tokens / second</div>
+        </div>
+        <div class="card metric-card animate-in">
+          <div class="metric-label">Models Tested</div>
+          <div class="metric-value purple" id="stat-models">—</div>
+          <div class="metric-unit">unique models</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="card filter-bar">
+        <span class="filter-label">Filters:</span>
+        <select id="filter-model" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All Models</option>
+        </select>
+        <select id="filter-gpu" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All GPUs</option>
+        </select>
+        <select id="filter-node" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All Nodes</option>
+        </select>
+        <select id="filter-precision" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All Precision</option>
+        </select>
+        <select id="filter-concurrency" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All Concurrency</option>
+        </select>
+        <select id="filter-isl" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All ISL</option>
+        </select>
+        <select id="filter-osl" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All OSL</option>
+        </select>
+        <select id="filter-status" class="filter-select" onchange="loadBenchmarks()">
+          <option value="">All Status</option>
+          <option value="success">Success</option>
+          <option value="failed">Failed</option>
+        </select>
+        <button onclick="resetFilters()" class="filter-reset">Reset</button>
+      </div>
+
+      <!-- Chart — Throughput -->
+      <div class="card chart-section" style="margin-bottom: 20px;">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Throughput by Concurrency</div>
+            <div class="chart-subtitle">Tokens per second scaling across concurrency levels, grouped by model and GPU</div>
+          </div>
+        </div>
+        <div class="chart-container">
+          <canvas id="throughput-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Results Table -->
+      <div class="card table-card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align:left">Run ID</th>
+                <th style="text-align:left">Model</th>
+                <th style="text-align:left">GPU</th>
+                <th style="text-align:center">GPUs</th>
+                <th style="text-align:center">Concurrency</th>
+                <th style="text-align:center">Precision</th>
+                <th style="text-align:right">Throughput</th>
+                <th style="text-align:right">TTFT (ms)</th>
+                <th style="text-align:right">TPOT (ms)</th>
+                <th style="text-align:right">E2E (ms)</th>
+                <th style="text-align:center">Status</th>
+                <th style="text-align:center">Metrics</th>
+              </tr>
+            </thead>
+            <tbody id="results-body">
+              <tr><td colspan="12" class="empty-state">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: Compare ═══ -->
+    <div id="tab-compare" class="tab-content">
+      <div class="compare-controls">
+        <div class="compare-field">
+          <label for="compare-a">Run A</label>
+          <select id="compare-a" class="compare-select"></select>
+        </div>
+        <div class="compare-field">
+          <label for="compare-b">Run B</label>
+          <select id="compare-b" class="compare-select"></select>
+        </div>
+        <button onclick="doCompare()" class="btn-primary">Compare</button>
+      </div>
+      <div id="compare-result" class="card" style="display:none; padding: 0; overflow: hidden;">
+        <div class="compare-grid" id="compare-grid"></div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: Start Run ═══ -->
+    <div id="tab-run" class="tab-content">
+      <div class="card run-form">
+
+        <!-- ── Step 1: Target ── -->
+        <div id="run-step1">
+          <h3>Start a Benchmark Run</h3>
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:20px;">
+            Step 1 of 2 — select the node and model, then click Next to load vLLM config defaults.
+          </p>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="run-ip">Node IP</label>
+              <input id="run-ip" type="text" value="10.6.12.22" class="form-input" placeholder="e.g. 10.6.12.22">
+            </div>
+            <div class="form-field">
+              <label for="run-model">Model</label>
+              <input id="run-model" type="text" value="TinyLlama/TinyLlama-1.1B-Chat-v1.0" class="form-input" placeholder="HuggingFace model ID">
+            </div>
+          </div>
+          <div style="margin-top:20px;display:flex;align-items:center;gap:12px;">
+            <button onclick="loadModelConfig()" class="btn-primary">Next →</button>
+            <span id="step1-status" style="font-size:12px;color:var(--text-secondary);"></span>
+          </div>
+        </div>
+
+        <!-- ── Step 2: vLLM Config (hidden until Next is clicked) ── -->
+        <div id="run-step2" style="display:none;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+            <button onclick="backToStep1()" style="font-family:Inter,sans-serif;font-size:12px;font-weight:500;color:var(--accent-blue);background:none;border:none;cursor:pointer;padding:4px 0;">← Back</button>
+            <h3 style="margin:0;">vLLM Configuration</h3>
+          </div>
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:20px;">
+            Step 2 of 2 — defaults loaded for your model. Adjust as needed.
+          </p>
+
+          <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
+
+            <div class="form-field">
+              <label for="cfg-precision">Precision</label>
+              <select id="cfg-precision" class="form-select">
+                <option value="fp32">FP32</option>
+                <option value="fp16">FP16</option>
+                <option value="bf16">BF16</option>
+                <option value="fp8">FP8</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-concurrency">Concurrency</label>
+              <input id="cfg-concurrency" type="number" value="4" min="1" class="form-input">
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-batch">Batch Size</label>
+              <input id="cfg-batch" type="number" value="32" min="1" class="form-input">
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-isl">ISL (Input Tokens)</label>
+              <input id="cfg-isl" type="number" value="512" min="1" class="form-input">
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-osl">OSL (Output Tokens)</label>
+              <input id="cfg-osl" type="number" value="128" min="1" class="form-input">
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-maxlen">Max Model Len</label>
+              <input id="cfg-maxlen" type="number" value="2048" min="256" class="form-input">
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-tp">Tensor Parallel (TP)</label>
+              <input id="cfg-tp" type="number" value="1" min="1" class="form-input">
+            </div>
+
+            <div class="form-field">
+              <label for="cfg-pp">Pipeline Parallel (PP)</label>
+              <input id="cfg-pp" type="number" value="1" min="1" class="form-input">
+            </div>
+
+          </div>
+
+          <button onclick="startBenchmark()" class="btn-primary" style="margin-top:20px;">Start Benchmark</button>
+        </div>
+
+        <!-- ── Live log output ── -->
+        <div id="run-status" class="run-status">
+          <div class="run-status-bar">
+            <div class="spinner"></div>
+            <span style="font-size:13px;color:var(--text-secondary);" id="run-state">Starting...</span>
+          </div>
+          <div class="log-box" id="log-output"></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+<script>
+const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8002'
+  : window.location.origin;
+
+let allRuns = [];
+let throughputChart = null;
+
+// ── Color Palette ──
+const CHART_COLORS = [
+  { bg: 'rgba(59, 130, 246, 0.7)',  border: '#3b82f6' },  // blue
+  { bg: 'rgba(16, 185, 129, 0.7)',  border: '#10b981' },  // green
+  { bg: 'rgba(245, 158, 11, 0.7)',  border: '#f59e0b' },  // amber
+  { bg: 'rgba(239, 68, 68, 0.7)',   border: '#ef4444' },   // red
+  { bg: 'rgba(139, 92, 246, 0.7)',  border: '#8b5cf6' },  // purple
+  { bg: 'rgba(236, 72, 153, 0.7)', border: '#ec4899' },   // pink
+  { bg: 'rgba(6, 182, 212, 0.7)',   border: '#06b6d4' },   // cyan
+  { bg: 'rgba(132, 204, 22, 0.7)',  border: '#84cc16' },   // lime
+];
+
+// ── Init ──
+async function init() {
+  try {
+    const r = await fetch(API + '/health');
+    const d = await r.json();
+    const el = document.getElementById('api-status');
+    if (d.status === 'healthy') {
+      el.textContent = 'Connected';
+      el.className = 'status-badge online';
+    } else {
+      el.textContent = 'Degraded';
+      el.className = 'status-badge offline';
+    }
+  } catch {
+    const el = document.getElementById('api-status');
+    el.textContent = 'Offline';
+    el.className = 'status-badge offline';
+  }
+  await loadFilters();
+  await loadSummary();
+  await loadBenchmarks();
+}
+
+// ── Tabs ──
+function switchTab(name) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+}
+
+// ── Summary ──
+async function loadSummary() {
+  try {
+    const r = await fetch(API + '/api/v1/summary');
+    const d = await r.json();
+    animateNumber('stat-total', d.total_runs);
+    document.getElementById('stat-success').textContent = d.success_rate + '%';
+    animateNumber('stat-throughput', Math.round(d.avg_throughput));
+
+    const mr = await fetch(API + '/api/v1/models');
+    const models = await mr.json();
+    animateNumber('stat-models', models.length);
+  } catch {}
+}
+
+function animateNumber(id, target) {
+  const el = document.getElementById(id);
+  const duration = 600;
+  const start = performance.now();
+  const initial = 0;
+  function update(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(initial + (target - initial) * eased).toLocaleString();
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+// ── Filters ──
+async function loadFilters() {
+  try {
+    const [models, gpus, nodes, conc, prec, isl, osl] = await Promise.all([
+      fetch(API + '/api/v1/models').then(r => r.json()),
+      fetch(API + '/api/v1/gpu-types').then(r => r.json()),
+      fetch(API + '/api/v1/nodes').then(r => r.json()),
+      fetch(API + '/api/v1/concurrencies').then(r => r.json()),
+      fetch(API + '/api/v1/precisions').then(r => r.json()),
+      fetch(API + '/api/v1/input-tokens').then(r => r.json()),
+      fetch(API + '/api/v1/output-tokens').then(r => r.json()),
+    ]);
+    const append = (id, items, fmt) => {
+      const sel = document.getElementById(id);
+      items.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = fmt(v); sel.appendChild(o); });
+    };
+    append('filter-model',       models, v => v);
+    append('filter-gpu',         gpus,   v => v.toUpperCase());
+    append('filter-node',        nodes,  v => v);
+    append('filter-precision',   prec,   v => v.toUpperCase());
+    append('filter-concurrency', conc,   v => 'c=' + v);
+    append('filter-isl',         isl,    v => 'ISL=' + v);
+    append('filter-osl',         osl,    v => 'OSL=' + v);
+  } catch {}
+}
+
+function resetFilters() {
+  ['filter-model','filter-gpu','filter-node','filter-precision','filter-concurrency',
+   'filter-isl','filter-osl','filter-status'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  loadBenchmarks();
+}
+
+// ── Leaderboard ──
+async function loadBenchmarks() {
+  const params = new URLSearchParams();
+  const model  = document.getElementById('filter-model').value;
+  const gpu    = document.getElementById('filter-gpu').value;
+  const node   = document.getElementById('filter-node').value;
+  const prec   = document.getElementById('filter-precision').value;
+  const conc   = document.getElementById('filter-concurrency').value;
+  const isl    = document.getElementById('filter-isl').value;
+  const osl    = document.getElementById('filter-osl').value;
+  const status = document.getElementById('filter-status').value;
+  if (model)  params.set('model', model);
+  if (gpu)    params.set('gpu_type', gpu);
+  if (node)   params.set('node_ip', node);
+  if (prec)   params.set('precision', prec);
+  if (conc)   params.set('concurrency', conc);
+  if (isl)    params.set('input_tokens', isl);
+  if (osl)    params.set('output_tokens', osl);
+  if (status) params.set('status', status);
+
+  try {
+    const r = await fetch(API + '/api/v1/benchmarks?' + params.toString());
+    const data = await r.json();
+    allRuns = data;
+    renderTable(data);
+    renderChart(data);
+    populateCompareDropdowns(data);
+  } catch (e) {
+    document.getElementById('results-body').innerHTML =
+      '<tr><td colspan="12" class="error-state">Failed to load: ' + e.message + '</td></tr>';
+  }
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('results-body');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">No results found. Run <code>make seed-demo</code> to add demo data.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(r => {
+    const statusPill = r.status === 'success'
+      ? '<span class="pill pill-success">✓ success</span>'
+      : '<span class="pill pill-failed">✕ failed</span>';
+    const jsonbKeys = r.metrics ? Object.keys(r.metrics).length : 0;
+    return '<tr>' +
+      '<td class="cell-run-id">' + r.run_id + '</td>' +
+      '<td class="cell-model">' + r.model_name + '</td>' +
+      '<td class="cell-gpu">' + r.gpu_type + '</td>' +
+      '<td style="text-align:center" class="cell-mono">' + r.gpu_count + '</td>' +
+      '<td style="text-align:center" class="cell-mono">' + r.concurrency + '</td>' +
+      '<td style="text-align:center"><span class="pill pill-precision">' + r.precision + '</span></td>' +
+      '<td style="text-align:right" class="cell-throughput">' + (r.total_token_throughput ? r.total_token_throughput.toFixed(1) : '—') + '</td>' +
+      '<td style="text-align:right" class="cell-mono">' + (r.mean_ttft_ms ? r.mean_ttft_ms.toFixed(1) : '—') + '</td>' +
+      '<td style="text-align:right" class="cell-mono">' + (r.mean_tpot_ms ? r.mean_tpot_ms.toFixed(1) : '—') + '</td>' +
+      '<td style="text-align:right" class="cell-mono">' + (r.mean_e2el_ms ? r.mean_e2el_ms.toFixed(1) : '—') + '</td>' +
+      '<td style="text-align:center">' + statusPill + '</td>' +
+      '<td style="text-align:center"><span class="pill pill-jsonb">' + jsonbKeys + ' keys</span></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function renderChart(data) {
+  const successful = data
+    .filter(r => r.status === 'success' && r.total_token_throughput > 0);
+
+  const ctx = document.getElementById('throughput-chart').getContext('2d');
+  if (throughputChart) throughputChart.destroy();
+
+  if (!successful.length) {
+    throughputChart = null;
+    return;
+  }
+
+  // Group by model + GPU config (each becomes a line)
+  const seriesMap = {};
+  successful.forEach(r => {
+    const key = r.model_name + ' (' + r.gpu_type.toUpperCase() + ')';
+    if (!seriesMap[key]) seriesMap[key] = [];
+    seriesMap[key].push({ x: r.concurrency, y: r.total_token_throughput, raw: r });
+  });
+
+  // Sort each series by concurrency so lines connect left-to-right
+  Object.values(seriesMap).forEach(arr => arr.sort((a, b) => a.x - b.x));
+
+  const seriesNames = Object.keys(seriesMap);
+
+  const datasets = seriesNames.map((name, i) => {
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+
+    // Create gradient fill for each line
+    const gradient = ctx.createLinearGradient(0, 0, 0, ctx.canvas.clientHeight || 340);
+    gradient.addColorStop(0, color.border + '30');
+    gradient.addColorStop(1, color.border + '02');
+
+    return {
+      label: name,
+      data: seriesMap[name],
+      borderColor: color.border,
+      backgroundColor: gradient,
+      pointBackgroundColor: color.border,
+      pointBorderColor: '#0c1220',
+      pointBorderWidth: 2,
+      pointRadius: 5,
+      pointHoverRadius: 8,
+      pointHoverBorderWidth: 2,
+      borderWidth: 2.5,
+      tension: 0.35,
+      fill: true,
+    };
+  });
+
+  throughputChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'nearest',
+        intersect: false,
+      },
+      layout: { padding: { top: 8, right: 16, bottom: 0, left: 0 } },
+      scales: {
+        x: {
+          type: 'linear',
+          title: {
+            display: true,
+            text: 'Concurrency',
+            color: '#5a6b82',
+            font: { family: 'Inter', size: 11, weight: '500' },
+            padding: { top: 8 },
+          },
+          grid: { color: 'rgba(56, 78, 122, 0.1)', drawBorder: false },
+          ticks: {
+            color: '#8492a6',
+            font: { family: 'JetBrains Mono', size: 11 },
+            stepSize: 1,
+            callback: (v) => 'c=' + v,
+          },
+          border: { display: false },
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Tokens / Second',
+            color: '#5a6b82',
+            font: { family: 'Inter', size: 11, weight: '500' },
+            padding: { bottom: 8 },
+          },
+          grid: { color: 'rgba(56, 78, 122, 0.1)', drawBorder: false },
+          ticks: {
+            color: '#8492a6',
+            font: { family: 'JetBrains Mono', size: 11 },
+            callback: (v) => v.toLocaleString(),
+          },
+          border: { display: false },
+          beginAtZero: true,
+        },
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#8492a6',
+            font: { family: 'Inter', size: 11, weight: '500' },
+            usePointStyle: true,
+            pointStyle: 'circle',
+            boxWidth: 6,
+            boxHeight: 6,
+            padding: 16,
+          },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(14, 22, 38, 0.95)',
+          titleColor: '#e8ecf4',
+          bodyColor: '#8492a6',
+          borderColor: 'rgba(56, 78, 122, 0.3)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 12, weight: '600' },
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+          padding: 12,
+          cornerRadius: 8,
+          displayColors: true,
+          boxWidth: 8,
+          boxHeight: 8,
+          usePointStyle: true,
+          callbacks: {
+            title: (items) => {
+              const raw = items[0].raw.raw;
+              return raw.model_name + ' on ' + raw.gpu_type.toUpperCase();
+            },
+            label: (item) => {
+              const raw = item.raw.raw;
+              return ' ' + item.parsed.y.toLocaleString() + ' tok/s  ·  c=' + raw.concurrency + '  ·  ' + raw.precision;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ── Compare ──
+function populateCompareDropdowns(data) {
+  const sel = (id) => document.getElementById(id);
+  [sel('compare-a'), sel('compare-b')].forEach(s => {
+    s.innerHTML = data.map(r =>
+      '<option value="' + r.run_id + '">' + r.run_id + ' — ' + r.model_name + ' ' + r.gpu_type.toUpperCase() + ' c=' + r.concurrency + '</option>'
+    ).join('');
+  });
+  if (data.length > 1) sel('compare-b').selectedIndex = 1;
+}
+
+async function doCompare() {
+  const a = document.getElementById('compare-a').value;
+  const b = document.getElementById('compare-b').value;
+  try {
+    const r = await fetch(API + '/api/v1/benchmarks/compare?run_a=' + a + '&run_b=' + b);
+    const d = await r.json();
+    const grid = document.getElementById('compare-grid');
+    const metrics = ['total_token_throughput', 'mean_ttft_ms', 'mean_tpot_ms', 'mean_e2el_ms'];
+    const labels = ['Throughput (tok/s)', 'TTFT (ms)', 'TPOT (ms)', 'E2E Latency (ms)'];
+
+    grid.innerHTML =
+      '<div class="compare-header-cell compare-label">Metric</div>' +
+      '<div class="compare-header-cell" style="font-family: JetBrains Mono, monospace; color: var(--accent-blue);">' + a + '</div>' +
+      '<div class="compare-header-cell" style="font-family: JetBrains Mono, monospace; color: var(--accent-green);">' + b + '</div>';
+
+    metrics.forEach((m, i) => {
+      const va = d.run_a[m] || 0;
+      const vb = d.run_b[m] || 0;
+      const better = m === 'total_token_throughput' ? (va > vb ? 'a' : 'b') : (va < vb ? 'a' : 'b');
+      grid.innerHTML +=
+        '<div class="compare-cell compare-label">' + labels[i] + '</div>' +
+        '<div class="compare-cell ' + (better === 'a' ? 'compare-winner' : '') + '">' + va.toFixed(1) + '</div>' +
+        '<div class="compare-cell ' + (better === 'b' ? 'compare-winner' : '') + '">' + vb.toFixed(1) + '</div>';
+    });
+    document.getElementById('compare-result').style.display = 'block';
+  } catch (e) {
+    alert('Compare failed: ' + e.message);
+  }
+}
+
+// ── Start Run — Step 1: fetch defaults ──
+async function loadModelConfig() {
+  const model = document.getElementById('run-model').value.trim();
+  const ip    = document.getElementById('run-ip').value.trim();
+  if (!model || !ip) {
+    document.getElementById('step1-status').textContent = 'Please enter both Node IP and Model.';
+    return;
+  }
+  document.getElementById('step1-status').textContent = 'Loading config...';
+  try {
+    const r = await fetch(API + '/api/v1/models/config?model=' + encodeURIComponent(model));
+    const cfg = await r.json();
+    // Populate step 2 fields
+    const prec = document.getElementById('cfg-precision');
+    prec.value = cfg.precision || 'fp32';
+    if (!prec.value) prec.value = 'fp32';        // fallback if not in <select>
+    document.getElementById('cfg-concurrency').value = cfg.concurrency   || 4;
+    document.getElementById('cfg-batch').value       = cfg.batch_size    || 32;
+    document.getElementById('cfg-isl').value         = cfg.input_tokens  || 512;
+    document.getElementById('cfg-osl').value         = cfg.output_tokens || 128;
+    document.getElementById('cfg-maxlen').value      = cfg.max_model_len || 2048;
+    document.getElementById('cfg-tp').value          = cfg.tensor_parallel_size  || 1;
+    document.getElementById('cfg-pp').value          = cfg.pipeline_parallel_size || 1;
+    // Show step 2
+    document.getElementById('run-step1').style.display = 'none';
+    document.getElementById('run-step2').style.display = 'block';
+    document.getElementById('run-status').classList.remove('visible');
+  } catch (e) {
+    document.getElementById('step1-status').textContent = 'Error: ' + e.message;
+  }
+}
+
+function backToStep1() {
+  document.getElementById('run-step2').style.display = 'none';
+  document.getElementById('run-status').classList.remove('visible');
+  document.getElementById('run-step1').style.display = 'block';
+  document.getElementById('step1-status').textContent = '';
+}
+
+// ── Log formatting ──
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatLogLine(raw) {
+  const t = esc(raw);
+  if (/^===/.test(t) || /^\[[1-9]\/[0-9]\]/.test(t))
+    return '<div class="log-line log-section">' + t + '</div>';
+  if (/^─{10,}/.test(t))
+    return '<div class="log-line log-divider">' + t + '</div>';
+  if (/^✓/.test(t) || /✓\s*(node|result|validated)/i.test(t))
+    return '<div class="log-line log-success">' + t + '</div>';
+  if (/^(ERROR|FATAL|error:)/i.test(t) || /\bfailed\b/i.test(t))
+    return '<div class="log-line log-error">' + t + '</div>';
+  if (/^WARNING:/i.test(t))
+    return '<div class="log-line log-warn">' + t + '</div>';
+  if (/tok\/s|Throughput:|TTFT|TPOT|E2E.*:|Requests:|Duration:/i.test(t))
+    return '<div class="log-line log-metric">' + t + '</div>';
+  if (/waiting|pulling|downloading|not ready|Connecting|Authenticating/i.test(t))
+    return '<div class="log-line log-muted">' + t + '</div>';
+  return '<div class="log-line log-default">' + t + '</div>';
+}
+
+// ── Start Run — Step 2: submit ──
+async function startBenchmark() {
+  const body = {
+    model_name: document.getElementById('run-model').value.trim(),
+    node_ips:   [document.getElementById('run-ip').value.trim()],
+    config: {
+      precision:            document.getElementById('cfg-precision').value,
+      concurrency:          parseInt(document.getElementById('cfg-concurrency').value),
+      input_tokens:         parseInt(document.getElementById('cfg-isl').value),
+      output_tokens:        parseInt(document.getElementById('cfg-osl').value),
+      max_model_len:        parseInt(document.getElementById('cfg-maxlen').value),
+      batch_size:           parseInt(document.getElementById('cfg-batch').value),
+      gpu_count:            parseInt(document.getElementById('cfg-tp').value),
+      tensor_parallel_size: parseInt(document.getElementById('cfg-tp').value),
+      pipeline_parallel_size: parseInt(document.getElementById('cfg-pp').value),
+    },
+  };
+
+  const statusEl = document.getElementById('run-status');
+  statusEl.classList.add('visible');
+  document.getElementById('log-output').innerHTML = '';
+  document.getElementById('run-state').textContent = 'Dispatching...';
+
+  try {
+    const r = await fetch(API + '/api/v1/benchmarks/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.task_id) {
+      document.getElementById('run-state').textContent = 'Task: ' + d.task_id + ' — Streaming logs...';
+      streamLogs(d.task_id);
+    }
+  } catch (e) {
+    document.getElementById('run-state').textContent = 'Error: ' + e.message;
+  }
+}
+
+function streamLogs(taskId) {
+  const es  = new EventSource(API + '/api/v1/benchmarks/' + taskId + '/logs/stream');
+  const out = document.getElementById('log-output');
+  const stateEl = document.getElementById('run-state');
+
+  es.onmessage = (e) => {
+    out.innerHTML += formatLogLine(e.data);
+    out.scrollTop = out.scrollHeight;
+  };
+
+  const STATE_LABELS = {
+    CREATED: 'Created', VALIDATING: 'Validating node…',
+    VALIDATED: 'Node validated', INSTALLING: 'Pulling image…',
+    READY: 'Image ready', RUNNING: 'Benchmarking…', FAILED: 'Failed',
+  };
+
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch(API + '/api/v1/benchmarks/' + taskId + '/status');
+      const d = await r.json();
+      stateEl.textContent = STATE_LABELS[d.state] || d.state;
+      if (d.state === 'READY' || d.state === 'FAILED') {
+        clearInterval(poll);
+        es.close();
+        stateEl.textContent = d.state === 'READY' ? '✓ Complete — results saved to leaderboard.' : '✕ Failed: ' + (d.error_message || 'unknown error');
+        loadBenchmarks();
+        loadSummary();
+      }
+    } catch {}
+  }, 2000);
+
+  es.addEventListener('close', () => es.close());
+  es.onerror = () => es.close();
+}
+
+init();
+</script>
+</body>
+</html>

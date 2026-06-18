@@ -13,6 +13,7 @@ from app.models.node import Node
 from app.models.task import Task
 from app.models.task_log import TaskLog
 from app.schemas.benchmark import BenchmarkStartRequest, BenchmarkStartResponse
+from app.config import settings
 
 router = APIRouter(tags=["Benchmarks"])
 
@@ -47,7 +48,7 @@ async def start_benchmark(
             workload_id=workload.id,
             machine_id="node-%s-%d" % (short_uuid, i),
             machine_ip=ip,
-            machine_username="ubuntu",
+            machine_username=settings.SSH_DEFAULT_USER,
             state="ADDED",
         )
         db.add(node)
@@ -92,26 +93,21 @@ async def stream_benchmark_logs(
     request: Request,
 ):
     """
-    Server-Sent Events (SSE) endpoint to stream live task logs to the UI.
+    Server-Sent Events (SSE) endpoint that streams logs from ALL steps
+    (validate → install → benchmark) for a workload in chronological order.
 
-    Uses short-lived DB sessions per poll iteration to avoid holding a
-    connection from the pool for the entire stream duration.
+    Uses short-lived DB sessions per poll to avoid holding a pool connection
+    for the full stream duration.
     """
+    # Resolve the workload's internal UUID once upfront
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(Task.id, Task.status)
-            .join(Workload)
-            .where(Workload.workload_id == task_id)
+            select(Workload.id).where(Workload.workload_id == task_id)
         )
-        row = result.first()
+        workload_db_id = result.scalar_one_or_none()
 
-    if not row:
-        raise HTTPException(
-            status_code=404,
-            detail="No active execution task found for this workload.",
-        )
-
-    resolved_task_id = row[0]
+    if not workload_db_id:
+        raise HTTPException(status_code=404, detail="Workload not found.")
 
     async def log_generator():
         last_seen_date = None
@@ -121,9 +117,11 @@ async def stream_benchmark_logs(
                 break
 
             async with AsyncSessionLocal() as db:
+                # Collect logs across ALL tasks for this workload in time order
                 query = (
                     select(TaskLog)
-                    .where(TaskLog.task_id == resolved_task_id)
+                    .join(Task, TaskLog.task_id == Task.id)
+                    .where(Task.workload_id == workload_db_id)
                     .order_by(TaskLog.logged_at.asc())
                 )
                 if last_seen_date:
@@ -133,15 +131,19 @@ async def stream_benchmark_logs(
                 logs = result.scalars().all()
 
                 for log in logs:
-                    yield "data: %s\n\n" % log.line
+                    # BENCH_RESULT: is an internal marker used for DB ingestion;
+                    # the worker already writes a human-readable summary instead.
+                    if not log.line.startswith("BENCH_RESULT:"):
+                        yield "data: %s\n\n" % log.line
                     last_seen_date = log.logged_at
 
-                status_result = await db.execute(
-                    select(Task.status).where(Task.id == resolved_task_id)
+                # Close the stream once the workload reaches a terminal state
+                state_result = await db.execute(
+                    select(Workload.state).where(Workload.id == workload_db_id)
                 )
-                current_status = status_result.scalar()
+                workload_state = state_result.scalar()
 
-            if current_status in ("success", "failed") and not logs:
+            if workload_state in ("READY", "FAILED") and not logs:
                 yield "event: close\ndata: stream closed\n\n"
                 break
 

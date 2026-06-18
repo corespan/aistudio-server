@@ -19,6 +19,8 @@ class DependencyInstaller:
             'if ! command -v docker > /dev/null 2>&1; then '
             '  echo "Docker not found. Please install Docker first." && exit 1; '
             'fi && '
+            'echo "Authenticating with GCR..." && '
+            'cat $HOME/gcr.json | docker login -u _json_key --password-stdin https://us-docker.pkg.dev && '
             'echo "Pulling workload image: %s" && '
             'docker pull %s && '
             'echo "Image ready."'

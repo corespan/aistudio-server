@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     GCP_PROJECT_ID: str = "aimlworkbench"
     GCP_REPOSITORY: str = "workbench-registry"
     GCP_IMAGE_PATH: str = "services/workloads"
-    WORKLOAD_IMAGE_TAG: str = "1.0.0"
+    WORKLOAD_IMAGE_TAG: str = "2.3.0-nvidia"
 
     # Model Storage
     MODEL_STORAGE_MODE: str = "huggingface"

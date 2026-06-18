@@ -1,4 +1,6 @@
+import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from celery import Celery, chain
@@ -9,6 +11,8 @@ from app.database import SyncSessionLocal
 from app.models.workload import Workload, WorkloadState
 from app.models.node import Node
 from app.models.task import Task
+from app.models.task_log import TaskLog
+from app.models.benchmark_result import BenchmarkResult
 from app.services.node_inspector import NodeInspector
 from app.services.dependency_installer import DependencyInstaller
 from app.services.manifest_builder import ManifestBuilder
@@ -34,6 +38,22 @@ celery_app.conf.update(
     task_soft_time_limit=1500,
     task_time_limit=1800,
 )
+
+
+def _extract_gpu_type(specs: dict) -> str:
+    """Return a short lowercase GPU family name, e.g. 'p40', 'a100', 't4'."""
+    gpus = (specs or {}).get("gpus", [])
+    if not gpus:
+        return "unknown"
+    name = gpus[0].get("name", "")
+    m = re.search(r'\b([A-Za-z]*\d+[A-Za-z0-9]*)\b', name)
+    return m.group(1).lower() if m else name.lower().split()[-1] if name else "unknown"
+
+
+def _write_log(db, task_id, line: str) -> None:
+    """Write a single log line to TaskLog and commit immediately so the SSE stream picks it up."""
+    db.add(TaskLog(task_id=task_id, line=line))
+    db.commit()
 
 
 def _fail_workload(workload_id, trigger, error):
@@ -65,14 +85,52 @@ def validate_node(self, workload_id):
             )
             workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
             nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+
+            # Create a Task so validate logs are visible in the SSE stream
+            val_task = Task(
+                workload_id=workload.id,
+                node_id=nodes[0].id if nodes else None,
+                run_name="%s-validate" % workload_id,
+                task_config={},
+                status="running",
+            )
+            db.add(val_task)
+            db.commit()
+
+            _write_log(db, val_task.id, "=== [1/3] Validating Node ===")
+
             for node in nodes:
                 node.state = "VALIDATING"
                 db.commit()
-                specs = NodeInspector.inspect(node.machine_ip, node.machine_username)
+                _write_log(db, val_task.id, "Connecting to %s as %s..." % (node.machine_ip, node.machine_username))
+                try:
+                    specs = NodeInspector.inspect(node.machine_ip, node.machine_username)
+                except Exception as e:
+                    _write_log(db, val_task.id, "ERROR: %s" % e)
+                    raise
+
+                gpus = specs.get("gpus", [])
+                if gpus:
+                    for g in gpus:
+                        mem_gb = round(g.get("memory_mb", 0) / 1024, 1)
+                        _write_log(db, val_task.id, "GPU %d: %s  (%s GB VRAM)" % (g["index"], g["name"], mem_gb))
+                else:
+                    _write_log(db, val_task.id, "WARNING: No GPUs detected via nvidia-smi")
+
+                _write_log(db, val_task.id, "Driver: %s   CUDA: %s" % (
+                    specs.get("driver_version", "unknown"),
+                    specs.get("cuda_version", "unknown"),
+                ))
                 node.specs = specs
                 node.gpus = specs.get("gpus")
                 node.state = "VALIDATED"
                 db.commit()
+                _write_log(db, val_task.id, "✓ Node %s validated." % node.machine_ip)
+
+            val_task.status = "success"
+            val_task.completed_at = datetime.now(timezone.utc)
+            db.commit()
+
             transition_workload_state(
                 db, workload_id, WorkloadState.VALIDATED,
                 trigger="validate_node",
@@ -110,6 +168,8 @@ def install_dependencies(self, workload_id):
                 )
                 db.add(install_task)
                 db.commit()
+                _write_log(db, install_task.id, "=== [2/3] Installing Dependencies ===")
+                _write_log(db, install_task.id, "Node: %s" % node.machine_ip)
                 success = DependencyInstaller.install_vllm(
                     node.machine_ip, node.machine_username, install_task.id,
                 )
@@ -172,24 +232,100 @@ def execute_benchmark(self, workload_id):
                 workload.model_name, workload.workload_config,
             )
             client_cmd = ManifestBuilder.build_benchmark_client_command(
-                workload.workload_config,
+                workload.model_name, workload.workload_config,
             )
+            cfg = workload.workload_config or {}
+            _write_log(db, task.id, "=== [3/3] Running Benchmark ===")
+            _write_log(db, task.id, "Model:       %s" % workload.model_name)
+            _write_log(db, task.id, "Node:        %s" % node.machine_ip)
+            _write_log(db, task.id, "Precision:   %s" % cfg.get("precision", "fp32"))
+            _write_log(db, task.id, "Concurrency: %d   ISL: %d   OSL: %d" % (
+                cfg.get("concurrency", 1),
+                cfg.get("input_tokens", 0),
+                cfg.get("output_tokens", 0),
+            ))
+            bench_started_at = datetime.now(timezone.utc)
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
                     "%s && %s" % (server_cmd, client_cmd), task.id,
                 )
+            bench_completed_at = datetime.now(timezone.utc)
+
             if exit_code != 0:
                 task.status = "failed"
-                task.completed_at = datetime.now(timezone.utc)
+                task.completed_at = bench_completed_at
                 node.state = "READY"
                 node.running_task = None
                 db.commit()
                 raise RuntimeError("Benchmark exited with code %d" % exit_code)
+
             task.status = "success"
-            task.completed_at = datetime.now(timezone.utc)
+            task.completed_at = bench_completed_at
             node.state = "READY"
             node.running_task = None
             db.commit()
+
+            # ── Parse BENCH_RESULT: line from task logs and store as BenchmarkResult
+            result_log = (
+                db.query(TaskLog)
+                .filter(TaskLog.task_id == task.id, TaskLog.line.like("BENCH_RESULT:%"))
+                .first()
+            )
+            if result_log:
+                try:
+                    metrics = json.loads(result_log.line[len("BENCH_RESULT:"):])
+                    gpus_list = (node.specs or {}).get("gpus", [])
+                    gpu_count = len(gpus_list) or 1
+                    gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
+                    gpu_type = _extract_gpu_type(node.specs)
+                    precision = cfg.get("precision", "fp32").lower()
+                    db.add(BenchmarkResult(
+                        run_id=workload_id,
+                        sub_run_index=0,
+                        model_name=workload.model_name.lower(),
+                        pipeline_version="vllm-openai-latest",
+                        node_ips=[node.machine_ip],
+                        gpu_type=gpu_type,
+                        gpu_count=gpu_count,
+                        gpu_model=gpu_model,
+                        precision=precision,
+                        input_tokens=cfg.get("input_tokens", 0),
+                        output_tokens=cfg.get("output_tokens", 0),
+                        concurrency=cfg.get("concurrency", 1),
+                        status="success",
+                        total_token_throughput=metrics.get("total_token_throughput"),
+                        mean_ttft_ms=metrics.get("mean_ttft_ms"),
+                        mean_tpot_ms=metrics.get("mean_tpot_ms"),
+                        mean_e2el_ms=metrics.get("mean_e2el_ms"),
+                        metrics=metrics,
+                        started_at=bench_started_at,
+                        completed_at=bench_completed_at,
+                        duration_seconds=(bench_completed_at - bench_started_at).total_seconds(),
+                    ))
+                    db.commit()
+                    logger.info("BenchmarkResult saved for workload %s", workload_id)
+
+                    # Write a human-readable results summary to the log stream
+                    divider = "─" * 42
+                    _write_log(db, task.id, divider)
+                    _write_log(db, task.id, "Throughput:    %.1f tok/s" % (metrics.get("total_token_throughput") or 0))
+                    if metrics.get("mean_ttft_ms"):
+                        _write_log(db, task.id, "TTFT (mean):   %.0f ms" % metrics["mean_ttft_ms"])
+                    if metrics.get("mean_tpot_ms"):
+                        _write_log(db, task.id, "TPOT (mean):   %.1f ms" % metrics["mean_tpot_ms"])
+                    _write_log(db, task.id, "E2E  (mean):   %.0f ms" % (metrics.get("mean_e2el_ms") or 0))
+                    _write_log(db, task.id, "E2E  (p50):    %.0f ms" % (metrics.get("p50_e2el_ms") or 0))
+                    _write_log(db, task.id, "E2E  (p99):    %.0f ms" % (metrics.get("p99_e2el_ms") or 0))
+                    _write_log(db, task.id, "Requests:      %d / %d ok" % (
+                        metrics.get("successful_requests", 0),
+                        metrics.get("total_requests", 0),
+                    ))
+                    _write_log(db, task.id, "Duration:      %.1f s" % (metrics.get("duration_s") or 0))
+                    _write_log(db, task.id, divider)
+                    _write_log(db, task.id, "✓ Result saved to leaderboard.")
+                except Exception as exc:
+                    logger.warning("Could not save BenchmarkResult: %s", exc)
+
             transition_workload_state(
                 db, workload_id, WorkloadState.READY,
                 trigger="execute_benchmark",

@@ -13,12 +13,15 @@ router = APIRouter(tags=["Results Leaderboard"])
 
 @router.get("/api/v1/benchmarks")
 async def list_benchmarks(
-    model: Optional[str] = Query(None, description="Filter by model name"),
-    gpu_type: Optional[str] = Query(None, description="Filter by GPU type (e.g. a100)"),
-    node_ip: Optional[str] = Query(None, description="Filter by node IP"),
-    concurrency: Optional[int] = Query(None, description="Filter by concurrency level"),
-    status: Optional[str] = Query(None, description="Filter by success/failed"),
-    date: Optional[str] = Query(None, description="Filter by date (YYYY-MM-DD)"),
+    model: Optional[str] = Query(None),
+    gpu_type: Optional[str] = Query(None),
+    node_ip: Optional[str] = Query(None),
+    concurrency: Optional[int] = Query(None),
+    precision: Optional[str] = Query(None),
+    input_tokens: Optional[int] = Query(None),
+    output_tokens: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
 ):
@@ -33,6 +36,12 @@ async def list_benchmarks(
         query = query.where(BenchmarkResult.node_ips.any(node_ip))
     if concurrency:
         query = query.where(BenchmarkResult.concurrency == concurrency)
+    if precision:
+        query = query.where(BenchmarkResult.precision == precision.lower())
+    if input_tokens:
+        query = query.where(BenchmarkResult.input_tokens == input_tokens)
+    if output_tokens:
+        query = query.where(BenchmarkResult.output_tokens == output_tokens)
     if status:
         query = query.where(BenchmarkResult.status == status.lower())
     if date:
@@ -118,14 +127,38 @@ async def list_gpu_types(date: Optional[str] = None, db: AsyncSession = Depends(
     return [r for r in result.scalars().all() if r]
 
 
-@router.get("/api/v1/concurrencies")
-async def list_concurrencies(date: Optional[str] = None, db: AsyncSession = Depends(get_db)):
-    query = select(BenchmarkResult.concurrency).distinct()
+@router.get("/api/v1/nodes")
+async def list_nodes(date: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    query = select(func.unnest(BenchmarkResult.node_ips)).distinct()
     if date:
         target_date = datetime.strptime(date, "%Y-%m-%d").date()
         query = query.where(func.date(BenchmarkResult.completed_at) == target_date)
     result = await db.execute(query)
+    return sorted([r for r in result.scalars().all() if r])
+
+
+@router.get("/api/v1/concurrencies")
+async def list_concurrencies(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BenchmarkResult.concurrency).distinct())
     return sorted([str(r) for r in result.scalars().all() if r is not None])
+
+
+@router.get("/api/v1/precisions")
+async def list_precisions(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BenchmarkResult.precision).distinct())
+    return sorted([r for r in result.scalars().all() if r])
+
+
+@router.get("/api/v1/input-tokens")
+async def list_input_tokens(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BenchmarkResult.input_tokens).distinct())
+    return sorted([r for r in result.scalars().all() if r is not None])
+
+
+@router.get("/api/v1/output-tokens")
+async def list_output_tokens(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BenchmarkResult.output_tokens).distinct())
+    return sorted([r for r in result.scalars().all() if r is not None])
 
 
 # Analytics / Summary
