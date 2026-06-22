@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from celery import Celery, chain
 from celery.exceptions import SoftTimeLimitExceeded
 
+from sqlalchemy.orm.attributes import flag_modified
+
 from app.config import settings, get_celery_broker_url, get_celery_result_backend
 from app.database import SyncSessionLocal
 from app.models.workload import Workload, WorkloadState
@@ -351,5 +353,92 @@ def start_benchmark_chain(workload_id):
         validate_node.s(workload_id),
         install_dependencies.s(),
         execute_benchmark.s(),
+    )
+    workflow.apply_async()
+
+
+@celery_app.task(bind=True, soft_time_limit=900, time_limit=960)
+def launch_jupyter(self, workload_id):
+    """Pull the llminference image and start a Jupyter Lab server on the node."""
+    try:
+        with SyncSessionLocal() as db:
+            transition_workload_state(
+                db, workload_id, WorkloadState.INSTALLING,
+                trigger="launch_jupyter",
+                message="Launching Jupyter Lab server",
+            )
+            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            if not nodes:
+                raise RuntimeError("No nodes found for workload %s" % workload_id)
+            node = nodes[0]
+            node.state = "INSTALLING"
+
+            task = Task(
+                workload_id=workload.id,
+                node_id=node.id,
+                run_name="%s-jupyter" % workload_id,
+                task_config={},
+                status="running",
+            )
+            db.add(task)
+            db.commit()
+
+            _write_log(db, task.id, "=== [2/2] Launching Jupyter Lab ===")
+            _write_log(db, task.id, "Node: %s" % node.machine_ip)
+
+            server_cmd = ManifestBuilder.build_jupyter_command()
+            health_cmd = ManifestBuilder.build_jupyter_health_command()
+
+            with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
+                exit_code = ssh.run_command(
+                    "%s && %s" % (server_cmd, health_cmd), task.id,
+                )
+
+            if exit_code != 0:
+                task.status = "failed"
+                task.completed_at = datetime.now(timezone.utc)
+                node.state = "FAILED"
+                db.commit()
+                raise RuntimeError("Jupyter launch failed with exit code %d" % exit_code)
+
+            jupyter_url = "http://%s:8899/lab" % node.machine_ip
+            _write_log(db, task.id, "✓ Jupyter Lab running at: %s" % jupyter_url)
+
+            task.status = "success"
+            task.completed_at = datetime.now(timezone.utc)
+            node.state = "READY"
+            db.commit()
+
+            # Re-query workload fresh — after multiple db.commit() calls SQLAlchemy
+            # expires the cached object, and JSONB mutations aren't tracked unless
+            # we re-fetch and explicitly mark the column dirty.
+            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+            new_cfg = dict(workload.workload_config or {})
+            new_cfg["jupyter_url"] = jupyter_url
+            workload.workload_config = new_cfg
+            flag_modified(workload, "workload_config")
+            db.commit()
+
+            transition_workload_state(
+                db, workload_id, WorkloadState.READY,
+                trigger="launch_jupyter",
+                message="Jupyter Lab started at %s" % jupyter_url,
+            )
+    except SoftTimeLimitExceeded:
+        _fail_workload(workload_id, "launch_jupyter", "Jupyter launch timed out")
+        raise
+    except Exception as exc:
+        _fail_workload(workload_id, "launch_jupyter", str(exc))
+        raise
+    return workload_id
+
+
+@celery_app.task
+def start_jupyter_chain(workload_id):
+    """Validate the node then launch Jupyter Lab."""
+    workflow = chain(
+        validate_node.s(workload_id),
+        launch_jupyter.s(),
     )
     workflow.apply_async()

@@ -194,3 +194,48 @@ class ManifestBuilder:
         cleanup = "docker stop vllm_server 2>/dev/null || true"
 
         return "%s && %s ; %s" % (wait, bench, cleanup)
+
+    @staticmethod
+    def build_jupyter_command() -> str:
+        """
+        Start the jupyternotebook GCR image on host port 8899 (container port 7008).
+
+        The image's default CMD runs script.sh which needs Nexus + aiAgent.
+        We bypass that entirely with --entrypoint bash and run jupyter notebook directly.
+        The image already has notebook==7.4.7 installed via requirements.txt.
+        """
+        image = "%s/jupyternotebook:%s" % (get_workload_registry(), settings.JUPYTER_IMAGE_TAG)
+
+        # Inner command run inside the container via bash -c.
+        # Base64-encoded to avoid any shell quoting issues on the remote host.
+        inner = (
+            "jupyter notebook --no-browser --ip=0.0.0.0 --port=7008 "
+            "--NotebookApp.token= --NotebookApp.password= --allow-root"
+        )
+        inner_b64 = base64.b64encode(inner.encode()).decode()
+
+        login_cmd = "cat $HOME/gcr.json | docker login -u _json_key --password-stdin https://us-docker.pkg.dev"
+        rm_cmd    = "docker rm -f jupyter_server 2>/dev/null || true"
+        run_cmd   = " ".join([
+            "docker run --gpus all -d --name jupyter_server",
+            "-p 8899:7008 --ipc=host",
+            "--entrypoint bash",
+            image,
+            '-c "$(echo %s | base64 -d)"' % inner_b64,
+        ])
+        return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
+
+    @staticmethod
+    def build_jupyter_health_command() -> str:
+        """Poll localhost:8899 until Jupyter is ready (up to 5 min)."""
+        return (
+            "READY=0 && "
+            "for i in $(seq 1 60); do "
+            "  curl -sf http://localhost:8899/api >/dev/null 2>&1 && READY=1 && break; "
+            "  echo \"[$i/60] waiting for Jupyter... 5s\"; sleep 5; "
+            "done && "
+            "[ \"$READY\" -eq 1 ] || "
+            "{ echo 'ERROR: Jupyter did not start in 5 min'; "
+            "  docker stop jupyter_server 2>/dev/null; exit 1; } && "
+            "echo 'Jupyter ready.'"
+        )

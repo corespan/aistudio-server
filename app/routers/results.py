@@ -1,12 +1,17 @@
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, case
+from sqlalchemy import select, func, desc, case, delete, or_
 
 from app.database import get_db
 from app.models.benchmark_result import BenchmarkResult
+
+
+class BulkDeleteRequest(BaseModel):
+    run_ids: List[str]
 
 router = APIRouter(tags=["Results Leaderboard"])
 
@@ -103,6 +108,136 @@ async def get_benchmark(run_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Run '%s' not found." % run_id)
 
     return {"run_id": run_id, "sub_runs": runs}
+
+
+@router.delete("/api/v1/benchmarks/bulk")
+async def delete_benchmarks_bulk(
+    body: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete multiple runs by a list of run_ids in one request."""
+    if not body.run_ids:
+        raise HTTPException(status_code=400, detail="run_ids list must not be empty.")
+
+    result = await db.execute(
+        select(func.count()).where(BenchmarkResult.run_id.in_(body.run_ids))
+    )
+    count = result.scalar()
+    if not count:
+        raise HTTPException(status_code=404, detail="None of the provided run_ids were found.")
+
+    await db.execute(delete(BenchmarkResult).where(BenchmarkResult.run_id.in_(body.run_ids)))
+    await db.commit()
+    return {"status": "deleted", "run_ids": body.run_ids, "rows_deleted": count}
+
+
+@router.delete("/api/v1/benchmarks/filter")
+async def delete_benchmarks_by_filter(
+    model: Optional[str] = Query(None),
+    gpu_type: Optional[str] = Query(None),
+    node_ip: Optional[str] = Query(None),
+    concurrency: Optional[int] = Query(None),
+    precision: Optional[str] = Query(None),
+    input_tokens: Optional[int] = Query(None),
+    output_tokens: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all runs matching the given filters (at least one filter required).
+
+    Examples:
+      ?gpu_type=p40                      — delete all P40 runs
+      ?model=TinyLlama/TinyLlama-1.1B    — delete all runs for a model
+      ?date=2026-06-19                   — delete all runs from a date
+      ?gpu_type=p40&precision=fp32       — combined filter
+    """
+    if not any([model, gpu_type, node_ip, concurrency, precision,
+                input_tokens, output_tokens, status, date]):
+        raise HTTPException(
+            status_code=400,
+            detail="At least one filter is required. Use DELETE /api/v1/benchmarks/all to wipe everything.",
+        )
+
+    q = delete(BenchmarkResult)
+    count_q = select(func.count()).select_from(BenchmarkResult)
+
+    conditions = []
+    if model:
+        conditions.append(BenchmarkResult.model_name == model)
+    if gpu_type:
+        conditions.append(BenchmarkResult.gpu_type == gpu_type.lower())
+    if node_ip:
+        conditions.append(BenchmarkResult.node_ips.any(node_ip))
+    if concurrency:
+        conditions.append(BenchmarkResult.concurrency == concurrency)
+    if precision:
+        conditions.append(BenchmarkResult.precision == precision.lower())
+    if input_tokens:
+        conditions.append(BenchmarkResult.input_tokens == input_tokens)
+    if output_tokens:
+        conditions.append(BenchmarkResult.output_tokens == output_tokens)
+    if status:
+        conditions.append(BenchmarkResult.status == status.lower())
+    if date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").date()
+            conditions.append(func.date(BenchmarkResult.completed_at) == target_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    for c in conditions:
+        q = q.where(c)
+        count_q = count_q.where(c)
+
+    count_result = await db.execute(count_q)
+    count = count_result.scalar()
+    if not count:
+        raise HTTPException(status_code=404, detail="No matching benchmark results found.")
+
+    await db.execute(q)
+    await db.commit()
+    return {"status": "deleted", "rows_deleted": count, "filters_applied": {
+        "model": model, "gpu_type": gpu_type, "node_ip": node_ip,
+        "concurrency": concurrency, "precision": precision,
+        "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "status": status, "date": date,
+    }}
+
+
+@router.delete("/api/v1/benchmarks/all")
+async def delete_all_benchmarks(
+    confirm: bool = Query(False, description="Must be true to execute."),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete every row in benchmark_results. Requires ?confirm=true."""
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Pass ?confirm=true to confirm wiping all benchmark results.",
+        )
+
+    result = await db.execute(select(func.count()).select_from(BenchmarkResult))
+    count = result.scalar()
+
+    await db.execute(delete(BenchmarkResult))
+    await db.commit()
+    return {"status": "deleted", "rows_deleted": count}
+
+
+@router.delete("/api/v1/benchmarks/{run_id}")
+async def delete_benchmark(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete all BenchmarkResult rows for a single run_id."""
+    result = await db.execute(
+        select(func.count()).where(BenchmarkResult.run_id == run_id)
+    )
+    count = result.scalar()
+    if not count:
+        raise HTTPException(status_code=404, detail="Run '%s' not found." % run_id)
+
+    await db.execute(delete(BenchmarkResult).where(BenchmarkResult.run_id == run_id))
+    await db.commit()
+    return {"status": "deleted", "run_id": run_id, "rows_deleted": count}
 
 
 # Dropdown / Reference Data

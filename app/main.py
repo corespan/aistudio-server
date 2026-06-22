@@ -61,10 +61,11 @@ async def generic_exception_handler(request: Request, exc: Exception):
         },
     )
 
-from app.routers import system, ingest, benchmarks, results
+from app.routers import system, ingest, benchmarks, results, jupyter
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(system.router)
 app.include_router(ingest.router)
 app.include_router(benchmarks.router)
 app.include_router(results.router)
+app.include_router(jupyter.router)

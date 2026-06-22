@@ -556,7 +556,31 @@
       font-weight: 700;
     }
 
-    /* ── Start Run Tab ── */
+    /* ── Workloads Tab ── */
+    .wl-type-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .wl-type-btn {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 18px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .wl-type-btn.active {
+      border-color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.1);
+      color: var(--accent-blue);
+    }
     .run-form {
       max-width: 640px;
       padding: 28px;
@@ -695,7 +719,7 @@
   <nav class="nav-tabs">
     <div class="nav-tab active" data-tab="leaderboard" onclick="switchTab('leaderboard')">Leaderboard</div>
     <div class="nav-tab" data-tab="compare" onclick="switchTab('compare')">Compare</div>
-    <div class="nav-tab" data-tab="run" onclick="switchTab('run')">Start Run</div>
+    <div class="nav-tab" data-tab="run" onclick="switchTab('run')">Workloads</div>
   </nav>
 
   <div class="container">
@@ -818,11 +842,18 @@
       </div>
     </div>
 
-    <!-- ═══ TAB: Start Run ═══ -->
+    <!-- ═══ TAB: Workloads ═══ -->
     <div id="tab-run" class="tab-content">
       <div class="card run-form">
 
-        <!-- ── Step 1: Target ── -->
+        <!-- ── Workload type selector ── -->
+        <div class="wl-type-selector">
+          <button id="wl-btn-benchmark" class="wl-type-btn active" onclick="selectWorkloadType('benchmark')">Benchmark Run</button>
+          <button id="wl-btn-jupyter"   class="wl-type-btn"        onclick="selectWorkloadType('jupyter')">Launch Jupyter</button>
+        </div>
+
+        <!-- ── Benchmark: Step 1: Target ── -->
+        <div id="benchmark-form">
         <div id="run-step1">
           <h3>Start a Benchmark Run</h3>
           <p style="font-size:12px;color:var(--text-secondary);margin-bottom:20px;">
@@ -905,8 +936,22 @@
 
           <button onclick="startBenchmark()" class="btn-primary" style="margin-top:20px;">Start Benchmark</button>
         </div>
+        </div><!-- end #benchmark-form -->
 
-        <!-- ── Live log output ── -->
+        <!-- ── Jupyter form ── -->
+        <div id="jupyter-form" style="display:none;">
+          <h3>Launch Jupyter Lab</h3>
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:20px;">
+            Enter the GPU node IP. The system will validate SSH, pull the image, and open Jupyter Lab in a new tab.
+          </p>
+          <div class="form-field" style="max-width:280px;">
+            <label for="jupyter-ip">Node IP</label>
+            <input id="jupyter-ip" type="text" class="form-input" placeholder="e.g. 10.6.12.22">
+          </div>
+          <button onclick="launchJupyter()" class="btn-primary" style="margin-top:20px;">Launch Jupyter</button>
+        </div>
+
+        <!-- ── Live log output (shared) ── -->
         <div id="run-status" class="run-status">
           <div class="run-status-bar">
             <div class="spinner"></div>
@@ -1401,6 +1446,84 @@ function streamLogs(taskId) {
         stateEl.textContent = d.state === 'READY' ? '✓ Complete — results saved to leaderboard.' : '✕ Failed: ' + (d.error_message || 'unknown error');
         loadBenchmarks();
         loadSummary();
+      }
+    } catch {}
+  }, 2000);
+
+  es.addEventListener('close', () => es.close());
+  es.onerror = () => es.close();
+}
+
+// ── Workload type selector ──
+function selectWorkloadType(type) {
+  const isBench = type === 'benchmark';
+  document.getElementById('benchmark-form').style.display = isBench ? '' : 'none';
+  document.getElementById('jupyter-form').style.display   = isBench ? 'none' : '';
+  document.getElementById('wl-btn-benchmark').classList.toggle('active', isBench);
+  document.getElementById('wl-btn-jupyter').classList.toggle('active', !isBench);
+  document.getElementById('run-status').classList.remove('visible');
+  document.getElementById('log-output').innerHTML = '';
+}
+
+// ── Launch Jupyter ──
+async function launchJupyter() {
+  const ip = document.getElementById('jupyter-ip').value.trim();
+  if (!ip) { alert('Please enter a Node IP.'); return; }
+
+  const statusEl = document.getElementById('run-status');
+  statusEl.classList.add('visible');
+  document.getElementById('log-output').innerHTML = '';
+  document.getElementById('run-state').textContent = 'Dispatching...';
+
+  try {
+    const r = await fetch(API + '/api/v1/jupyter/launch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_ip: ip }),
+    });
+    const d = await r.json();
+    if (d.task_id) {
+      document.getElementById('run-state').textContent = 'Task: ' + d.task_id + ' — Streaming logs...';
+      streamJupyterLogs(d.task_id);
+    }
+  } catch (e) {
+    document.getElementById('run-state').textContent = 'Error: ' + e.message;
+  }
+}
+
+function streamJupyterLogs(taskId) {
+  const es = new EventSource(API + '/api/v1/jupyter/' + taskId + '/logs/stream');
+  const out = document.getElementById('log-output');
+  const stateEl = document.getElementById('run-state');
+
+  es.onmessage = (e) => {
+    out.innerHTML += formatLogLine(e.data);
+    out.scrollTop = out.scrollHeight;
+  };
+
+  const STATE_LABELS = {
+    CREATED: 'Created', VALIDATING: 'Validating node…',
+    VALIDATED: 'Node validated', INSTALLING: 'Pulling image & launching…',
+    READY: 'Jupyter ready', FAILED: 'Failed',
+  };
+
+  const poll = setInterval(async () => {
+    try {
+      const r = await fetch(API + '/api/v1/jupyter/' + taskId + '/status');
+      const d = await r.json();
+      stateEl.textContent = STATE_LABELS[d.state] || d.state;
+      if (d.state === 'READY' || d.state === 'FAILED') {
+        clearInterval(poll);
+        es.close();
+        if (d.state === 'READY') {
+          const url = d.jupyter_url || ('http://' + document.getElementById('jupyter-ip').value.trim() + ':8899/lab');
+          stateEl.textContent = '✓ Jupyter is ready — opening in new tab...';
+          out.innerHTML += formatLogLine('✓ Opening: ' + url);
+          out.scrollTop = out.scrollHeight;
+          window.open(url, '_blank');
+        } else {
+          stateEl.textContent = '✕ Failed: ' + (d.error_message || 'unknown error');
+        }
       }
     } catch {}
   }, 2000);
