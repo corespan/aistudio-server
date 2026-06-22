@@ -1,158 +1,248 @@
 # aistudio-server
 
-Open-source LLM benchmarking backend. Orchestrates inference benchmarks on your GPU nodes, stores results in PostgreSQL, and serves a REST + SSE API for any frontend.
+Open-source LLM benchmarking and workload orchestration backend. SSHes into GPU nodes, runs vLLM benchmarks or launches Jupyter Lab, streams live logs via SSE, and stores results in PostgreSQL with a full leaderboard API.
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/corespan/aistudio-server.git
 cd aistudio-server
-cp .env.example .env        # edit SSH_KEY_PATH and MODEL_STORAGE_MODE if needed
-make setup                   # starts all services, runs migrations, seeds catalog
+cp .env.example .env        # edit SSH_KEY_PATH, SSH_DEFAULT_USER, GCP credentials
+docker compose up --build -d
+docker compose exec api alembic upgrade head
+docker compose exec api python -m app.services.catalog_seeder
 ```
 
-That's it. API is at **http://localhost:8001/docs** (Swagger UI).
-
-### Alternative Setup (Without `make`)
-If you don't have the `make` utility installed, copy the `.env` file and execute the underlying Docker commands manually:
-
-* **Ubuntu / WSL (Linux):**
-  ```bash
-  cp .env.example .env
-  docker compose up --build -d
-  docker compose exec api alembic upgrade head
-  docker compose exec api python -m app.services.catalog_seeder
-  ```
-
-* **Windows (PowerShell):**
-  ```powershell
-  copy .env.example .env
-  docker compose up --build -d
-  docker compose exec api alembic upgrade head
-  docker compose exec api python -m app.services.catalog_seeder
-  ```
-
-### Installing `make` in WSL/Ubuntu
-If you are using WSL/Ubuntu and want to utilize `make` shortcuts, install it with:
-```bash
-sudo apt update && sudo apt install -y make
+**Windows (PowerShell):**
+```powershell
+copy .env.example .env
+docker compose up --build -d
+docker compose exec api alembic upgrade head
+docker compose exec api python -m app.services.catalog_seeder
 ```
 
-## Verifying Your Setup
-You can verify if the server is running and database ingestion is working by sending a dummy metrics payload using the included `test_metric.json` file.
+Services start at:
+| Service | URL |
+|---------|-----|
+| API (FastAPI / Swagger) | http://localhost:8002/docs |
+| Dashboard UI | http://localhost:3000 |
+| RabbitMQ management | http://localhost:15672 |
+| pgAdmin | http://localhost:5050 |
 
-* **Ubuntu / WSL (Linux):**
-  ```bash
-  curl -X POST http://localhost:8001/api/v1/metrics \
-    -H "Content-Type: application/json" \
-    -d @test_metric.json
-  ```
+> **Port note:** uvicorn listens on 8001 inside the container; docker-compose maps it to **8002** on your host.
 
-* **Windows (PowerShell):**
-  *(Note: You must use `curl.exe` in PowerShell to bypass the default `Invoke-WebRequest` alias, and use a backtick ` ` ` for multi-line commands).*
-  ```powershell
-  curl.exe -X POST http://localhost:8001/api/v1/metrics `
-    -H "Content-Type: application/json" `
-    -d @test_metric.json
-  ```
+---
 
-If successful, you will receive a response: `{"status":"success","run_id":"newfile-1234","message":"Ingested successfully into PostgreSQL."}`.
+## Ports Reference
 
-## Run a Benchmark
+| Container | Internal port | External port (your machine) | Purpose |
+|-----------|--------------|------------------------------|---------|
+| `api` | 8001 | **8002** | FastAPI REST + SSE |
+| `postgres` | 5432 | **5433** | PostgreSQL |
+| `rabbitmq` (AMQP) | 5672 | **5672** | Celery broker |
+| `rabbitmq` (UI) | 15672 | **15672** | RabbitMQ admin |
+| `pgadmin` | 80 | **5050** | DB admin |
+| `demo-ui` | 80 | **3000** | Benchmark dashboard |
+| `worker` | — | — | No port; connects outbound |
+
+On GPU nodes (launched via SSH):
+
+| Workload | Host → Container |
+|----------|-----------------|
+| vLLM benchmark server | `8000:8000` |
+| Jupyter Lab | `8899:7008` |
+
+---
+
+## Workloads
+
+### 1 — Run a Benchmark
 
 ```bash
-curl -X POST http://localhost:8001/api/v1/benchmarks/start \
+curl -X POST http://localhost:8002/api/v1/benchmarks/start \
   -H "Content-Type: application/json" \
   -d '{
-    "model_name": "llama3-8b-instruct",
-    "node_ips": ["YOUR_GPU_NODE_IP"],
-    "config": {"concurrency": 4, "input_tokens": 512, "output_tokens": 512}
+    "model_name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "node_ips": ["10.6.12.22"],
+    "config": {
+      "concurrency": 4,
+      "input_tokens": 512,
+      "output_tokens": 128,
+      "precision": "fp16",
+      "max_model_len": 2048,
+      "gpu_count": 1
+    }
   }'
+# → {"status":"success","task_id":"wl-20260619-a3f9bc"}
 ```
 
-Response: `{"status": "success", "task_id": "wl-20260603-a3f9bc", ...}`
-
-Then poll status and stream logs:
+Poll status and stream logs:
 
 ```bash
-# Poll status
-curl http://localhost:8001/api/v1/benchmarks/wl-20260603-a3f9bc/status
-
-# Stream live logs (SSE)
-curl -N http://localhost:8001/api/v1/benchmarks/wl-20260603-a3f9bc/logs/stream
+curl http://localhost:8002/api/v1/benchmarks/wl-20260619-a3f9bc/status
+curl -N http://localhost:8002/api/v1/benchmarks/wl-20260619-a3f9bc/logs/stream
 ```
 
-## What's Included
+Celery chain: `validate_node → install_dependencies → execute_benchmark`  
+States: `CREATED → VALIDATING → VALIDATED → INSTALLING → READY → RUNNING → READY` (or `FAILED`)
+
+### 2 — Launch Jupyter Lab
+
+```bash
+curl -X POST http://localhost:8002/api/v1/jupyter/launch \
+  -H "Content-Type: application/json" \
+  -d '{"node_ip": "10.6.12.22"}'
+# → {"status":"success","task_id":"jup-20260619-dc4f70"}
+```
+
+Poll until READY, then open the returned `jupyter_url` in your browser:
+
+```bash
+curl http://localhost:8002/api/v1/jupyter/jup-20260619-dc4f70/status
+# → {"state":"READY","jupyter_url":"http://10.6.12.22:8899/lab"}
+```
+
+Celery chain: `validate_node → launch_jupyter`  
+States: `CREATED → VALIDATING → VALIDATED → INSTALLING → READY` (or `FAILED`)
+
+The **Dashboard UI** (`localhost:3000`) handles both workloads under a **Workloads** tab with sub-buttons "Benchmark Run" and "Launch Jupyter". Jupyter opens automatically in a new tab when ready.
+
+---
+
+## Verifying Ingest
+
+Send a test metrics payload:
+
+```bash
+# Linux / WSL
+curl -X POST http://localhost:8002/api/v1/metrics \
+  -H "Content-Type: application/json" \
+  -d @test_metric.json
+
+# Windows PowerShell
+curl.exe -X POST http://localhost:8002/api/v1/metrics `
+  -H "Content-Type: application/json" `
+  -d @test_metric.json
+```
+
+Expected: `{"status":"success","run_id":"...","message":"Ingested successfully..."}`
+
+---
+
+## Architecture
+
+```
+Browser / UI (localhost:3000 — nginx)
+        │  REST + SSE
+FastAPI API (localhost:8002)
+        │  Celery chain dispatch
+RabbitMQ broker  ←→  Celery Worker
+                          │  Paramiko SSH
+                     GPU Node(s)
+                      └─ docker run vllm / jupyternotebook
+                          │  results / logs
+                     PostgreSQL (localhost:5433)
+```
 
 | Component | Purpose |
 |-----------|---------|
-| **FastAPI server** | REST API + SSE log streaming |
-| **Celery worker** | SSHs into GPU nodes, runs benchmarks |
-| **PostgreSQL** | All state, metrics, audit log |
+| **FastAPI** | REST API + SSE log streaming |
+| **Celery worker** | SSHes into GPU nodes, runs benchmarks / launches Jupyter |
+| **Paramiko** | SSH client used inside the Celery worker |
+| **ManifestBuilder** | Builds the bash command strings executed on remote nodes |
+| **SSHExecutor** | Runs remote commands, streams stdout line-by-line into `TaskLog` |
+| **PostgreSQL** | All state, metrics, workload events, task logs |
 | **RabbitMQ** | Task broker for Celery |
 
-## Pre-Built Workload Images (GCR)
+---
 
-No need to build anything. The Celery worker pulls these automatically:
+## Workload Images (GCP Artifact Registry)
 
-| Image | Path |
-|-------|------|
-| LLM Inference (vLLM) | `gcr.io/aistudio-oss/llm-inference:latest` |
-| Benchmark Client | `gcr.io/aistudio-oss/benchmark-client:latest` |
+No local builds needed — the worker pulls these automatically on each run:
 
-## Supported Models
+| Image | GCR path | Used for |
+|-------|----------|---------|
+| LLM Inference | `us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia` | vLLM benchmark server |
+| Jupyter Notebook | `us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/jupyternotebook:1.1.1-nvidia` | Jupyter Lab on GPU node |
 
-| Model | HuggingFace Repo | Min GPU Memory |
-|-------|-----------------|----------------|
-| Llama 3 8B Instruct | `meta-llama/Meta-Llama-3-8B-Instruct` | 16 GB |
-| Mistral 7B Instruct v0.3 | `mistralai/Mistral-7B-Instruct-v0.3` | 16 GB |
+The worker uses `--entrypoint python3` (llminference) or `--entrypoint bash` (jupyternotebook) to bypass the image's default `script.sh`, which requires an internal Nexus/aiAgent setup. Model weights are pulled from HuggingFace on first run and cached at `~/.cache/huggingface` on the node.
 
-## Configuration
+---
 
-All config is via `.env` file. Key variables:
+## Configuration (`.env`)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WORKLOAD_REGISTRY` | `gcr.io/aistudio-oss` | Where workload images are pulled from |
+| `GCP_REGISTRY_URL` | `us-docker.pkg.dev` | Artifact Registry hostname |
+| `GCP_PROJECT_ID` | `aimlworkbench` | GCP project ID |
+| `GCP_REPOSITORY` | `workbench-registry` | Artifact Registry repo |
+| `GCP_IMAGE_PATH` | `services/workloads` | Path prefix inside the repo |
+| `WORKLOAD_IMAGE_TAG` | `2.3.0-nvidia` | Tag for the llminference image |
+| `JUPYTER_IMAGE_TAG` | `1.1.1-nvidia` | Tag for the jupyternotebook image |
 | `MODEL_STORAGE_MODE` | `huggingface` | `huggingface`, `local`, or `gcs` |
-| `SSH_KEY_PATH` | `~/.ssh/id_rsa` | Path to SSH private key for GPU node access |
-| `SSH_DEFAULT_USER` | `ubuntu` | SSH username on GPU nodes |
+| `MODEL_LOCAL_PATH` | `/home/ubuntu/models` | Used when `MODEL_STORAGE_MODE=local` |
+| `SSH_KEY_PATH` | `~/.ssh/id_rsa` | Path to SSH private key (mounted into containers) |
+| `SSH_DEFAULT_USER` | `drut` | SSH username on GPU nodes |
 
-See `.env.example` for the full list.
+---
 
 ## API Endpoints
 
+### Benchmark Orchestration
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Health check (K8s readiness probe) |
-| GET | `/api/v1/workload-types` | List supported workload types |
-| POST | `/api/v1/benchmarks/start` | Start a new benchmark |
+| POST | `/api/v1/benchmarks/start` | Start a benchmark (returns `task_id`) |
 | GET | `/api/v1/benchmarks/{task_id}/status` | Poll workload state |
 | GET | `/api/v1/benchmarks/{task_id}/logs/stream` | SSE live log stream |
-| POST | `/api/v1/metrics` | Ingest benchmark results (upsert) |
-| GET | `/api/v1/benchmarks` | Leaderboard with filters |
-| GET | `/api/v1/benchmarks/{run_id}` | Single run detail |
-| GET | `/api/v1/benchmarks/compare` | Side-by-side comparison |
+
+### Jupyter Workload
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/jupyter/launch` | Launch Jupyter Lab on a node (returns `task_id`) |
+| GET | `/api/v1/jupyter/{task_id}/status` | Poll state; returns `jupyter_url` when READY |
+| GET | `/api/v1/jupyter/{task_id}/logs/stream` | SSE live log stream |
+
+### Leaderboard
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/benchmarks` | Filterable leaderboard (`model`, `gpu_type`, `node_ip`, `precision`, `concurrency`, `input_tokens`, `output_tokens`, `status`, `date`) |
+| GET | `/api/v1/benchmarks/{run_id}` | Full detail for one run (all sub-runs) |
+| GET | `/api/v1/benchmarks/compare?run_a=&run_b=` | Side-by-side comparison |
+
+### Delete
+| Method | Path | Description |
+|--------|------|-------------|
+| DELETE | `/api/v1/benchmarks/{run_id}` | Delete a single run |
+| DELETE | `/api/v1/benchmarks/bulk` | Delete multiple runs — body: `{"run_ids":[...]}` |
+| DELETE | `/api/v1/benchmarks/filter` | Delete by filter (`?gpu_type=p40`, `?model=...`, `?date=...`, etc.) — at least one filter required |
+| DELETE | `/api/v1/benchmarks/all?confirm=true` | Wipe all results — requires `confirm=true` |
+
+### Ingest (external push)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/metrics` | Ingest a completed benchmark result (upsert) |
+
+### Reference / Dropdowns
+| Method | Path | Description |
+|--------|------|-------------|
 | GET | `/api/v1/models` | Distinct model names |
 | GET | `/api/v1/gpu-types` | Distinct GPU types |
+| GET | `/api/v1/nodes` | Distinct node IPs |
 | GET | `/api/v1/concurrencies` | Distinct concurrency levels |
-| GET | `/api/v1/summary` | Dashboard aggregate stats |
+| GET | `/api/v1/precisions` | Distinct precision values |
+| GET | `/api/v1/input-tokens` | Distinct ISL values |
+| GET | `/api/v1/output-tokens` | Distinct OSL values |
 
-Full interactive docs: **http://localhost:8001/docs**
+### System
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Readiness probe — checks DB connectivity |
+| GET | `/api/v1/workload-types` | List supported workload types |
+| GET | `/api/v1/models/config` | Recommended vLLM config for a model |
 
-## Using with Your Own UI
+Full interactive docs: **http://localhost:8002/docs**
 
-This server works standalone — no specific UI required. Point any frontend at the API:
-
-```
-REACT_APP_API_URL=http://localhost:8001
-```
-
-See `api_contract/API_CONTRACT.md` for the full API contract with response shapes.
-
-## Using with Your Own Backend
-
-If you want to use the `aistudio-ui` (separate repo) with your own backend, your backend must implement the endpoints documented in `api_contract/API_CONTRACT.md`.
+---
 
 ## Make Commands
 
@@ -164,10 +254,12 @@ make migrate   # Run Alembic migrations
 make seed      # Seed workload_types from catalog.json
 make setup     # up + migrate + seed (first-time setup)
 make test      # Run tests
-make spec      # Export OpenAPI spec to api_contract/openapi.json
+make spec      # Export OpenAPI spec
 make shell     # Python shell inside the API container
 make benchmark # Example curl to start a benchmark
 ```
+
+---
 
 ## License
 
