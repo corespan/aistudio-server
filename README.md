@@ -33,6 +33,77 @@ Services start at:
 
 ---
 
+## GPU Node Setup (prerequisite)
+
+The Celery worker SSHes into GPU nodes to run workloads. Before you can start a benchmark or launch Jupyter, each target node must accept passwordless SSH from the machine running this server.
+
+### Step 1 — Generate an SSH key (skip if you already have one)
+
+```bash
+ssh-keygen -t ed25519 -C "aistudio-server" -f ~/.ssh/aistudio_id
+# Press Enter twice to leave the passphrase empty
+```
+
+This creates two files: `~/.ssh/aistudio_id` (private key) and `~/.ssh/aistudio_id.pub` (public key).
+
+### Step 2 — Copy your public key to the GPU node
+
+```bash
+ssh-copy-id -i ~/.ssh/aistudio_id.pub drut@<node-ip>
+# e.g.
+ssh-copy-id -i ~/.ssh/aistudio_id.pub drut@10.6.12.22
+```
+
+It will prompt for the node's password once, then append your public key to `~/.ssh/authorized_keys` on the node. After this, all subsequent SSH connections use the key and require no password.
+
+**Windows (no ssh-copy-id):** run this instead:
+
+```powershell
+type $env:USERPROFILE\.ssh\aistudio_id.pub | ssh drut@10.6.12.22 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+```
+
+### Step 3 — Test the connection
+
+```bash
+ssh -i ~/.ssh/aistudio_id drut@10.6.12.22 "echo OK"
+# Should print: OK   (no password prompt)
+```
+
+If you see `Permission denied`, check that `~/.ssh/authorized_keys` on the node has the correct permissions (`chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys`).
+
+### Step 4 — Point the server at your key
+
+In your `.env`:
+
+```
+SSH_KEY_PATH=/root/.ssh/aistudio_id
+SSH_DEFAULT_USER=drut
+```
+
+The key file is bind-mounted into the `api` and `worker` containers via `docker-compose.yml`. The path in `.env` must be the **container-side** path (i.e. wherever you mount it), not your host path.
+
+### Step 5 — Verify the node passes validation
+
+```bash
+curl -X POST http://localhost:8002/api/v1/benchmarks/start \
+  -H "Content-Type: application/json" \
+  -d '{"model_name":"TinyLlama/TinyLlama-1.1B-Chat-v1.0","node_ips":["10.6.12.22"],"config":{}}'
+# Watch logs — validate_node step should pass
+```
+
+### Node requirements
+
+| Requirement | Notes |
+|-------------|-------|
+| Docker installed | `docker --version` must work as the SSH user |
+| `nvidia-docker2` / NVIDIA Container Toolkit | Required for `--gpus all` flag |
+| `gcr.json` at `~/gcr.json` | GCP service account key for pulling images from Artifact Registry |
+| Port 8899 open (inbound) | For Jupyter Lab access from your browser |
+| Port 8000 open (inbound) | For vLLM benchmark server |
+| Sufficient VRAM | Depends on the model; TinyLlama needs ~3 GB, Llama-3 70B needs 4×A100 |
+
+---
+
 ## Ports Reference
 
 | Container | Internal port | External port (your machine) | Purpose |
