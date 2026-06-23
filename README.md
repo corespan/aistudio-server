@@ -8,6 +8,12 @@ Open-source LLM benchmarking and workload orchestration backend. SSHes into GPU 
 git clone https://github.com/corespan/aistudio-server.git
 cd aistudio-server
 cp .env.example .env        # edit SSH_KEY_PATH, SSH_DEFAULT_USER, GCP credentials
+make setup                  # starts all services, runs migrations, seeds catalog
+```
+
+Or without `make`:
+
+```bash
 docker compose up --build -d
 docker compose exec api alembic upgrade head
 docker compose exec api python -m app.services.catalog_seeder
