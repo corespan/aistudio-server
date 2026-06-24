@@ -1,0 +1,32 @@
+{
+  "run_id": "newfile-123",
+  "timestamp": "2026-06-04T12:00:00Z",
+  "workload": {
+    "name": "tinyllama-1t-7b-inference",
+    "type": "llm"
+  },
+  "status": "success",
+  "gpu_type": "P40",
+  "node_ip": "10.6.12.22",
+  "metrics": {
+    "total_token_throughput": 4200.5,
+    "mean_ttft_ms": 22.5,
+    "mean_tpot_ms": 7.3,
+    "mean_e2el_ms": 520.0,
+    "p50_ttft_ms": 19.1,
+    "p99_ttft_ms": 47.3,
+    "p50_tpot_ms": 6.6,
+    "p99_tpot_ms": 13.1,
+    "successful_requests": 80,
+    "failed_requests": 0
+  },
+  "config": {
+    "concurrency": 16,
+    "precision": "fp16",
+    "input_tokens": 512,
+    "output_tokens": 512,
+    "gpu_count": 2,
+    "gpu_model": "NVIDIA P40",
+    "pipeline_version": "vllm-0.6.0"
+  }
+}

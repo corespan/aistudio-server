@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "workload_types": [
+    {
+      "name": "LLMInference",
+      "display_name": "LLM Inference (vLLM)",
+      "description": "Benchmark LLM inference throughput and latency using vLLM. Measures tokens/sec, TTFT, TPOT, and end-to-end latency across configurable concurrency levels."
+    }
+  ],
+  "supported_models": [
+    {
+      "model_id": "llama3-8b-instruct",
+      "display_name": "Llama 3 8B Instruct",
+      "hf_repo": "meta-llama/Meta-Llama-3-8B-Instruct",
+      "min_gpu_memory_gb": 16,
+      "default_config": {
+        "precision": "fp16",
+        "gpu_count": 1,
+        "max_model_len": 4096,
+        "concurrency": 4,
+        "input_tokens": 512,
+        "output_tokens": 512
+      }
+    },
+    {
+      "model_id": "mistral-7b-instruct",
+      "display_name": "Mistral 7B Instruct v0.3",
+      "hf_repo": "mistralai/Mistral-7B-Instruct-v0.3",
+      "min_gpu_memory_gb": 16,
+      "default_config": {
+        "precision": "fp16",
+        "gpu_count": 1,
+        "max_model_len": 8192,
+        "concurrency": 4,
+        "input_tokens": 512,
+        "output_tokens": 512
+      }
+    }
+  ],
+  "images": {
+    "llm_inference": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference",
+    "benchmark_client": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/benchmark-client"
+  },
+  "datasets": {
+    "sharegpt": "gs://aistudio-datasets/sharegpt.json",
+    "humaneval": "gs://aistudio-datasets/humaneval.json"
+  }
+}
