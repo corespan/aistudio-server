@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($key = \"C:\\\\Users\\\\tejam\\\\.ssh\\\\id_rsa\"; $env:GIT_SSH_COMMAND = \"ssh -i $key\"; ssh -i $key drut@10.6.12.22 \"docker ps -a | grep vllm; echo '---'; docker logs vllm_server --tail 60 2>&1\" 2>&1)",
+      "PowerShell(ssh -i C:\\\\Users\\\\tejam\\\\.ssh\\\\id_rsa drut@10.6.12.22 \"docker run --gpus all --rm --name vllm_test --entrypoint python3 -v `$HOME/.cache/huggingface:/root/.cache/huggingface us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia -m vllm.entrypoints.openai.api_server --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dtype float32 --max-model-len 2048 --tensor-parallel-size 1 2>&1 | head -60\")",
+      "PowerShell(ssh -i C:\\\\Users\\\\tejam\\\\.ssh\\\\id_rsa drut@10.6.12.17 \"docker ps | grep vllm; curl -s http://localhost:8000/v1/models 2>&1; curl -s http://localhost:8000/openapi.json 2>&1 | python3 -c 'import sys,json; d=json.load\\(sys.stdin\\); print\\([p for p in d[\\\\\"paths\\\\\"]]\\)' 2>&1\")",
+      "Bash(cd /c/Users/tejam/aiworkbench && find . -maxdepth 2 -type f -o -type d | head -50)",
+      "Read(//c/Users/tejam/aiworkbench/**)",
+      "Bash(cd /c/Users/tejam/ai-ml-workbench-workloads && find . -maxdepth 2 -type f -o -type d | head -50)",
+      "Read(//c/Users/tejam/ai-ml-workbench-workloads/**)",
+      "Bash(find /c/Users/tejam -name \"README*\" -o -name \"*.md\" | grep -i jupyter | head -10)",
+      "Read(//c/Users/tejam/**)",
+      "PowerShell(docker info 2>&1)"
+    ]
+  }
+}

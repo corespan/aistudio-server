@@ -113,13 +113,14 @@ class ManifestBuilder:
     """
 
     @staticmethod
-    def build_vllm_command(model_name: str, config: Dict[str, Any]) -> str:
+    def build_vllm_command(model_name: str, config: Dict[str, Any], image_tag: str = None) -> str:
         gpu_count     = config.get("gpu_count", 1)
         precision     = config.get("precision", "fp32")
         max_model_len = config.get("max_model_len", 2048)
         dtype         = _DTYPE_MAP.get(precision.lower(), "float32")
 
-        image = "%s/llminference:%s" % (get_workload_registry(), settings.WORKLOAD_IMAGE_TAG)
+        tag   = image_tag or settings.WORKLOAD_IMAGE_TAG
+        image = "%s/llminference:%s" % (get_workload_registry(), tag)
 
         # Volume mount depends on where model weights live (set via MODEL_STORAGE_MODE in .env)
         mode = settings.MODEL_STORAGE_MODE

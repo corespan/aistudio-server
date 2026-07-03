@@ -235,11 +235,14 @@ RabbitMQ broker  ←→  Celery Worker
 
 ## Workload Images (GCP Artifact Registry)
 
-No local builds needed — the worker pulls these automatically on each run:
+No local builds needed — the worker pulls these automatically on each run.
+
+Image tags are seeded from `catalog.json` into the `workload_types` table at startup.
+To update a tag, change it in `catalog.json` and re-run `make seed` — no code change needed:
 
 | Image | GCR path | Used for |
 |-------|----------|---------|
-| LLM Inference | `us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia` | vLLM benchmark server |
+| LLM Inference | `us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.1-nvidia` | vLLM benchmark server |
 | Jupyter Notebook | `us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/jupyternotebook:1.1.1-nvidia` | Jupyter Lab on GPU node |
 
 The worker uses `--entrypoint python3` (llminference) or `--entrypoint bash` (jupyternotebook) to bypass the image's default `script.sh`, which requires an internal Nexus/aiAgent setup. Model weights are pulled from HuggingFace on first run and cached at `~/.cache/huggingface` on the node.
@@ -254,7 +257,7 @@ The worker uses `--entrypoint python3` (llminference) or `--entrypoint bash` (ju
 | `GCP_PROJECT_ID` | `aimlworkbench` | GCP project ID |
 | `GCP_REPOSITORY` | `workbench-registry` | Artifact Registry repo |
 | `GCP_IMAGE_PATH` | `services/workloads` | Path prefix inside the repo |
-| `WORKLOAD_IMAGE_TAG` | `2.3.0-nvidia` | Tag for the llminference image |
+| `WORKLOAD_IMAGE_TAG` | `2.3.1-nvidia` | Fallback image tag (overridden by `catalog.json`) |
 | `JUPYTER_IMAGE_TAG` | `1.1.1-nvidia` | Tag for the jupyternotebook image |
 | `MODEL_STORAGE_MODE` | `huggingface` | `huggingface`, `local`, or `gcs` |
 | `MODEL_LOCAL_PATH` | `/home/ubuntu/models` | Used when `MODEL_STORAGE_MODE=local` |

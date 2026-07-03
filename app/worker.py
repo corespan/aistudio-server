@@ -15,6 +15,7 @@ from app.models.node import Node
 from app.models.task import Task
 from app.models.task_log import TaskLog
 from app.models.benchmark_result import BenchmarkResult
+from app.models.workload_type import WorkloadType
 from app.services.node_inspector import NodeInspector
 from app.services.dependency_installer import DependencyInstaller
 from app.services.manifest_builder import ManifestBuilder
@@ -230,8 +231,16 @@ def execute_benchmark(self, workload_id):
             )
             db.add(task)
             db.commit()
+            # Look up the per-workload image tag from workload_types table.
+            # Falls back to settings.WORKLOAD_IMAGE_TAG if not seeded.
+            wt = (
+                db.query(WorkloadType)
+                .filter(WorkloadType.name == "LLMInference")
+                .first()
+            )
+            image_tag = wt.image_tag if wt and wt.image_tag else None
             server_cmd = ManifestBuilder.build_vllm_command(
-                workload.model_name, workload.workload_config,
+                workload.model_name, workload.workload_config, image_tag=image_tag,
             )
             client_cmd = ManifestBuilder.build_benchmark_client_command(
                 workload.model_name, workload.workload_config,
