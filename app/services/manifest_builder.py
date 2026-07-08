@@ -120,7 +120,8 @@ class ManifestBuilder:
     """
 
     @staticmethod
-    def build_vllm_command(model_name: str, config: Dict[str, Any], image_tag: str = None) -> str:
+    def build_vllm_command(model_name: str, config: Dict[str, Any],
+                           image_tag: str = None, run_id: str = "") -> str:
         gpu_count     = config.get("gpu_count", 1)
         precision     = config.get("precision", "fp32")
         max_model_len = config.get("max_model_len", 2048)
@@ -128,6 +129,10 @@ class ManifestBuilder:
 
         tag   = image_tag or settings.WORKLOAD_IMAGE_TAG
         image = "%s/llminference:%s" % (get_workload_registry(), tag)
+
+        # Container name embeds the run_id so each benchmark run is identifiable
+        # on the node via `docker ps` or `docker logs`.
+        container_name = "vllm-%s" % run_id if run_id else "vllm_server"
 
         # Volume mount depends on where model weights live (set via MODEL_STORAGE_MODE in .env)
         mode = settings.MODEL_STORAGE_MODE
@@ -142,11 +147,11 @@ class ManifestBuilder:
             env_flags   = ""
 
         login_cmd = _GCR_LOGIN_CMD
-        rm_cmd    = "docker rm -f vllm_server 2>/dev/null || true"
+        rm_cmd    = "docker rm -f %s 2>/dev/null || true" % container_name
         # Override the image's default CMD (script.sh installs aiAgent from Nexus).
         # The image already has vllm==0.14.1; --entrypoint bypasses the orchestration wrapper.
         run_cmd   = " ".join(p for p in [
-            "docker run --gpus all --rm -d --name vllm_server",
+            "docker run --gpus all --rm -d --name %s" % container_name,
             "-p 8000:8000 --ipc=host",
             "--entrypoint python3",
             volume_flag,
@@ -161,11 +166,15 @@ class ManifestBuilder:
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
 
     @staticmethod
-    def build_benchmark_client_command(model_name: str, config: Dict[str, Any]) -> str:
+    def build_benchmark_client_command(model_name: str, config: Dict[str, Any],
+                                       run_id: str = "") -> str:
         concurrency   = config.get("concurrency", 4)
         input_tokens  = config.get("input_tokens", 512)
         output_tokens = config.get("output_tokens", 128)
         num_requests  = max(concurrency * 5, 20)
+
+        # Must match the container name used in build_vllm_command.
+        container_name = "vllm-%s" % run_id if run_id else "vllm_server"
 
         # ── 1. Wait for the vLLM server to become healthy (up to 10 min) ──────
         wait = (
@@ -177,9 +186,9 @@ class ManifestBuilder:
             "done && "
             "[ \"$READY\" -eq 1 ] || "
             "{ echo 'ERROR: vLLM server did not start in 10 min'; "
-            "  docker stop vllm_server 2>/dev/null; exit 1; } && "
+            "  docker stop %(name)s 2>/dev/null; exit 1; } && "
             "echo 'vLLM server ready.'"
-        )
+        ) % {"name": container_name}
 
         # ── 2. Export config as env vars and run the embedded benchmark ───────
         bench = (
@@ -199,12 +208,12 @@ class ManifestBuilder:
         }
 
         # ── 3. Always stop the vLLM container whether benchmark passes or fails
-        cleanup = "docker stop vllm_server 2>/dev/null || true"
+        cleanup = "docker stop %s 2>/dev/null || true" % container_name
 
         return "%s && %s ; %s" % (wait, bench, cleanup)
 
     @staticmethod
-    def build_jupyter_command() -> str:
+    def build_jupyter_command(run_id: str = "") -> str:
         """
         Start the jupyternotebook GCR image on host port 8899 (container port 7008).
 
@@ -213,6 +222,7 @@ class ManifestBuilder:
         The image already has notebook==7.4.7 installed via requirements.txt.
         """
         image = "%s/jupyternotebook:%s" % (get_workload_registry(), settings.JUPYTER_IMAGE_TAG)
+        container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
 
         # Inner command run inside the container via bash -c.
         # Base64-encoded to avoid any shell quoting issues on the remote host.
@@ -223,9 +233,9 @@ class ManifestBuilder:
         inner_b64 = base64.b64encode(inner.encode()).decode()
 
         login_cmd = _GCR_LOGIN_CMD
-        rm_cmd    = "docker rm -f jupyter_server 2>/dev/null || true"
+        rm_cmd    = "docker rm -f %s 2>/dev/null || true" % container_name
         run_cmd   = " ".join([
-            "docker run --gpus all -d --name jupyter_server",
+            "docker run --gpus all -d --name %s" % container_name,
             "-p 8899:7008 --ipc=host",
             "--entrypoint bash",
             image,
@@ -234,8 +244,9 @@ class ManifestBuilder:
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
 
     @staticmethod
-    def build_jupyter_health_command() -> str:
+    def build_jupyter_health_command(run_id: str = "") -> str:
         """Poll localhost:8899 until Jupyter is ready (up to 5 min)."""
+        container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
         return (
             "READY=0 && "
             "for i in $(seq 1 60); do "
@@ -244,6 +255,6 @@ class ManifestBuilder:
             "done && "
             "[ \"$READY\" -eq 1 ] || "
             "{ echo 'ERROR: Jupyter did not start in 5 min'; "
-            "  docker stop jupyter_server 2>/dev/null; exit 1; } && "
+            "  docker stop %(name)s 2>/dev/null; exit 1; } && "
             "echo 'Jupyter ready.'"
-        )
+        ) % {"name": container_name}

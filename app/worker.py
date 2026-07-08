@@ -244,10 +244,11 @@ def execute_benchmark(self, workload_id):
             )
             image_tag = wt.image_tag if wt and wt.image_tag else None
             server_cmd = ManifestBuilder.build_vllm_command(
-                workload.model_name, workload.workload_config, image_tag=image_tag,
+                workload.model_name, workload.workload_config,
+                image_tag=image_tag, run_id=workload_id,
             )
             client_cmd = ManifestBuilder.build_benchmark_client_command(
-                workload.model_name, workload.workload_config,
+                workload.model_name, workload.workload_config, run_id=workload_id,
             )
             cfg = workload.workload_config or {}
             _write_log(db, task.id, "=== [3/3] Running Benchmark ===")
@@ -399,8 +400,8 @@ def launch_jupyter(self, workload_id):
             _write_log(db, task.id, "=== [2/2] Launching Jupyter Lab ===")
             _write_log(db, task.id, "Node: %s" % node.machine_ip)
 
-            server_cmd = ManifestBuilder.build_jupyter_command()
-            health_cmd = ManifestBuilder.build_jupyter_health_command()
+            server_cmd = ManifestBuilder.build_jupyter_command(run_id=workload_id)
+            health_cmd = ManifestBuilder.build_jupyter_health_command(run_id=workload_id)
 
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
