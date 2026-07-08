@@ -76,6 +76,13 @@ def _fail_workload(workload_id, trigger, error):
         )
 
 
+def _fetch_workload_and_nodes(db, workload_id: str):
+    """Fetch the Workload record and its associated Nodes in one call."""
+    workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+    nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+    return workload, nodes
+
+
 @celery_app.task(bind=True, soft_time_limit=600, time_limit=660)
 def validate_node(self, workload_id):
     """SSH into the nodes, verify GPU specs, write to DB."""
@@ -86,8 +93,7 @@ def validate_node(self, workload_id):
                 trigger="validate_node",
                 message="Starting node validation",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
 
             # Create a Task so validate logs are visible in the SSE stream
             val_task = Task(
@@ -158,8 +164,7 @@ def install_dependencies(self, workload_id):
                 trigger="install_dependencies",
                 message="Installing dependencies on nodes",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
             for node in nodes:
                 node.state = "INSTALLING"
                 install_task = Task(
@@ -214,8 +219,7 @@ def execute_benchmark(self, workload_id):
                 trigger="execute_benchmark",
                 message="Starting benchmark execution",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
             if not nodes:
                 raise RuntimeError("No nodes available for benchmark execution")
             node = nodes[0]
@@ -376,8 +380,7 @@ def launch_jupyter(self, workload_id):
                 trigger="launch_jupyter",
                 message="Launching Jupyter Lab server",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
             if not nodes:
                 raise RuntimeError("No nodes found for workload %s" % workload_id)
             node = nodes[0]

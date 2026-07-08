@@ -1,19 +1,17 @@
 import uuid
 from datetime import datetime
 
-import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.models.workload import Workload
 from app.models.node import Node
-from app.models.task import Task
-from app.models.task_log import TaskLog
-from app.config import settings
+from app.utils.sse import task_log_stream
 
 router = APIRouter(tags=["Jupyter"])
 
@@ -100,36 +98,8 @@ async def stream_jupyter_logs(task_id: str, request: Request):
     if not workload_db_id:
         raise HTTPException(status_code=404, detail="Workload not found.")
 
-    async def log_generator():
-        last_seen_date = None
-        while True:
-            if await request.is_disconnected():
-                break
-            async with AsyncSessionLocal() as db:
-                query = (
-                    select(TaskLog)
-                    .join(Task, TaskLog.task_id == Task.id)
-                    .where(Task.workload_id == workload_db_id)
-                    .order_by(TaskLog.logged_at.asc())
-                )
-                if last_seen_date:
-                    query = query.where(TaskLog.logged_at > last_seen_date)
-                result = await db.execute(query)
-                logs = result.scalars().all()
-                for log in logs:
-                    yield "data: %s\n\n" % log.line
-                    last_seen_date = log.logged_at
-                state_result = await db.execute(
-                    select(Workload.state).where(Workload.id == workload_db_id)
-                )
-                workload_state = state_result.scalar()
-            if workload_state in ("READY", "FAILED") and not logs:
-                yield "event: close\ndata: stream closed\n\n"
-                break
-            await asyncio.sleep(1.0)
-
     return StreamingResponse(
-        log_generator(),
+        task_log_stream(workload_db_id, request),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )

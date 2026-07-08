@@ -302,7 +302,7 @@ async def list_models(date: Optional[str] = None, db: AsyncSession = Depends(get
          in case a user ran a model not in the current catalog.
     Catalog models come first; historical extras are appended.
     """
-    from app.routers.system import _MODEL_CONFIGS
+    from app.catalog import _MODEL_CONFIGS
     catalog = list(_MODEL_CONFIGS.keys())
     historical = await _distinct_values(BenchmarkResult.model_name, db, date, sort=False)
     seen = set(catalog)
