@@ -1,4 +1,5 @@
 import uuid
+from app.services.manifest_builder import _GCR_LOGIN_CMD
 from app.services.ssh_executor import SSHExecutor
 
 
@@ -20,11 +21,11 @@ class DependencyInstaller:
             '  echo "Docker not found. Please install Docker first." && exit 1; '
             'fi && '
             'echo "Authenticating with GCR..." && '
-            'cat $HOME/gcr.json | docker login -u _json_key --password-stdin https://us-docker.pkg.dev && '
+            '%s && '
             'echo "Pulling workload image: %s" && '
             'docker pull %s && '
             'echo "Image ready."'
-        ) % (image, image)
+        ) % (_GCR_LOGIN_CMD, image, image)
 
         with SSHExecutor(ip, username, key_filename=settings.SSH_KEY_PATH) as ssh:
             exit_code = ssh.run_command(script, task_id)

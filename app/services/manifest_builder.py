@@ -4,6 +4,13 @@ from typing import Any, Dict
 
 from app.config import settings, get_workload_registry
 
+# GCR login command — shared by vLLM/Jupyter server commands and DependencyInstaller.
+# Defined once here so it's never out of sync across callers.
+_GCR_LOGIN_CMD = (
+    "cat $HOME/gcr.json | docker login -u _json_key "
+    "--password-stdin https://us-docker.pkg.dev"
+)
+
 
 # ── Benchmark Python script (runs on the remote node via base64 exec) ────────
 # Sends concurrent completions requests to the local vLLM server and collects
@@ -134,7 +141,7 @@ class ManifestBuilder:
             volume_flag = "-v $HOME/.cache/huggingface:/root/.cache/huggingface"
             env_flags   = ""
 
-        login_cmd = "cat $HOME/gcr.json | docker login -u _json_key --password-stdin https://us-docker.pkg.dev"
+        login_cmd = _GCR_LOGIN_CMD
         rm_cmd    = "docker rm -f vllm_server 2>/dev/null || true"
         # Override the image's default CMD (script.sh installs aiAgent from Nexus).
         # The image already has vllm==0.14.1; --entrypoint bypasses the orchestration wrapper.
@@ -215,7 +222,7 @@ class ManifestBuilder:
         )
         inner_b64 = base64.b64encode(inner.encode()).decode()
 
-        login_cmd = "cat $HOME/gcr.json | docker login -u _json_key --password-stdin https://us-docker.pkg.dev"
+        login_cmd = _GCR_LOGIN_CMD
         rm_cmd    = "docker rm -f jupyter_server 2>/dev/null || true"
         run_cmd   = " ".join([
             "docker run --gpus all -d --name jupyter_server",
