@@ -60,13 +60,53 @@ def _write_log(db, task_id, line: str) -> None:
 
 
 def _fail_workload(workload_id, trigger, error):
-    """Transition a workload to FAILED with an error message."""
+    """
+    Transition a workload to FAILED with an error message.
+
+    For benchmark workloads (not Jupyter) also writes a BenchmarkResult row with
+    status='failed' so the run appears in the leaderboard API after a page refresh
+    instead of disappearing when the in-memory stream store is cleared.
+    """
     try:
         with SyncSessionLocal() as db:
             transition_workload_state(
                 db, workload_id, WorkloadState.FAILED,
                 trigger=trigger, message=error,
             )
+            # Write a minimal BenchmarkResult so GET /api/v1/benchmarks returns
+            # the failed run. Skip Jupyter workloads — they have no benchmark metrics.
+            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+            if workload and (workload.workload_config or {}).get("workload_type") != "jupyter":
+                existing = db.query(BenchmarkResult).filter(
+                    BenchmarkResult.run_id == workload_id
+                ).first()
+                if not existing:
+                    node = db.query(Node).filter(Node.workload_id == workload.id).first()
+                    now = datetime.now(timezone.utc)
+                    db.add(BenchmarkResult(
+                        run_id=workload_id,
+                        sub_run_index=0,
+                        model_name=(workload.model_name or "").lower(),
+                        pipeline_version="vllm-openai-latest",
+                        node_ips=[node.machine_ip] if node else [],
+                        gpu_type="",
+                        gpu_count=0,
+                        gpu_model="",
+                        precision=(workload.workload_config or {}).get("precision", ""),
+                        input_tokens=0,
+                        output_tokens=0,
+                        concurrency=0,
+                        status="failed",
+                        total_token_throughput=None,
+                        mean_ttft_ms=None,
+                        mean_tpot_ms=None,
+                        mean_e2el_ms=None,
+                        metrics={},
+                        started_at=now,
+                        completed_at=now,
+                        duration_seconds=0,
+                    ))
+                    db.commit()
     except Exception:
         logger.critical(
             "WORKLOAD %s STUCK: could not write FAILED state (trigger=%s). "
