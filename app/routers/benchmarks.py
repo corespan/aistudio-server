@@ -94,6 +94,9 @@ async def stream_benchmark_logs(
     Server-Sent Events (SSE) endpoint that streams logs from ALL steps
     (validate → install → benchmark) for a workload in chronological order.
 
+    Supports Last-Event-ID: on browser reconnect, only logs after the last
+    received event are sent — the full history is NOT replayed.
+
     Uses short-lived DB sessions per poll to avoid holding a pool connection
     for the full stream duration.
     """
@@ -107,10 +110,16 @@ async def stream_benchmark_logs(
     if not workload_db_id:
         raise HTTPException(status_code=404, detail="Workload not found.")
 
+    last_event_id = request.headers.get("last-event-id", "")
+
     # BENCH_RESULT: lines are internal markers used for DB ingestion;
     # the worker writes a human-readable summary instead — filter them from the stream.
     return StreamingResponse(
-        task_log_stream(workload_db_id, request, filter_bench_result=True),
+        task_log_stream(
+            workload_db_id, request,
+            filter_bench_result=True,
+            last_event_id=last_event_id,
+        ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )

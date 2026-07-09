@@ -260,10 +260,28 @@ def execute_benchmark(self, workload_id):
                 cfg.get("input_tokens", 0),
                 cfg.get("output_tokens", 0),
             ))
+            # Pick a free host port at runtime so we never collide with anything
+            # already running on the node. $VLLM_PORT is shared across server_cmd
+            # and client_cmd since they run in the same SSH session.
+            port_cmd = (
+                "VLLM_PORT=$(python3 -c \""
+                "import socket; s=socket.socket(); s.bind(('',0)); "
+                "p=s.getsockname()[1]; s.close(); print(p)"
+                "\") && echo \"Using port $VLLM_PORT for vLLM server\""
+            )
+            # Print GPU state before starting so we can confirm the GPU is real
+            # and see it transition from idle to loaded during the health-check wait.
+            gpu_cmd = (
+                "echo '--- GPU state before benchmark ---' && "
+                "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu "
+                "--format=csv,noheader,nounits 2>/dev/null | "
+                "awk -F',' '{printf \"GPU: %s  VRAM used: %s MB  free: %s MB  util: %s%%\\n\",$1,$2,$3,$4}' "
+                "|| echo 'nvidia-smi not available'"
+            )
             bench_started_at = datetime.now(timezone.utc)
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
-                    "%s && %s" % (server_cmd, client_cmd), task.id,
+                    "%s && %s && %s && %s" % (port_cmd, gpu_cmd, server_cmd, client_cmd), task.id,
                 )
             bench_completed_at = datetime.now(timezone.utc)
 
@@ -400,12 +418,22 @@ def launch_jupyter(self, workload_id):
             _write_log(db, task.id, "=== [2/2] Launching Jupyter Lab ===")
             _write_log(db, task.id, "Node: %s" % node.machine_ip)
 
+            # Discover a free host port at runtime — avoids 8899 being already in
+            # use on the node. The port is exported as $JUPYTER_PORT and used by
+            # both the docker run (-p $JUPYTER_PORT:7008) and the health-check curl.
+            # We echo "JUPYTER_PORT=<n>" so the worker can parse it back from logs.
+            port_cmd = (
+                "JUPYTER_PORT=$(python3 -c \""
+                "import socket; s=socket.socket(); s.bind(('',0)); "
+                "p=s.getsockname()[1]; s.close(); print(p)"
+                "\") && echo \"JUPYTER_PORT=$JUPYTER_PORT\""
+            )
             server_cmd = ManifestBuilder.build_jupyter_command(run_id=workload_id)
             health_cmd = ManifestBuilder.build_jupyter_health_command(run_id=workload_id)
 
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
-                    "%s && %s" % (server_cmd, health_cmd), task.id,
+                    "%s && %s && %s" % (port_cmd, server_cmd, health_cmd), task.id,
                 )
 
             if exit_code != 0:
@@ -415,7 +443,19 @@ def launch_jupyter(self, workload_id):
                 db.commit()
                 raise RuntimeError("Jupyter launch failed with exit code %d" % exit_code)
 
-            jupyter_url = "http://%s:8899/lab" % node.machine_ip
+            # Parse the port from the log line "JUPYTER_PORT=<n>" written above.
+            jupyter_port = 7008  # fallback (container internal port)
+            from app.models.task_log import TaskLog as _TaskLog
+            port_logs = db.query(_TaskLog).filter(_TaskLog.task_id == task.id).all()
+            for _log in port_logs:
+                if _log.line.startswith("JUPYTER_PORT="):
+                    try:
+                        jupyter_port = int(_log.line.split("=", 1)[1].strip())
+                    except (ValueError, IndexError):
+                        pass
+                    break
+
+            jupyter_url = "http://%s:%d/lab" % (node.machine_ip, jupyter_port)
             _write_log(db, task.id, "✓ Jupyter Lab running at: %s" % jupyter_url)
 
             task.status = "success"

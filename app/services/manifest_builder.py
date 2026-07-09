@@ -25,7 +25,7 @@ _BENCHMARK_SCRIPT = textwrap.dedent("""\
     output_tokens = int(os.environ["BENCH_OUTPUT_TOKENS"])
     num_requests  = int(os.environ["BENCH_NUM_REQUESTS"])
 
-    url    = "http://localhost:8000/v1/completions"
+    url    = "http://localhost:%s/v1/completions" % os.environ["VLLM_PORT"]
     prompt = ("bench " * 2000)[: input_tokens * 5]
 
     results = []
@@ -147,12 +147,19 @@ class ManifestBuilder:
             env_flags   = ""
 
         login_cmd = _GCR_LOGIN_CMD
-        rm_cmd    = "docker rm -f %s 2>/dev/null || true" % container_name
-        # Override the image's default CMD (script.sh installs aiAgent from Nexus).
-        # The image already has vllm==0.14.1; --entrypoint bypasses the orchestration wrapper.
+        # Remove only the named container from a previous run — no need to touch
+        # other containers since we use a dynamically assigned free port below.
+        rm_cmd = "docker rm -f %s 2>/dev/null || true" % container_name
+        # Port is resolved at runtime via $VLLM_PORT (set in worker before this command
+        # is called). Using a free port means no conflict regardless of what else is
+        # running on the node. The container's internal port is always 8000; the host
+        # port is whatever $VLLM_PORT resolves to.
+        # No --rm: container stays in stopped state after the benchmark so you can
+        # inspect it with `docker ps -a` and `docker logs <name>`.
+        # The rm_cmd at the start of the next run cleans it up.
         run_cmd   = " ".join(p for p in [
-            "docker run --gpus all --rm -d --name %s" % container_name,
-            "-p 8000:8000 --ipc=host",
+            "docker run --gpus all -d --name %s" % container_name,
+            "-p $VLLM_PORT:8000 --ipc=host",
             "--entrypoint python3",
             volume_flag,
             env_flags,
@@ -177,17 +184,18 @@ class ManifestBuilder:
         container_name = "vllm-%s" % run_id if run_id else "vllm_server"
 
         # ── 1. Wait for the vLLM server to become healthy (up to 10 min) ──────
+        # Uses $VLLM_PORT which is set by the worker before this command runs.
         wait = (
-            "echo 'Waiting for vLLM server (up to 10 min)...' && "
+            "echo \"Waiting for vLLM server on port $VLLM_PORT (up to 10 min)...\" && "
             "READY=0 && "
             "for i in $(seq 1 120); do "
-            "  curl -sf http://localhost:8000/health >/dev/null 2>&1 && READY=1 && break; "
+            "  curl -sf http://localhost:$VLLM_PORT/health >/dev/null 2>&1 && READY=1 && break; "
             "  echo \"[$i/120] not ready, waiting 5s...\"; sleep 5; "
             "done && "
             "[ \"$READY\" -eq 1 ] || "
-            "{ echo 'ERROR: vLLM server did not start in 10 min'; "
+            "{ echo \"ERROR: vLLM server did not start in 10 min\"; "
             "  docker stop %(name)s 2>/dev/null; exit 1; } && "
-            "echo 'vLLM server ready.'"
+            "echo \"vLLM server ready on port $VLLM_PORT.\""
         ) % {"name": container_name}
 
         # ── 2. Export config as env vars and run the embedded benchmark ───────
@@ -197,6 +205,7 @@ class ManifestBuilder:
             "export BENCH_INPUT_TOKENS=%(input_tokens)d && "
             "export BENCH_OUTPUT_TOKENS=%(output_tokens)d && "
             "export BENCH_NUM_REQUESTS=%(num_requests)d && "
+            "export VLLM_PORT=$VLLM_PORT && "
             "python3 -c \"import base64; exec(base64.b64decode('%(b64)s').decode())\""
         ) % {
             "model":        model_name,
@@ -234,9 +243,11 @@ class ManifestBuilder:
 
         login_cmd = _GCR_LOGIN_CMD
         rm_cmd    = "docker rm -f %s 2>/dev/null || true" % container_name
+        # Port is resolved at runtime via $JUPYTER_PORT (set by the worker before
+        # this command runs — same pattern as $VLLM_PORT for benchmarks).
         run_cmd   = " ".join([
             "docker run --gpus all -d --name %s" % container_name,
-            "-p 8899:7008 --ipc=host",
+            "-p $JUPYTER_PORT:7008 --ipc=host",
             "--entrypoint bash",
             image,
             '-c "$(echo %s | base64 -d)"' % inner_b64,
@@ -250,7 +261,7 @@ class ManifestBuilder:
         return (
             "READY=0 && "
             "for i in $(seq 1 60); do "
-            "  curl -sf http://localhost:8899/api >/dev/null 2>&1 && READY=1 && break; "
+            "  curl -sf http://localhost:$JUPYTER_PORT/api >/dev/null 2>&1 && READY=1 && break; "
             "  echo \"[$i/60] waiting for Jupyter... 5s\"; sleep 5; "
             "done && "
             "[ \"$READY\" -eq 1 ] || "

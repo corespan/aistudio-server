@@ -1,14 +1,11 @@
 """
 app/utils/sse.py — Shared SSE log-streaming helper.
-
-Both /benchmarks/{task_id}/logs/stream and /jupyter/{task_id}/logs/stream
-use the same polling loop to stream TaskLog rows to the browser.  This module
-extracts that loop so neither router duplicates it.
 """
 
 import asyncio
 import uuid
-from typing import AsyncGenerator
+from datetime import datetime
+from typing import AsyncGenerator, Optional
 
 from fastapi import Request
 from sqlalchemy import select
@@ -24,28 +21,38 @@ async def task_log_stream(
     request: Request,
     *,
     filter_bench_result: bool = False,
+    last_event_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """
     SSE generator that streams TaskLog lines for all tasks under a workload.
 
-    workload_db_id      — internal UUID (Workload.id) resolved by the caller.
-    filter_bench_result — if True, skips lines starting with "BENCH_RESULT:"
-                          (used by the benchmark router; not needed for Jupyter).
+    Each event carries an `id:` field (ISO timestamp). On reconnect the browser
+    sends Last-Event-ID; the server resumes strictly after that timestamp so no
+    log line is ever duplicated across reconnects.
 
-    Opens a fresh short-lived DB session per poll iteration to avoid holding a
-    connection-pool slot for the full stream duration.
-
-    Yields SSE-formatted strings.  Closes the stream when the workload reaches
-    a terminal state (READY or FAILED) and there are no more new log rows.
+    Within a single connection, same-timestamp rows are deduplicated by tracking
+    already-sent IDs.
     """
-    last_seen_date = None
+    # On reconnect: resume strictly AFTER the last-seen timestamp (> not >=).
+    # Within the connection: once we have a cursor, use >= and deduplicate by ID.
+    last_seen_date: Optional[datetime] = None
+    is_reconnect = False
+
+    if last_event_id:
+        try:
+            last_seen_date = datetime.fromisoformat(last_event_id)
+            is_reconnect = True
+        except (ValueError, TypeError):
+            pass
+
+    # Tracks row IDs sent at exactly `last_seen_date` to skip duplicates.
+    last_sent_ids: set = set()
 
     while True:
         if await request.is_disconnected():
             break
 
         async with AsyncSessionLocal() as db:
-            # Collect logs across ALL tasks for this workload in time order.
             query = (
                 select(TaskLog)
                 .join(Task, TaskLog.task_id == Task.id)
@@ -53,26 +60,41 @@ async def task_log_stream(
                 .order_by(TaskLog.logged_at.asc())
             )
             if last_seen_date:
-                query = query.where(TaskLog.logged_at > last_seen_date)
+                if is_reconnect:
+                    # Strict > on first poll after reconnect — don't re-send the
+                    # last event the browser already received.
+                    query = query.where(TaskLog.logged_at > last_seen_date)
+                    is_reconnect = False  # switch to >= mode for subsequent polls
+                else:
+                    # >= within a running connection to catch same-timestamp rows.
+                    query = query.where(TaskLog.logged_at >= last_seen_date)
 
             result = await db.execute(query)
             logs = result.scalars().all()
+            new_logs = [log for log in logs if str(log.id) not in last_sent_ids]
 
-            for log in logs:
-                # Advance the cursor even for filtered lines so we never re-fetch them.
+            for log in new_logs:
                 if filter_bench_result and log.line.startswith("BENCH_RESULT:"):
                     last_seen_date = log.logged_at
+                    last_sent_ids.add(str(log.id))
                     continue
-                yield "data: %s\n\n" % log.line
-                last_seen_date = log.logged_at
+                ts = log.logged_at.isoformat() if log.logged_at else ""
+                yield "id: %s\ndata: %s\n\n" % (ts, log.line)
+                if log.logged_at != last_seen_date:
+                    last_sent_ids.clear()
+                    last_seen_date = log.logged_at
+                last_sent_ids.add(str(log.id))
 
             state_result = await db.execute(
                 select(Workload.state).where(Workload.id == workload_db_id)
             )
             workload_state = state_result.scalar()
 
-        if workload_state in ("READY", "FAILED") and not logs:
-            yield "event: close\ndata: stream closed\n\n"
+        if workload_state in ("READY", "FAILED") and not new_logs:
+            # Send the terminal state as the close event data so the frontend
+            # can show "Completed" vs "Failed" without polling the status API.
+            close_reason = "FAILED" if workload_state == "FAILED" else "READY"
+            yield "event: close\ndata: %s\n\n" % close_reason
             break
 
         await asyncio.sleep(1.0)

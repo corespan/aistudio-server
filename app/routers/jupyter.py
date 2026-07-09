@@ -98,8 +98,10 @@ async def stream_jupyter_logs(task_id: str, request: Request):
     if not workload_db_id:
         raise HTTPException(status_code=404, detail="Workload not found.")
 
+    last_event_id = request.headers.get("last-event-id", "")
+
     return StreamingResponse(
-        task_log_stream(workload_db_id, request),
+        task_log_stream(workload_db_id, request, last_event_id=last_event_id),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )
