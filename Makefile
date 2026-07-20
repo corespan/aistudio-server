@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-p40 seed-benchmarks wait-api test spec shell benchmark
+.PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark
 
 up:
 	docker compose up --build -d
@@ -50,15 +50,11 @@ seed-mi210:
 seed-t4:
 	docker compose exec api python scripts/seed_t4_results.py
 
-seed-p40:
-	docker compose exec api python scripts/seed_p40_results.py
-
 seed-benchmarks:
 	$(MAKE) seed-real
 	$(MAKE) seed-h100
 	$(MAKE) seed-mi210
 	$(MAKE) seed-t4
-	$(MAKE) seed-p40
 
 test:
 	docker compose exec api pytest tests/ -v

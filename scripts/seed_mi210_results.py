@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Seed benchmark results from AMD MI210 runs on node 10.6.12.11.
+Seed LLM benchmark results from AMD MI210 runs on node 10.6.12.11.
 
-25 rows total:
+21 rows total:
   LLM — Llama-3.1-70B TP=4, 4 GPUs, c=4/8/16      [screenshots, full metrics]
   LLM — Llama-3.1-70B TP=8, 8 GPUs, c=4/8/16      [screenshots, full metrics]
   LLM — DeepSeek-R1-Distill-Llama-70B TP=8, c=32/64/128  [Open Orca, screenshots]
@@ -10,8 +10,6 @@ Seed benchmark results from AMD MI210 runs on node 10.6.12.11.
   LLM — Llama-3.1-70B TP=8, 8 GPUs, c=4/8/16      [Benchmarks page, partial]
   LLM — Llama-3.1-70B TP=4, 4 GPUs, c=4/8/16      [Benchmarks page, partial]
   LLM — Llama-3.3-70B-Instruct TP=8, 8 GPUs, c=4/8/16  [Benchmarks page, partial]
-  ResNet-18 inference: 8 / 4 / 2 GPUs              [imagenet-large, full metrics]
-  ResNet-50 inference: 8 GPUs                       [imagenet-large, full metrics]
 
 Usage:
     docker compose exec api python scripts/seed_mi210_results.py
@@ -210,35 +208,6 @@ def seed() -> None:
             },
         })
 
-    # ── ResNet inference — imagenet-large (1,281,167 images) ──────────────────
-    resnet_runs = [
-        # run_id,                          gpu_count, tpt,    tflops, accuracy, p95,  p99,  correct,  incorrect, duration, start
-        ("mi210-resnet18-inference-8gpu", 8, 9930.0, 18.74, 79.32, 0.28, 0.28, 1016262, 264905, 129,  datetime(2025, 8, 12,  2, 49,  2, tzinfo=timezone.utc), "resnet18"),
-        ("mi210-resnet18-inference-4gpu", 4, 5352.0, 10.69, 79.32, 0.26, 0.26, 1016262, 264905, 239,  datetime(2025, 8, 11,  6,  7, 14, tzinfo=timezone.utc), "resnet18"),
-        ("mi210-resnet18-inference-2gpu", 2, 2893.0,  5.53, 79.32, 0.26, 0.26, 1016263, 264904, 442,  datetime(2025, 8, 12,  6,  5, 32, tzinfo=timezone.utc), "resnet18"),
-        ("mi210-resnet50-inference-8gpu", 8, 9409.0, 40.35, 87.46, 0.72, 0.72, 1120498, 160669, 136,  datetime(2025, 8, 21, 16, 10, 56, tzinfo=timezone.utc), "resnet50"),
-    ]
-    for run_id, gpus, tpt, tflops, acc, p95, p99, correct, incorrect, dur, started, model in resnet_runs:
-        post(run_id, 0, {
-            "timestamp": _ts(started, dur),
-            "workload": {"name": model, "type": "cv"},
-            "status": "success", "gpu_type": GPU_TYPE, "node_ip": NODE_IP,
-            "metrics": {
-                "total_token_throughput": tpt, "mean_ttft_ms": None,
-                "mean_tpot_ms": None, "mean_e2el_ms": None,
-                "tflops": tflops, "accuracy": acc,
-                "p95_latency_s": p95, "p99_latency_s": p99,
-                "correct": correct, "incorrect": incorrect,
-                "processed_requests": 1281167, "dataset_size": 1281167,
-                "benchmark_tool": "Drut Workbench",
-            },
-            "config": {
-                "concurrency": 0, "precision": "fp32", "input_tokens": 0, "output_tokens": 0,
-                "gpu_count": gpus, "gpu_model": GPU_MODEL,
-                "pipeline_version": "pytorch-resnet-latest", "started_at": started.isoformat(),
-                "notes": f"{model} inference, {gpus}× MI210, imagenet-large (1.28M images)",
-            },
-        })
 
 
 def verify() -> None:
@@ -251,10 +220,6 @@ def verify() -> None:
         ("mi210-llama31-70b-tp8-bench", 3),
         ("mi210-llama31-70b-tp4-bench", 3),
         ("mi210-llama33-70b-tp8", 3),
-        ("mi210-resnet18-inference-8gpu", 1),
-        ("mi210-resnet18-inference-4gpu", 1),
-        ("mi210-resnet18-inference-2gpu", 1),
-        ("mi210-resnet50-inference-8gpu", 1),
     ]
     for run_id, expected in runs:
         r = httpx.get(f"{API_URL}/api/v1/benchmarks/{run_id}", timeout=10)

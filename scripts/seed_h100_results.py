@@ -2,18 +2,9 @@
 """
 Seed real benchmark results from 2× NVIDIA H100 NVL runs on node 10.6.91.204.
 
-Five runs:
+Two runs:
   1. LLM  — Llama3.1-70B, concurrency=128  → 2545 tok/s
   2. LLM  — Llama3.1-70B, concurrency=256  → 2255 tok/s
-  3. ResNet-50 Inference                    → 2591 samples/s
-  4. ResNet-18 Inference                    → 1899 samples/s
-  5. ResNet-18 Training                     →  409 samples/s (ImageNet 160GB)
-
-Note on ResNet runs: total_token_throughput stores samples/s (not LLM tokens).
-input_tokens / output_tokens / concurrency are 0 — not applicable for image workloads.
-model_name distinguishes the model (resnet50, resnet18, llama3.1-70b-instruct).
-inference vs training is encoded in run_id. All ResNet-specific metrics (tflops,
-accuracy, power, p95, correct/incorrect counts) live in the JSONB metrics blob.
 
 Usage:
     docker compose exec api python scripts/seed_h100_results.py
@@ -46,7 +37,7 @@ def post(run_id: str, payload: dict) -> None:
 
 
 def seed() -> None:
-    print("\nSeeding 2× H100 NVL benchmark results...\n")
+    print("\nSeeding 2× H100 NVL LLM benchmark results...\n")
 
     # ── 1. LLM — Llama3.1-70B, concurrency=128 ───────────────────────────────
     # Context length: 8092 tokens. ~256 output tokens/req (327680 total / ~1276 reqs).
@@ -129,136 +120,6 @@ def seed() -> None:
         },
     })
 
-    # ── 3. ResNet-50 Inference ────────────────────────────────────────────────
-    # total_token_throughput stores samples/s (2591). input/output/concurrency = 0.
-    # Dataset: images-large (50000 images), Duration: 19s
-    started_r50 = datetime(2026, 1, 9, 8, 55, 23, tzinfo=timezone.utc)
-    completed_r50 = started_r50 + timedelta(seconds=19)
-
-    post("h100-resnet50-inference", {
-        "run_id": "h100-resnet50-inference",
-        "timestamp": completed_r50.isoformat(),
-        "workload": {"name": "resnet50", "type": "cv"},
-        "status": "success",
-        "gpu_type": GPU_TYPE,
-        "node_ip": NODE_IP,
-        "metrics": {
-            "total_token_throughput": 2591.0,   # samples/s
-            "mean_ttft_ms": None,
-            "mean_tpot_ms": None,
-            "mean_e2el_ms": None,
-            "tflops": 10.85,
-            "accuracy": 76.15,
-            "p95_latency_s": 0.19,
-            "p99_latency_s": 0.19,
-            "correct": 38076,
-            "incorrect": 11924,
-            "processed_requests": 50000,
-            "dataset_size": 50000,
-            "avg_gpu_power_watts": 192.07,
-            "avg_gpu_utilization_percent": 7.69,
-            "benchmark_tool": "Drut Workbench",
-        },
-        "config": {
-            "concurrency": 0,
-            "precision": "fp32",
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "gpu_count": GPU_COUNT,
-            "gpu_model": GPU_MODEL,
-            "pipeline_version": "pytorch-resnet-latest",
-            "started_at": started_r50.isoformat(),
-            "notes": "ResNet-50 image inference, dataset=images-large (50k)",
-        },
-    })
-
-    # ── 4. ResNet-18 Inference ────────────────────────────────────────────────
-    # Dataset: images-large (50000 images), Duration: 26s
-    started_r18_inf = datetime(2026, 1, 9, 8, 32, 51, tzinfo=timezone.utc)
-    completed_r18_inf = started_r18_inf + timedelta(seconds=26)
-
-    post("h100-resnet18-inference", {
-        "run_id": "h100-resnet18-inference",
-        "timestamp": completed_r18_inf.isoformat(),
-        "workload": {"name": "resnet18", "type": "cv"},
-        "status": "success",
-        "gpu_type": GPU_TYPE,
-        "node_ip": NODE_IP,
-        "metrics": {
-            "total_token_throughput": 1899.0,   # samples/s
-            "mean_ttft_ms": None,
-            "mean_tpot_ms": None,
-            "mean_e2el_ms": None,
-            "tflops": 3.49,
-            "accuracy": 69.76,
-            "p95_latency_s": 0.41,
-            "p99_latency_s": 0.41,
-            "correct": 34881,
-            "incorrect": 15119,
-            "processed_requests": 50000,
-            "dataset_size": 50000,
-            "avg_gpu_power_watts": 99.23,
-            "avg_gpu_utilization_percent": 6.87,
-            "benchmark_tool": "Drut Workbench",
-        },
-        "config": {
-            "concurrency": 0,
-            "precision": "fp32",
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "gpu_count": GPU_COUNT,
-            "gpu_model": GPU_MODEL,
-            "pipeline_version": "pytorch-resnet-latest",
-            "started_at": started_r18_inf.isoformat(),
-            "notes": "ResNet-18 image inference, dataset=images-large (50k)",
-        },
-    })
-
-    # ── 5. ResNet-18 Training ─────────────────────────────────────────────────
-    # Dataset: imagenet-160gb (1281167 samples), Duration: 52m10s = 3130.646s
-    # samples/s = 1281167 / 3130.646 ≈ 409
-    started_r18_train = datetime(2026, 1, 9, 10, 40, 54, tzinfo=timezone.utc)
-    completed_r18_train = started_r18_train + timedelta(seconds=3130.646)
-
-    post("h100-resnet18-training", {
-        "run_id": "h100-resnet18-training",
-        "timestamp": completed_r18_train.isoformat(),
-        "workload": {"name": "resnet18", "type": "cv"},
-        "status": "success",
-        "gpu_type": GPU_TYPE,
-        "node_ip": NODE_IP,
-        "metrics": {
-            "total_token_throughput": 409.0,    # samples/s (1281167 / 3130.646)
-            "mean_ttft_ms": None,
-            "mean_tpot_ms": None,
-            "mean_e2el_ms": None,
-            "tflops": 2.24,
-            "train_acc_at1_best": 12.0559,
-            "train_acc_at5_best": 27.5965,
-            "train_loss_latest": 4.8708,
-            "train_acc_at1_latest": 12.0559,
-            "train_acc_at5_latest": 27.5965,
-            "epoch_time_s": 3130.646,
-            "num_epochs": 1,
-            "specificity": 0.999,
-            "avg_gpu_power_watts": 102.01,
-            "avg_gpu_utilization_percent": 49.09,
-            "power_efficiency_score": 0.9845,
-            "dataset_size": 1281167,
-            "benchmark_tool": "Drut Workbench",
-        },
-        "config": {
-            "concurrency": 0,
-            "precision": "fp32",
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "gpu_count": GPU_COUNT,
-            "gpu_model": GPU_MODEL,
-            "pipeline_version": "pytorch-resnet-latest",
-            "started_at": started_r18_train.isoformat(),
-            "notes": "ResNet-18 training, ImageNet-160GB (1.28M samples), 1 epoch",
-        },
-    })
 
 
 def verify() -> None:
@@ -266,9 +127,6 @@ def verify() -> None:
     runs = [
         "h100-llama3-70b-c128",
         "h100-llama3-70b-c256",
-        "h100-resnet50-inference",
-        "h100-resnet18-inference",
-        "h100-resnet18-training",
     ]
     for run_id in runs:
         r = httpx.get(f"{API_URL}/api/v1/benchmarks/{run_id}", timeout=10)
