@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed seed-demo demo test spec shell benchmark
+.PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-p40 seed-benchmarks wait-api test spec shell benchmark
 
 up:
 	docker compose up --build -d
@@ -15,11 +15,22 @@ migrate:
 seed:
 	docker compose exec api python -m app.services.catalog_seeder
 
+wait-api:
+	@echo "Waiting for API to accept requests..."
+	@for i in $$(seq 1 30); do \
+		curl -sf http://localhost:8002/health > /dev/null 2>&1 && echo "  API is ready." && exit 0; \
+		echo "  [$$i/30] not ready yet, retrying in 3s..."; \
+		sleep 3; \
+	done; \
+	echo "ERROR: API did not become ready after 90s." && exit 1
+
 setup: up
 	@echo "Waiting for services to start..."
 	@sleep 5
 	$(MAKE) migrate
 	$(MAKE) seed
+	$(MAKE) wait-api
+	$(MAKE) seed-benchmarks
 	@echo ""
 	@echo "AIStudio Server is ready!"
 	@echo "  API:         http://localhost:8002"
@@ -27,12 +38,27 @@ setup: up
 	@echo "  RabbitMQ:    http://localhost:15672"
 	@echo "  Demo UI:     http://localhost:3000"
 
-seed-demo:
-	docker compose exec api python scripts/seed_demo_data.py
+seed-real:
+	docker compose exec api python scripts/seed_rtx5090_results.py
 
-demo: setup seed-demo
-	@echo ""
-	@echo "Demo data loaded! Open http://localhost:3000 for the dashboard."
+seed-h100:
+	docker compose exec api python scripts/seed_h100_results.py
+
+seed-mi210:
+	docker compose exec api python scripts/seed_mi210_results.py
+
+seed-t4:
+	docker compose exec api python scripts/seed_t4_results.py
+
+seed-p40:
+	docker compose exec api python scripts/seed_p40_results.py
+
+seed-benchmarks:
+	$(MAKE) seed-real
+	$(MAKE) seed-h100
+	$(MAKE) seed-mi210
+	$(MAKE) seed-t4
+	$(MAKE) seed-p40
 
 test:
 	docker compose exec api pytest tests/ -v
