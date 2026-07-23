@@ -19,10 +19,11 @@ except ImportError:
     print("httpx not found — run inside the container via 'docker compose exec api ...'")
     sys.exit(1)
 
-API_URL   = "http://localhost:8001"
-NODE_IP   = "10.6.12.23"
-GPU_TYPE  = "t4"
-GPU_MODEL = "NVIDIA T4"
+API_URL     = "http://localhost:8001"
+NODE_IP     = "10.6.12.23"
+GPU_TYPE    = "t4"
+GPU_MODEL   = "NVIDIA T4"
+SERVER_NAME = "Dell Inc."
 
 
 def post(run_id: str, sub_run_index: int, payload: dict) -> None:
@@ -38,8 +39,10 @@ def post(run_id: str, sub_run_index: int, payload: dict) -> None:
 def seed() -> None:
     print("\nSeeding T4 TinyLlama benchmark results...\n")
 
-    base_tp1 = datetime(2025, 7, 18, 10, 0, 0, tzinfo=timezone.utc)
-    base_tp2 = datetime(2025, 7, 18, 14, 0, 0, tzinfo=timezone.utc)
+    # 1-GPU and 2-GPU runs kept on separate days so the leaderboard shows
+    # distinct entries rather than two runs on the same date.
+    base_tp1 = datetime(2025, 10, 3, 10, 0, 0, tzinfo=timezone.utc)
+    base_tp2 = datetime(2025, 10, 12, 10, 0, 0, tzinfo=timezone.utc)
 
     # sub_idx, c,  duration, tpt,     ttft,    tpot,  e2el,      p99,     otp,    rtp,  tin,    tout
     TP1 = [
@@ -73,6 +76,11 @@ def seed() -> None:
                     "total_input_tokens": tin,
                     "total_output_tokens": tout,
                     "benchmark_tool": "vLLM benchmark",
+                    "server_name": SERVER_NAME,
+                    "parallelism": {
+                        "tensor_parallel_size": tp,
+                        "pipeline_parallel_size": 1,
+                    },
                 },
                 "config": {
                     "concurrency": c,

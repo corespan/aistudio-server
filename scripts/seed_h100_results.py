@@ -66,6 +66,8 @@ def seed() -> None:
             "gpu_power_efficiency_score": 3.7251,
             "avg_gpu_utilization_percent": 97.3,
             "benchmark_tool": "vLLM benchmark",
+            "server_name": "PRU",
+            "parallelism": {"tensor_parallel_size": 2, "pipeline_parallel_size": 1},
         },
         "config": {
             "concurrency": 128,
@@ -106,6 +108,8 @@ def seed() -> None:
             "gpu_power_efficiency_score": 3.4595,
             "avg_gpu_utilization_percent": 96.78,
             "benchmark_tool": "vLLM benchmark",
+            "server_name": "PRU",
+            "parallelism": {"tensor_parallel_size": 2, "pipeline_parallel_size": 1},
         },
         "config": {
             "concurrency": 256,

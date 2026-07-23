@@ -170,6 +170,7 @@ def validate_node(self, workload_id):
                     specs.get("driver_version", "unknown"),
                     specs.get("cuda_version", "unknown"),
                 ))
+                _write_log(db, val_task.id, "Server:   %s" % specs.get("server_name", node.machine_ip))
                 node.specs = specs
                 node.gpus = specs.get("gpus")
                 node.state = "VALIDATED"
@@ -353,6 +354,7 @@ def execute_benchmark(self, workload_id):
                     gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
                     gpu_type = _extract_gpu_type(node.specs)
                     precision = cfg.get("precision", "fp32").lower()
+                    server_name = (node.specs or {}).get("server_name", node.machine_ip)
                     db.add(BenchmarkResult(
                         run_id=workload_id,
                         sub_run_index=0,
@@ -362,6 +364,7 @@ def execute_benchmark(self, workload_id):
                         gpu_type=gpu_type,
                         gpu_count=gpu_count,
                         gpu_model=gpu_model,
+                        server_name=server_name,
                         precision=precision,
                         input_tokens=cfg.get("input_tokens", 0),
                         output_tokens=cfg.get("output_tokens", 0),

@@ -50,7 +50,11 @@ seed-mi210:
 seed-t4:
 	docker compose exec api python scripts/seed_t4_results.py
 
+seed-gpu-specs:
+	docker compose exec api python scripts/seed_gpu_specs.py
+
 seed-benchmarks:
+	$(MAKE) seed-gpu-specs
 	$(MAKE) seed-real
 	$(MAKE) seed-h100
 	$(MAKE) seed-mi210

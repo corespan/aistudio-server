@@ -104,6 +104,12 @@ class BenchmarkResult(Base):
         nullable=True,
         comment="Full GPU model string from nvidia-smi. e.g. 'NVIDIA A100-SXM4-80GB'.",
     )
+    server_name: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+        comment="Hardware vendor from /sys/class/dmi/id/sys_vendor, captured via SSH during validation. e.g. 'PRU', 'SuperMicro', 'Dell Inc.'",
+    )
 
     # ── Execution Config ──────────────────────────────────────────────────────
     precision: Mapped[str] = mapped_column(
@@ -126,6 +132,12 @@ class BenchmarkResult(Base):
         nullable=False,
         index=True,
         comment="Number of concurrent requests sent to the inference server.",
+    )
+    parallelism: Mapped[Optional[str]] = mapped_column(
+        String(16),
+        nullable=True,
+        index=True,
+        comment="Parallelism strategy. e.g. 'tp4', 'pp4', 'tp8'. Null for single-GPU runs.",
     )
 
     # ── Status ────────────────────────────────────────────────────────────────
@@ -170,6 +182,7 @@ class BenchmarkResult(Base):
         default=dict,
         comment="Full raw metrics payload from the runner. No schema enforced.",
     )
+
 
     # ── Timestamps ────────────────────────────────────────────────────────────
     started_at: Mapped[datetime] = mapped_column(

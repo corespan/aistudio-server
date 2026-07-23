@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.benchmark_result import BenchmarkResult
+from app.models.gpu_spec import GpuSpec
+from app.schemas.benchmark import BenchmarkDetailResponse, BenchmarkDetailSubRun, BenchmarkResultResponse
 
 
 class BulkDeleteRequest(BaseModel):
@@ -46,6 +48,7 @@ def _build_filter_conditions(
     output_tokens: Optional[int],
     status: Optional[str],
     date: Optional[str],
+    server_name: Optional[str] = None,
 ) -> list:
     """
     Build the standard BenchmarkResult WHERE conditions from filter params.
@@ -72,6 +75,8 @@ def _build_filter_conditions(
         conditions.append(BenchmarkResult.output_tokens == output_tokens)
     if status:
         conditions.append(BenchmarkResult.status == status.lower())
+    if server_name:
+        conditions.append(BenchmarkResult.server_name == server_name)
     if date:
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -113,7 +118,7 @@ async def _distinct_values(
 
 # ── Leaderboard ────────────────────────────────────────────────────────────────
 
-@router.get("/api/v1/benchmarks")
+@router.get("/api/v1/benchmarks", response_model=list[BenchmarkResultResponse])
 async def list_benchmarks(
     model: Optional[str] = Query(None),
     gpu_type: Optional[str] = Query(None),
@@ -124,21 +129,39 @@ async def list_benchmarks(
     output_tokens: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    server_name: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
 ):
-    """Returns a list of benchmark results for the leaderboard table."""
+    """
+    Returns benchmark results for the leaderboard table.
+
+    Ordering:
+      1. tier_rank ASC   — best GPUs first (H100 before RTX 5090 before T4).
+                           Results for unregistered GPU types go to the bottom (NULLS LAST).
+      2. PRU server first — within the same GPU tier, Corespan's own hardware comes first.
+      3. total_token_throughput DESC — within the same tier+server, highest throughput first.
+    """
     conditions = _build_filter_conditions(
         model=model, gpu_type=gpu_type, node_ip=node_ip, concurrency=concurrency,
         precision=precision, input_tokens=input_tokens, output_tokens=output_tokens,
-        status=status, date=date,
+        status=status, date=date, server_name=server_name,
     )
-    query = select(BenchmarkResult)
+    query = (
+        select(BenchmarkResult)
+        .outerjoin(GpuSpec, BenchmarkResult.gpu_type == GpuSpec.gpu_type)
+    )
     for c in conditions:
         query = query.where(c)
-    query = query.order_by(desc(BenchmarkResult.completed_at)).limit(limit)
+    query = query.order_by(
+        # tier_rank first — H100 before RTX 5090 before A100, etc.
+        GpuSpec.tier_rank.asc().nulls_last(),
+        # within the same tier, PRU runs come first
+        case((BenchmarkResult.server_name == "PRU", 0), else_=1).asc(),
+        desc(BenchmarkResult.total_token_throughput),
+    ).limit(limit)
     result = await db.execute(query)
-    return result.scalars().all()
+    return [BenchmarkResultResponse.from_orm_row(row) for row in result.scalars().all()]
 
 
 @router.get("/api/v1/benchmarks/compare")
@@ -169,9 +192,18 @@ async def compare_benchmarks(
     return {"run_a": data_a, "run_b": data_b}
 
 
-@router.get("/api/v1/benchmarks/{run_id}")
+@router.get("/api/v1/benchmarks/{run_id}", response_model=BenchmarkDetailResponse)
 async def get_benchmark(run_id: str, db: AsyncSession = Depends(get_db)):
-    """Returns the full detail for a single benchmark run."""
+    """
+    Full detail for a single benchmark run.
+
+    Returns all sub-runs grouped under run_id.
+    Each sub-run includes:
+    - All leaderboard fields
+    - parallelism (hot column, e.g. 'tp4')
+    - metrics (full raw JSONB blob)
+    - run_recipe (reproducibility recipe — docker image, commands, dataset, driver versions)
+    """
     result = await db.execute(
         select(BenchmarkResult)
         .where(BenchmarkResult.run_id == run_id)
@@ -180,7 +212,10 @@ async def get_benchmark(run_id: str, db: AsyncSession = Depends(get_db)):
     runs = result.scalars().all()
     if not runs:
         raise HTTPException(status_code=404, detail="Run '%s' not found." % run_id)
-    return {"run_id": run_id, "sub_runs": runs}
+    return BenchmarkDetailResponse(
+        run_id=run_id,
+        sub_runs=[BenchmarkDetailSubRun.from_orm_row(r) for r in runs],
+    )
 
 
 # ── DELETE endpoints — MUST be registered before DELETE /{run_id} ─────────────
@@ -216,11 +251,12 @@ async def delete_benchmarks_by_filter(
     output_tokens: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    server_name: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete all runs matching the given filters. At least one filter required."""
     if not any([model, gpu_type, node_ip, concurrency, precision,
-                input_tokens, output_tokens, status, date]):
+                input_tokens, output_tokens, status, date, server_name]):
         raise HTTPException(
             status_code=400,
             detail="At least one filter is required. Use DELETE /api/v1/benchmarks/all to wipe everything.",
@@ -231,7 +267,7 @@ async def delete_benchmarks_by_filter(
     conditions = _build_filter_conditions(
         model=model, gpu_type=gpu_type, node_ip=node_ip, concurrency=concurrency,
         precision=precision, input_tokens=input_tokens, output_tokens=output_tokens,
-        status=status, date=date,
+        status=status, date=date, server_name=server_name,
     )
     q = delete(BenchmarkResult)
     count_q = select(func.count()).select_from(BenchmarkResult)
@@ -313,6 +349,12 @@ async def list_models(date: Optional[str] = None, db: AsyncSession = Depends(get
 @router.get("/api/v1/gpu-types")
 async def list_gpu_types(date: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     return await _distinct_values(BenchmarkResult.gpu_type, db, date, sort=False)
+
+
+@router.get("/api/v1/servers")
+async def list_servers(date: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """Distinct server names for the leaderboard filter dropdown."""
+    return await _distinct_values(BenchmarkResult.server_name, db, date)
 
 
 @router.get("/api/v1/nodes")

@@ -47,7 +47,7 @@ def seed() -> None:
     # Source: table-1.tsv + ApacheBench output
     # ApacheBench: 200 requests, concurrency=20, Time taken=238.709s
     # Total throughput ~860 tok/s, mean E2EL 23,870ms
-    started_tp4 = datetime(2026, 7, 9, 10, 0, 0, tzinfo=timezone.utc)
+    started_tp4 = datetime(2026, 5, 13, 10, 0, 0, tzinfo=timezone.utc)
     completed_tp4 = started_tp4 + timedelta(seconds=238.709)
 
     post(
@@ -78,6 +78,7 @@ def seed() -> None:
                     "pipeline_parallel_size": 1,
                 },
                 "chunked_prefill": False,
+                "server_name": "PRU",
             },
             "config": {
                 "concurrency": 20,
@@ -97,7 +98,7 @@ def seed() -> None:
     # Source: table.tsv + 4x5090_FP8_PP_Analysis.pdf
     # 200 requests, concurrency=20, duration ≈ 38.3s (200 / 5.22 req/s)
     # --enable-chunked-prefill --max-num-batched-tokens 65536
-    started_pp4 = datetime(2026, 7, 9, 12, 0, 0, tzinfo=timezone.utc)
+    started_pp4 = datetime(2026, 5, 13, 12, 0, 0, tzinfo=timezone.utc)
     completed_pp4 = started_pp4 + timedelta(seconds=38.3)
 
     post(
@@ -129,6 +130,7 @@ def seed() -> None:
                 },
                 "chunked_prefill": True,
                 "max_num_batched_tokens": 65536,
+                "server_name": "PRU",
             },
             "config": {
                 "concurrency": 20,

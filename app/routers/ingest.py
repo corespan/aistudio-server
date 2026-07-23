@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.dialects.postgresql import insert
@@ -29,6 +30,26 @@ async def ingest_metrics(
     mean_ttft_ms = metrics.get("mean_ttft_ms")
     mean_tpot_ms = metrics.get("mean_tpot_ms")
     mean_e2el_ms = metrics.get("mean_e2el_ms")
+    # server_name is stored both as a hot column (for filtering) and kept in the
+    # metrics blob (for backward compatibility with older rows).
+    server_name = metrics.get("server_name") or payload.config.get("server_name")
+
+    # Extract parallelism strategy as a compact string from the nested dict
+    # metrics.parallelism = {"tensor_parallel_size": 4, "pipeline_parallel_size": 1}
+    # → "tp4". Only stored as a hot column; the raw dict stays in the metrics blob.
+    parallelism: Optional[str] = None
+    p_obj = metrics.get("parallelism")
+    if isinstance(p_obj, dict):
+        tp = int(p_obj.get("tensor_parallel_size", 1) or 1)
+        pp = int(p_obj.get("pipeline_parallel_size", 1) or 1)
+        if tp > 1 and pp > 1:
+            parallelism = f"tp{tp}pp{pp}"
+        elif pp > 1:
+            parallelism = f"pp{pp}"
+        elif tp > 1:
+            parallelism = f"tp{tp}"
+        else:
+            parallelism = "tp1"
 
     # Resolve started_at: prefer config value, fall back to timestamp
     started_at = payload.config.get("started_at")
@@ -60,6 +81,8 @@ async def ingest_metrics(
         "output_tokens": payload.config.get("output_tokens", 0),
         "concurrency": payload.config.get("concurrency", 1),
         "status": payload.status.lower(),
+        "server_name": server_name,
+        "parallelism": parallelism,
         "total_token_throughput": total_token_throughput,
         "mean_ttft_ms": mean_ttft_ms,
         "mean_tpot_ms": mean_tpot_ms,

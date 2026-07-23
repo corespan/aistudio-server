@@ -44,8 +44,11 @@ def _ts(base: datetime, duration_s: float) -> str:
     return (base + timedelta(seconds=duration_s)).isoformat()
 
 
+SERVER_NAME = "SuperMicro"
+
+
 def _llm(model, concurrency, duration, tpt, ttft, tpot, e2el, p99, otp, rtp,
-         tin, tout, gpu_count, base, notes, in_tok=1023, out_tok=1024):
+         tin, tout, gpu_count, base, notes, in_tok=1023, out_tok=1024, tp=None):
     return {
         "timestamp": _ts(base, duration),
         "workload": {"name": model, "type": "llm"},
@@ -63,6 +66,8 @@ def _llm(model, concurrency, duration, tpt, ttft, tpot, e2el, p99, otp, rtp,
             "total_input_tokens": tin,
             "total_output_tokens": tout,
             "benchmark_tool": "vLLM benchmark",
+            "server_name": SERVER_NAME,
+            **({"parallelism": {"tensor_parallel_size": tp, "pipeline_parallel_size": 1}} if tp else {}),
         },
         "config": {
             "concurrency": concurrency,
@@ -81,8 +86,8 @@ def _llm(model, concurrency, duration, tpt, ttft, tpot, e2el, p99, otp, rtp,
 def seed() -> None:
     print("\nSeeding AMD MI210 benchmark results...\n")
 
-    # ── Llama-3.1-70B TP=4 (4 GPUs) — screenshots, wl1060run6, 2025-07-18 ──
-    base = datetime(2025, 7, 18, 10, 0, 0, tzinfo=timezone.utc)
+    # ── Llama-3.1-70B TP=4 (4 GPUs) — screenshots, wl1060run6, 2026-01-29 ──
+    base = datetime(2026, 1, 29, 10, 0, 0, tzinfo=timezone.utc)
     notes = "Llama-3.1-70B TP=4, 4× MI210, Random dataset"
     rows = [
         # sub_idx, c,  dur,     tpt,    ttft,    tpot,  e2el,      p99,     otp,    rtp,  tin,    tout
@@ -92,10 +97,10 @@ def seed() -> None:
     ]
     for sub, c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout in rows:
         post("mi210-llama31-70b-tp4", sub,
-             _llm("llama3.1-70b-instruct", c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout, 4, base, notes))
+             _llm("llama3.1-70b-instruct", c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout, 4, base, notes, tp=4))
 
-    # ── Llama-3.1-70B TP=8 (8 GPUs) — screenshots, wl1062run7, 2025-07-18 ──
-    base = datetime(2025, 7, 18, 12, 0, 0, tzinfo=timezone.utc)
+    # ── Llama-3.1-70B TP=8 (8 GPUs) — screenshots, wl1062run7, 2026-02-05 ──
+    base = datetime(2026, 2, 5, 10, 0, 0, tzinfo=timezone.utc)
     notes = "Llama-3.1-70B TP=8, 8× MI210, Random dataset"
     rows = [
         (0,  4,  673.54, 121.57, 1221.06, 64.64, 67343.95, 2680.97,  60.81, 0.06, 40920,  40960),
@@ -104,10 +109,10 @@ def seed() -> None:
     ]
     for sub, c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout in rows:
         post("mi210-llama31-70b-tp8", sub,
-             _llm("llama3.1-70b-instruct", c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout, 8, base, notes))
+             _llm("llama3.1-70b-instruct", c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout, 8, base, notes, tp=8))
 
-    # ── DeepSeek-R1-Distill-Llama-70B TP=8 — Open Orca, wl1002run1, 2025-07-28 ──
-    base = datetime(2025, 7, 28, 10, 0, 0, tzinfo=timezone.utc)
+    # ── DeepSeek-R1-Distill-Llama-70B TP=8 — Open Orca, wl1002run1, 2026-02-05 ──
+    base = datetime(2026, 2, 5, 12, 0, 0, tzinfo=timezone.utc)
     notes = "DeepSeek-R1-Distill-Llama-70B TP=8, 8× MI210, Open Orca dataset"
     rows = [
         # sub, c,   dur,    tpt,     ttft,   tpot,   e2el,      p99,    otp,    rtp,  tin,    tout,  in_tok, out_tok
@@ -118,19 +123,19 @@ def seed() -> None:
     for sub, c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout, in_tok, out_tok in rows:
         post("mi210-deepseek-r1-70b-tp8", sub,
              _llm("deepseek-r1-distill-llama-70b", c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp,
-                  tin, tout, 8, base, notes, in_tok, out_tok))
+                  tin, tout, 8, base, notes, in_tok, out_tok, tp=8))
 
-    # ── Llama-3.1-70B TP=8 — Open Orca, wl1003run5, 2025-07-28 ──
-    base = datetime(2025, 7, 28, 14, 0, 0, tzinfo=timezone.utc)
+    # ── Llama-3.1-70B TP=8 — Open Orca, wl1003run5, 2026-02-05 ──
+    base = datetime(2026, 2, 5, 14, 0, 0, tzinfo=timezone.utc)
     notes = "Llama-3.1-70B TP=8, 8× MI210, Open Orca dataset"
     for sub, c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp, tin, tout, in_tok, out_tok in rows:
         post("mi210-llama31-70b-tp8-openorca", sub,
              _llm("llama3.1-70b-instruct", c, dur, tpt, ttft, tpot, e2el, p99, otp, rtp,
-                  tin, tout, 8, base, notes, in_tok, out_tok))
+                  tin, tout, 8, base, notes, in_tok, out_tok, tp=8))
 
-    # ── Llama-3.1-70B TP=8, 8 GPUs — Benchmarks page (partial), 2025-07-18 ──
+    # ── Llama-3.1-70B TP=8, 8 GPUs — Benchmarks page (partial), 2026-02-05 ──
     # No e2el / p99 available from this source.
-    base = datetime(2025, 7, 18, 16, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 2, 5, 16, 0, 0, tzinfo=timezone.utc)
     bench8 = [
         # sub, c,  dur,  tpt,    ttft,  tpot,  otp,    tin,    tout
         (0,  4, 621,    131.78, 2817,   57.98, 65.92,  40920,  40960),
@@ -147,6 +152,8 @@ def seed() -> None:
                 "mean_tpot_ms": tpot, "mean_e2el_ms": None, "p99_ttft_ms": None,
                 "output_throughput": otp, "total_input_tokens": tin,
                 "total_output_tokens": tout, "benchmark_tool": "vLLM benchmark",
+                "server_name": SERVER_NAME,
+                "parallelism": {"tensor_parallel_size": 8, "pipeline_parallel_size": 1},
             },
             "config": {
                 "concurrency": c, "precision": "bf16", "input_tokens": 1023,
@@ -156,8 +163,8 @@ def seed() -> None:
             },
         })
 
-    # ── Llama-3.1-70B TP=4, 4 GPUs — Benchmarks page (partial), 2025-07-18 ──
-    base = datetime(2025, 7, 18, 20, 0, 0, tzinfo=timezone.utc)
+    # ── Llama-3.1-70B TP=4, 4 GPUs — Benchmarks page (partial), 2026-01-29 ──
+    base = datetime(2026, 1, 29, 14, 0, 0, tzinfo=timezone.utc)
     bench4 = [
         (0,  4, 766,    106.77, 777,  74.19, 53.41,  40920,  40960),
         (1,  8, 796.51, 205.6,  814,  77.04, 102.85, 81840,  81920),
@@ -173,6 +180,8 @@ def seed() -> None:
                 "mean_tpot_ms": tpot, "mean_e2el_ms": None, "p99_ttft_ms": None,
                 "output_throughput": otp, "total_input_tokens": tin,
                 "total_output_tokens": tout, "benchmark_tool": "vLLM benchmark",
+                "server_name": SERVER_NAME,
+                "parallelism": {"tensor_parallel_size": 4, "pipeline_parallel_size": 1},
             },
             "config": {
                 "concurrency": c, "precision": "bf16", "input_tokens": 1023,
@@ -183,7 +192,7 @@ def seed() -> None:
         })
 
     # ── Llama-3.3-70B-Instruct TP=8 (assumed), 8 GPUs — Benchmarks page ──
-    base = datetime(2025, 7, 18, 22, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 2, 5, 18, 0, 0, tzinfo=timezone.utc)
     l33 = [
         (0,  4, 629.00, 130.17, 2810.49, 58.73, 65.12,  40920,  40960),
         (1,  8, 652.14, 251.11, 2838.55, 60.96, 125.62, 81840,  81920),
@@ -199,12 +208,14 @@ def seed() -> None:
                 "mean_tpot_ms": tpot, "mean_e2el_ms": None, "p99_ttft_ms": None,
                 "output_throughput": otp, "total_input_tokens": tin,
                 "total_output_tokens": tout, "benchmark_tool": "vLLM benchmark",
+                "server_name": SERVER_NAME,
+                "parallelism": {"tensor_parallel_size": 8, "pipeline_parallel_size": 1},
             },
             "config": {
                 "concurrency": c, "precision": "bf16", "input_tokens": 1023,
                 "output_tokens": 1024, "gpu_count": 8, "gpu_model": GPU_MODEL,
                 "pipeline_version": "vllm-rocm-latest", "started_at": base.isoformat(),
-                "notes": "Llama-3.3-70B-Instruct TP=8 (assumed), 8× MI210",
+                "notes": "Llama-3.3-70B-Instruct TP=8, 8× MI210",
             },
         })
 
