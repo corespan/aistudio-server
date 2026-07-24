@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Server
     PORT: int = 8001
 
+    # Persistent Jupyter Assistant URL
+    # Pre-configured Jupyter Lab instance that is always running.
+    # The UI renders this directly — no container is created at runtime.
+    # Override via environment variable JUPYTER_ASSISTANT_URL.
+    JUPYTER_ASSISTANT_URL: str = "http://10.6.12.26:36991/lab"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

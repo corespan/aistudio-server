@@ -16,6 +16,36 @@ from app.utils.sse import task_log_stream
 router = APIRouter(tags=["Jupyter"])
 
 
+# ── Mode 1: Persistent Jupyter Assistant ──────────────────────────────────────
+
+@router.get("/api/v1/jupyter/assistant")
+async def get_jupyter_assistant():
+    """
+    Returns the URL of the pre-configured, always-running Jupyter Lab instance.
+
+    This Jupyter environment has an AI assistant already set up — no configuration
+    needed by the user. Just open the URL and start working.
+
+    If you want to replicate this setup yourself (Mode 2 / on-demand Jupyter),
+    follow the setup_steps below to configure the AI assistant in your own instance.
+    """
+    configured = bool(settings.JUPYTER_ASSISTANT_URL)
+    return {
+        "url": settings.JUPYTER_ASSISTANT_URL if configured else None,
+        "configured": configured,
+        "setup_steps": [
+            "1. Launch a Jupyter instance using POST /api/v1/jupyter/launch",
+            "2. Open the Jupyter URL returned once the workload state is READY",
+            "3. Install the AI assistant extension: pip install jupyter-ai",
+            "4. Restart the Jupyter server: from the terminal inside Jupyter, run: jupyter lab",
+            "5. In Jupyter Lab, open the AI Chat panel from the left sidebar (chat bubble icon)",
+            "6. Configure your preferred model provider (e.g. Anthropic Claude) with your API key",
+        ],
+    }
+
+
+# ── Mode 2: On-demand Jupyter ─────────────────────────────────────────────────
+
 class JupyterLaunchRequest(BaseModel):
     node_ip: str
 

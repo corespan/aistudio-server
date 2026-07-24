@@ -86,6 +86,7 @@ def _fail_workload(workload_id, trigger, error):
                     db.add(BenchmarkResult(
                         run_id=workload_id,
                         sub_run_index=0,
+                        workload_type="llm",
                         model_name=(workload.model_name or "").lower(),
                         pipeline_version="vllm-openai-latest",
                         node_ips=[node.machine_ip] if node else [],
@@ -358,6 +359,7 @@ def execute_benchmark(self, workload_id):
                     db.add(BenchmarkResult(
                         run_id=workload_id,
                         sub_run_index=0,
+                        workload_type="llm",
                         model_name=workload.model_name.lower(),
                         pipeline_version="vllm-openai-latest",
                         node_ips=[node.machine_ip],
