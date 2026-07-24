@@ -11,6 +11,7 @@ from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.models.workload import Workload
 from app.models.node import Node
+from app.models.task import Task
 from app.utils.sse import task_log_stream
 
 router = APIRouter(tags=["Jupyter"])
@@ -22,26 +23,48 @@ router = APIRouter(tags=["Jupyter"])
 async def get_jupyter_assistant():
     """
     Returns the URL of the pre-configured, always-running Jupyter Lab instance.
-
-    This Jupyter environment has an AI assistant already set up — no configuration
-    needed by the user. Just open the URL and start working.
-
-    If you want to replicate this setup yourself (Mode 2 / on-demand Jupyter),
-    follow the setup_steps below to configure the AI assistant in your own instance.
+    The AI assistant is already set up — just open the URL and start working.
     """
     configured = bool(settings.JUPYTER_ASSISTANT_URL)
     return {
         "url": settings.JUPYTER_ASSISTANT_URL if configured else None,
         "configured": configured,
-        "setup_steps": [
-            "1. Launch a Jupyter instance using POST /api/v1/jupyter/launch",
-            "2. Open the Jupyter URL returned once the workload state is READY",
-            "3. Install the AI assistant extension: pip install jupyter-ai",
-            "4. Restart the Jupyter server: from the terminal inside Jupyter, run: jupyter lab",
-            "5. In Jupyter Lab, open the AI Chat panel from the left sidebar (chat bubble icon)",
-            "6. Configure your preferred model provider (e.g. Anthropic Claude) with your API key",
-        ],
     }
+
+
+# ── List all Jupyter instances ────────────────────────────────────────────────
+
+@router.get("/api/v1/jupyter/instances")
+async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
+    """
+    Returns all Jupyter workload instances (both running and historical).
+
+    Each row includes state, node IP, and jupyter_url (set when state=READY).
+    Ordered by created_at DESC — newest first.
+
+    Use this to render the Jupyter sessions table in the UI,
+    similar to how benchmark results are shown in the leaderboard.
+    """
+    result = await db.execute(
+        select(Workload, Node.machine_ip)
+        .outerjoin(Node, Node.workload_id == Workload.id)
+        .where(Workload.model_name == "jupyter")
+        .order_by(Workload.created_at.desc())
+    )
+    rows = result.all()
+
+    return [
+        {
+            "task_id": workload.workload_id,
+            "state": workload.state,
+            "node_ip": node_ip,
+            "jupyter_url": (workload.workload_config or {}).get("jupyter_url"),
+            "error_message": workload.error_message,
+            "created_at": workload.created_at,
+            "updated_at": workload.updated_at,
+        }
+        for workload, node_ip in rows
+    ]
 
 
 # ── Mode 2: On-demand Jupyter ─────────────────────────────────────────────────
