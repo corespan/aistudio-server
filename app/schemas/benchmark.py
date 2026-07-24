@@ -71,6 +71,9 @@ class BenchmarkResultResponse(BaseModel):
     run_id: str
     sub_run_index: int
 
+    # Workload discriminator
+    workload_type: str
+
     # Model & pipeline
     model_name: str
     pipeline_version: str

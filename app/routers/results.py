@@ -49,6 +49,7 @@ def _build_filter_conditions(
     status: Optional[str],
     date: Optional[str],
     server_name: Optional[str] = None,
+    workload_type: Optional[str] = None,
 ) -> list:
     """
     Build the standard BenchmarkResult WHERE conditions from filter params.
@@ -77,6 +78,8 @@ def _build_filter_conditions(
         conditions.append(BenchmarkResult.status == status.lower())
     if server_name:
         conditions.append(BenchmarkResult.server_name == server_name)
+    if workload_type:
+        conditions.append(BenchmarkResult.workload_type == workload_type.lower())
     if date:
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -130,6 +133,7 @@ async def list_benchmarks(
     status: Optional[str] = Query(None),
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     server_name: Optional[str] = Query(None),
+    workload_type: Optional[str] = Query(None, description="e.g. 'llm', 'resnet'"),
     limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
 ):
@@ -137,15 +141,15 @@ async def list_benchmarks(
     Returns benchmark results for the leaderboard table.
 
     Ordering:
-      1. tier_rank ASC   — best GPUs first (H100 before RTX 5090 before T4).
+      1. PRU server first — Corespan's own hardware always comes first across all tiers.
+      2. tier_rank ASC   — best GPUs next (H100 before RTX 5090 before T4).
                            Results for unregistered GPU types go to the bottom (NULLS LAST).
-      2. PRU server first — within the same GPU tier, Corespan's own hardware comes first.
       3. total_token_throughput DESC — within the same tier+server, highest throughput first.
     """
     conditions = _build_filter_conditions(
         model=model, gpu_type=gpu_type, node_ip=node_ip, concurrency=concurrency,
         precision=precision, input_tokens=input_tokens, output_tokens=output_tokens,
-        status=status, date=date, server_name=server_name,
+        status=status, date=date, server_name=server_name, workload_type=workload_type,
     )
     query = (
         select(BenchmarkResult)

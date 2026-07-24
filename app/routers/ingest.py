@@ -24,6 +24,9 @@ async def ingest_metrics(
     Uses PostgreSQL ON CONFLICT to ensure idempotency.
     """
     model_name = payload.workload.name
+    # workload.type is always present in the ingest payload (e.g. "llm", "resnet").
+    # Store it as a hot column so the leaderboard can filter by workload type.
+    workload_type = (payload.workload.type or "llm").lower().strip()
 
     metrics = payload.metrics or {}
     total_token_throughput = metrics.get("total_token_throughput")
@@ -70,6 +73,7 @@ async def ingest_metrics(
     insert_values = {
         "run_id": payload.run_id,
         "sub_run_index": payload.sub_run_index,
+        "workload_type": workload_type,
         "model_name": model_name,
         "pipeline_version": payload.config.get("pipeline_version", "unknown"),
         "node_ips": [payload.node_ip],

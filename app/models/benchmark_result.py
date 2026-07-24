@@ -140,6 +140,18 @@ class BenchmarkResult(Base):
         comment="Parallelism strategy. e.g. 'tp4', 'pp4', 'tp8'. Null for single-GPU runs.",
     )
 
+    # ── Workload Type ─────────────────────────────────────────────────────────
+    # Discriminator field that drives which filters, chart axes, and table
+    # columns the UI renders.  e.g. 'llm', 'resnet', 'vgg'.  Always lowercase.
+    # Defaulted to 'llm' so all existing rows stay valid after migration.
+    workload_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="llm",
+        index=True,
+        comment="Workload category. e.g. 'llm', 'resnet', 'vgg'. Always lowercase.",
+    )
+
     # ── Status ────────────────────────────────────────────────────────────────
     status: Mapped[str] = mapped_column(
         String(16),
@@ -218,6 +230,7 @@ class BenchmarkResult(Base):
         CheckConstraint("model_name = lower(model_name)", name="ck_model_name_lower"),
         CheckConstraint("gpu_type = lower(gpu_type)", name="ck_gpu_type_lower"),
         CheckConstraint("precision = lower(precision)", name="ck_precision_lower"),
+        CheckConstraint("workload_type = lower(workload_type)", name="ck_workload_type_lower"),
     )
 
     def __repr__(self) -> str:
