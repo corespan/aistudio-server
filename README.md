@@ -173,6 +173,49 @@ curl http://localhost:8002/api/v1/jupyter/jup-20260708-dc4f70/status
 # → {"state":"READY","jupyter_url":"http://10.6.12.26:8899/lab"}
 ```
 
+### Jupyter Lab with AI Assistant
+
+JupyterLab with built-in AI assistance — write, execute, and visualize code with LLMs for faster experimentation and code writing.
+
+### Prerequisites
+
+- **GPUs** with CUDA compute capability ≥ 7
+- **Docker** installed with Nvidia Container Toolkit
+
+### 1. Run a vLLM Inference Server or use a already running one.
+
+```bash
+sudo docker run --restart=always --gpus all \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  --network host -p 8000:8000 --ipc=host \
+  vllm/<vllm_docker_image> \
+  --model <model_name> \
+  --dtype half \
+  --gpu-memory-utilization 0.95 \
+  --trust-remote-code \
+  --tensor-parallel-size <NUMBER_OF_GPUS> \
+  --max-model-len 131072 \
+  --max-num-seqs 8 \
+  --host 0.0.0.0
+```
+
+Replace `<NUMBER_OF_GPUS>` with the number of GPUs available on your machine.
+
+### 2. Integrate with JupyterLab
+
+1. Open the **Settings** tab in JupyterLab.
+2. Go to **AI Settings** → click **Add Secret**.
+3. Set **Secret Name** to `HOSTED_VLLM_API_BASE` and **Value** to your vLLM server URL:
+   ```
+   http://<MACHINE_IP>:8000/v1/
+   ```
+4. Update the **Chat Model** to:
+   ```
+   hosted_vllm/Qwen/Qwen2.5-7B-Instruct-1M
+   ```
+
+The AI assistant is now ready to use inside your notebooks.
+
 ### View results
 
 ```bash
