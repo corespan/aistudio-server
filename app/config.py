@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     GCP_REPOSITORY: str = "workbench-registry"
     GCP_IMAGE_PATH: str = "services/workloads"
     WORKLOAD_IMAGE_TAG: str = "2.3.0-nvidia"
-    JUPYTER_IMAGE_TAG: str = "1.1.1-nvidia"
+    JUPYTER_IMAGE_TAG: str = "2.0.0-nvidia"
 
     # Model Storage
     MODEL_STORAGE_MODE: str = "huggingface"

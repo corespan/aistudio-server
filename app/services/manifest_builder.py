@@ -224,33 +224,29 @@ class ManifestBuilder:
     @staticmethod
     def build_jupyter_command(run_id: str = "") -> str:
         """
-        Start the jupyternotebook GCR image on host port 8899 (container port 7008).
+        Start the jupyternotebook GCR image on the node.
 
-        The image's default CMD runs script.sh which needs Nexus + aiAgent.
-        We bypass that entirely with --entrypoint bash and run jupyter notebook directly.
-        The image already has notebook==7.4.7 installed via requirements.txt.
+        Runs the container's CMD (script.sh → startJupyter.py) directly — no
+        entrypoint override. script.sh copies notebooks to NFS at /data/{workload_id}/
+        and startJupyter.py launches Jupyter from that directory so:
+          - Only notebooks are visible (no Dockerfile/script.sh/etc.)
+          - All user edits persist on NFS
         """
         image = "%s/jupyternotebook:%s" % (get_workload_registry(), settings.JUPYTER_IMAGE_TAG)
         container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
 
-        # Inner command run inside the container via bash -c.
-        # Base64-encoded to avoid any shell quoting issues on the remote host.
-        inner = (
-            "jupyter notebook --no-browser --ip=0.0.0.0 --port=7008 "
-            "--NotebookApp.token= --NotebookApp.password= --allow-root"
-        )
-        inner_b64 = base64.b64encode(inner.encode()).decode()
-
         login_cmd = _GCR_LOGIN_CMD
         rm_cmd    = "docker rm -f %s 2>/dev/null || true" % container_name
-        # Port is resolved at runtime via $JUPYTER_PORT (set by the worker before
-        # this command runs — same pattern as $VLLM_PORT for benchmarks).
+        # Pass workload_id and port as env vars so script.sh and startJupyter.py
+        # write notebooks to the correct NFS path (/data/{workload_id}/).
+        # $JUPYTER_PORT is resolved at runtime by the worker before this command runs.
         run_cmd   = " ".join([
             "docker run --gpus all -d --name %s" % container_name,
             "-p $JUPYTER_PORT:7008 --ipc=host",
-            "--entrypoint bash",
+            "-v /data:/data",
+            "-e workload_id=%s" % run_id,
+            "-e workload_port=$JUPYTER_PORT",
             image,
-            '-c "$(echo %s | base64 -d)"' % inner_b64,
         ])
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
 
