@@ -369,7 +369,7 @@ No local builds on the GPU node — images are pulled automatically on each run.
 | Image | Used for |
 |-------|---------|
 | `llminference:2.3.1-nvidia` | vLLM benchmark server |
-| `jupyternotebook:1.1.1-nvidia` | Jupyter Lab |
+| `jupyternotebook:2.0.0-nvidia` | Jupyter Lab |
 
 To update an image tag: change it in `catalog.json` and run `make seed` — no code change needed.
 
@@ -386,7 +386,7 @@ To update an image tag: change it in `catalog.json` and run `make seed` — no c
 | `GCP_REPOSITORY` | `workbench-registry` | Artifact Registry repo |
 | `GCP_IMAGE_PATH` | `services/workloads` | Path prefix inside the repo |
 | `WORKLOAD_IMAGE_TAG` | `2.3.1-nvidia` | Fallback image tag (overridden by `catalog.json`) |
-| `JUPYTER_IMAGE_TAG` | `1.1.1-nvidia` | Tag for the jupyternotebook image |
+| `JUPYTER_IMAGE_TAG` | `2.0.0-nvidia` | Tag for the jupyternotebook image |
 | `MODEL_STORAGE_MODE` | `huggingface` | `huggingface`, `local`, or `gcs` |
 | `MODEL_LOCAL_PATH` | `/home/ubuntu/models` | Used when `MODEL_STORAGE_MODE=local` |
 
