@@ -3,15 +3,17 @@ import uuid
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.models.workload import Workload
 from app.models.node import Node
+from app.utils.sse import task_log_stream
 
 router = APIRouter(tags=["Jupyter"])
 
@@ -173,6 +175,64 @@ async def launch_jupyter(
             "Jupyter launch started. Poll GET /api/v1/jupyter/instances "
             "— the instance appears once it reaches READY state."
         ),
+    )
+
+
+@router.get("/api/v1/jupyter/instances/{task_id}/status")
+async def get_jupyter_instance_status(task_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Returns the current state of a Jupyter launch workload.
+    Useful for polling while the SSE stream is not available.
+    States: CREATED → VALIDATING → VALIDATED → INSTALLING → READY | FAILED
+    """
+    result = await db.execute(
+        select(Workload).where(
+            Workload.workload_id == task_id,
+            Workload.model_name == "jupyter",
+        )
+    )
+    workload = result.scalar_one_or_none()
+    if not workload:
+        raise HTTPException(status_code=404, detail="Jupyter workload not found")
+
+    return {
+        "task_id": task_id,
+        "state": workload.state,
+        "jupyter_url": (workload.workload_config or {}).get("jupyter_url"),
+        "error_message": workload.error_message,
+        "updated_at": workload.updated_at,
+    }
+
+
+@router.get("/api/v1/jupyter/instances/{task_id}/logs/stream")
+async def stream_jupyter_logs(task_id: str, request: Request):
+    """
+    SSE stream of launch logs for a Jupyter workload (validate → launch steps).
+    Streams in real-time while the launch is in progress, then closes.
+    Supports Last-Event-ID for reconnect without replaying already-seen lines.
+    """
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Workload.id).where(
+                Workload.workload_id == task_id,
+                Workload.model_name == "jupyter",
+            )
+        )
+        workload_db_id = result.scalar_one_or_none()
+
+    if not workload_db_id:
+        raise HTTPException(status_code=404, detail="Jupyter workload not found")
+
+    last_event_id = request.headers.get("last-event-id", "")
+
+    return StreamingResponse(
+        task_log_stream(
+            workload_db_id, request,
+            filter_bench_result=False,
+            last_event_id=last_event_id,
+        ),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no"},
     )
 
 

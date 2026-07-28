@@ -48,6 +48,12 @@ async def task_log_stream(
     # Tracks row IDs sent at exactly `last_seen_date` to skip duplicates.
     last_sent_ids: set = set()
 
+    # Heartbeat: send a keep-alive comment every HEARTBEAT_INTERVAL polls so
+    # proxies and load balancers don't close idle SSE connections (e.g. during
+    # long model pulls or installs where no logs are written for >30 s).
+    HEARTBEAT_INTERVAL = 15  # seconds (each poll sleeps 1 s → every 15 polls)
+    heartbeat_counter = 0
+
     while True:
         if await request.is_disconnected():
             break
@@ -96,5 +102,16 @@ async def task_log_stream(
             close_reason = "FAILED" if workload_state == "FAILED" else "READY"
             yield "event: close\ndata: %s\n\n" % close_reason
             break
+
+        # Send a keep-alive comment when no logs arrived this poll.
+        # Browsers and proxies ignore SSE comment lines (start with ':')
+        # but they reset the connection idle timer, preventing silent drops.
+        if not new_logs:
+            heartbeat_counter += 1
+            if heartbeat_counter >= HEARTBEAT_INTERVAL:
+                yield ": heartbeat\n\n"
+                heartbeat_counter = 0
+        else:
+            heartbeat_counter = 0
 
         await asyncio.sleep(1.0)
