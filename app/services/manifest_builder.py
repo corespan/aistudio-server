@@ -245,7 +245,7 @@ class ManifestBuilder:
             "-p $JUPYTER_PORT:7008 --ipc=host",
             "-v /data:/data",
             "-e workload_id=%s" % run_id,
-            "-e workload_port=$JUPYTER_PORT",
+            "-e workload_port=7008",
             image,
         ])
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
