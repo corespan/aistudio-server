@@ -87,7 +87,7 @@ class ManifestBuilder:
                            image_tag: str = None, run_id: str = "") -> str:
         gpu_count     = config.get("gpu_count", 1)
         precision     = config.get("precision", "fp32")
-        max_model_len = config.get("max_model_len", 2048)
+        max_model_len = config.get("max_model_len")   # None → let vLLM read from model config
         dtype         = _DTYPE_MAP.get(precision.lower(), "float32")
 
         tag   = image_tag or settings.WORKLOAD_IMAGE_TAG
@@ -130,7 +130,11 @@ class ManifestBuilder:
             "-m vllm.entrypoints.openai.api_server",
             "--model %s" % model_name,
             "--dtype %s" % dtype,
-            "--max-model-len %d" % max_model_len,
+            # Only pass --max-model-len when explicitly set in config.
+            # If omitted, vLLM auto-reads max_position_embeddings from the
+            # model's config.json — this prevents startup failures when the
+            # user-specified value exceeds the model's physical limit.
+            ("--max-model-len %d" % max_model_len if max_model_len else ""),
             "--tensor-parallel-size %d" % gpu_count,
         ] if p)
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
@@ -151,9 +155,9 @@ class ManifestBuilder:
         wait = (
             "echo \"Waiting for vLLM server on port $VLLM_PORT (up to 10 min)...\" && "
             "READY=0 && "
-            "for i in $(seq 1 120); do "
+            "for i in $(seq 1 600); do "
             "  curl -sf http://localhost:$VLLM_PORT/health >/dev/null 2>&1 && READY=1 && break; "
-            "  echo \"[$i/120] not ready, waiting 5s...\"; sleep 5; "
+            "  [ $((i % 10)) -eq 0 ] && echo \"[$i/600] not ready yet...\"; sleep 1; "
             "done && "
             "[ \"$READY\" -eq 1 ] || "
             "{ echo \"ERROR: vLLM server did not start in 10 min\"; "
@@ -245,9 +249,9 @@ class ManifestBuilder:
         container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
         return (
             "READY=0 && "
-            "for i in $(seq 1 60); do "
+            "for i in $(seq 1 300); do "
             "  curl -sf http://localhost:$JUPYTER_PORT/api >/dev/null 2>&1 && READY=1 && break; "
-            "  echo \"[$i/60] waiting for Jupyter... 5s\"; sleep 5; "
+            "  [ $((i % 10)) -eq 0 ] && echo \"[$i/300] waiting for Jupyter...\"; sleep 1; "
             "done && "
             "[ \"$READY\" -eq 1 ] || "
             "{ echo 'ERROR: Jupyter did not start in 5 min'; "
