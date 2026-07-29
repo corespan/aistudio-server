@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xxd C:/Users/tejam/aistudio-server/requirements.txt)",
+      "PowerShell(docker compose exec worker ls -la /root/.ssh/)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8002/api/v1/models/config?model=TinyLlama/TinyLlama-1.1B-Chat-v1.0\")",
+      "Bash(ping -c 3 10.6.12.22)",
+      "Bash(ssh -i ~/.ssh/id_rsa drut@10.6.12.22 \"docker inspect us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia --format='ENTRYPOINT={{json .Config.Entrypoint}} CMD={{json .Config.Cmd}} ENV={{json .Config.Env}}'\")",
+      "Bash(ssh -i ~/.ssh/id_rsa drut@10.6.12.22 \"docker run --rm --entrypoint cat us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia ./script.sh\")",
+      "Bash(ssh -i ~/.ssh/id_rsa drut@10.6.12.22 \"docker run --rm --entrypoint cat us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia ./benchmarkingServer.py\")",
+      "Bash(ssh -i ~/.ssh/id_rsa drut@10.6.12.22 \"docker run --rm --entrypoint bash us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia -c 'ls -la && cat benchmarkingConfig.py 2>/dev/null || echo NOT_FOUND'\")",
+      "Bash(ssh -i ~/.ssh/id_rsa drut@10.6.12.22 \"docker run --rm --entrypoint cat us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.0-nvidia ./benchmark.py\")"
+    ]
+  }
+}

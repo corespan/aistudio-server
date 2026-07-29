@@ -19,7 +19,7 @@ from app.models.workload_type import WorkloadType
 from app.services.node_inspector import NodeInspector
 from app.services.dependency_installer import DependencyInstaller
 from app.services.manifest_builder import ManifestBuilder
-from app.services.nginx_proxy import write_jupyter_config, proxy_url as nginx_proxy_url
+from app.services.nginx_proxy import write_jupyter_config, proxy_url as nginx_proxy_url, jupyter_base_path
 from app.services.ssh_executor import SSHExecutor
 from app.services.state_machine import transition_workload_state
 
@@ -539,7 +539,16 @@ def launch_jupyter(self, workload_id):
                 "p=s.getsockname()[1]; s.close(); print(p)"
                 "\") && echo \"JUPYTER_PORT=$JUPYTER_PORT\""
             )
-            server_cmd = ManifestBuilder.build_jupyter_command(run_id=workload_id)
+
+            # When nginx proxy is enabled, tell JupyterLab to mount at the subpath
+            # so all its internal asset/API URLs are correctly prefixed.
+            # e.g. /jupyter/T4/jup-20260729-abc123/
+            gpu_type = _extract_gpu_type(node.specs)
+            base_url = ""
+            if settings.NGINX_ENABLED and settings.PROXY_BASE_URL:
+                base_url = jupyter_base_path(gpu_type, workload_id)
+
+            server_cmd = ManifestBuilder.build_jupyter_command(run_id=workload_id, base_url=base_url)
             health_cmd = ManifestBuilder.build_jupyter_health_command(run_id=workload_id)
 
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
@@ -566,9 +575,9 @@ def launch_jupyter(self, workload_id):
                         pass
                     break
 
-            # Build the URL — proxy URL if nginx is enabled, direct otherwise.
-            gpu_type = _extract_gpu_type(node.specs)
-            if settings.NGINX_ENABLED:
+            # Build the URL — path-based proxy URL if nginx is enabled, direct otherwise.
+            # gpu_type was already extracted above when computing base_url.
+            if settings.NGINX_ENABLED and settings.PROXY_BASE_URL:
                 write_jupyter_config(workload_id, gpu_type, node.machine_ip, jupyter_port)
                 jupyter_url = nginx_proxy_url(gpu_type, workload_id)
             else:

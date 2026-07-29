@@ -60,7 +60,7 @@ services:
     volumes:
       - .:/AIStudio
       - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
-      - /etc/nginx/conf.d:/etc/nginx/conf.d
+      - /etc/nginx/jupyter-locations:/etc/nginx/jupyter-locations
     depends_on:
       postgres:
         condition: service_healthy

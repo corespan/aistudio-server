@@ -215,7 +215,7 @@ class ManifestBuilder:
         return "%s && %s && %s ; %s" % (wait, bench, parse, cleanup)
 
     @staticmethod
-    def build_jupyter_command(run_id: str = "") -> str:
+    def build_jupyter_command(run_id: str = "", base_url: str = "") -> str:
         """
         Start the jupyternotebook GCR image on the node.
 
@@ -224,6 +224,12 @@ class ManifestBuilder:
         and startJupyter.py launches Jupyter from that directory so:
           - Only notebooks are visible (no Dockerfile/script.sh/etc.)
           - All user edits persist on NFS
+
+        base_url — when set (e.g. "/jupyter/T4/jup-20260729-xxx/"), the container
+        receives JUPYTER_BASE_URL as an env var. startJupyter.py must honour it by
+        passing --ServerApp.base_url=$JUPYTER_BASE_URL to the jupyter lab command.
+        This is required for JupyterLab to work correctly behind a subpath proxy.
+        When NGINX_ENABLED=false the arg is omitted and Jupyter runs at root (/lab).
         """
         image = "%s/jupyternotebook:%s" % (get_workload_registry(), settings.JUPYTER_IMAGE_TAG)
         container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
@@ -233,14 +239,20 @@ class ManifestBuilder:
         # Pass workload_id and port as env vars so script.sh and startJupyter.py
         # write notebooks to the correct NFS path (/data/{workload_id}/).
         # $JUPYTER_PORT is resolved at runtime by the worker before this command runs.
-        run_cmd   = " ".join([
+        # JUPYTER_BASE_URL tells startJupyter.py which subpath to mount Jupyter at
+        # (needed when nginx proxies requests under a non-root path).
+        env_parts = [
+            "-e workload_id=%s" % run_id,
+            "-e workload_port=7008",
+        ]
+        if base_url:
+            env_parts.append("-e JUPYTER_BASE_URL=%s" % base_url)
+
+        run_cmd = " ".join([
             "docker run --gpus all -d --name %s" % container_name,
             "-p $JUPYTER_PORT:7008 --ipc=host",
             "-v /data:/data",
-            "-e workload_id=%s" % run_id,
-            "-e workload_port=7008",
-            image,
-        ])
+        ] + env_parts + [image])
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
 
     @staticmethod

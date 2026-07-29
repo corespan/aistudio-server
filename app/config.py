@@ -44,14 +44,19 @@ class Settings(BaseSettings):
     # Server
     PORT: int = 8001
 
-    # Nginx reverse proxy (hides internal node IPs from clients)
-    # When enabled, each Jupyter instance gets its own nginx server block:
-    #   http://{GPU_TYPE}.{task_id}/lab  →  http://node-ip:port
-    # Requires nginx + dnsmasq on the master node (see ops runbook).
+    # Nginx reverse proxy (hides internal GPU node IPs from clients)
+    # When enabled, each Jupyter instance gets a path-based route:
+    #   {PROXY_BASE_URL}/jupyter/{GPU_TYPE}/{task_id}/  →  http://node-ip:port
+    # No DNS setup required — uses the existing public domain.
     NGINX_ENABLED: bool = False
-    NGINX_CONF_DIR: str = "/etc/nginx/conf.d"
+    # Public base URL used to construct the jupyter_url returned by the API.
+    # e.g. http://corespan.ddnsgeek.com  (no trailing slash)
+    PROXY_BASE_URL: str = ""
+    # Directory where per-instance nginx location blocks are written.
+    # This directory is included by /etc/nginx/conf.d/aistudio-jupyter.conf
+    NGINX_CONF_DIR: str = "/etc/nginx/jupyter-locations"
     # Command used to reload nginx after writing/removing a config file.
-    # Override if nginx runs as a docker container: "docker exec nginx nginx -s reload"
+    # When running inside docker: "ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no user@host sudo nginx -s reload"
     NGINX_RELOAD_CMD: str = "nginx -s reload"
 
     # Persistent Jupyter Assistant URL
