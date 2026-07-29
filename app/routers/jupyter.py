@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete as sql_delete, select
 
 from app.config import settings
 from app.database import get_db, AsyncSessionLocal
@@ -300,8 +300,13 @@ async def delete_jupyter_instance(task_id: str, db: AsyncSession = Depends(get_d
                 task_id, node.machine_ip, exc,
             )
 
-    # Delete workload — cascades to Tasks, TaskLogs, WorkloadEvents, Nodes
-    await db.delete(workload)
+    # Delete workload via raw SQL so the DB's ondelete="CASCADE" handles
+    # child rows (Nodes, Tasks, TaskLogs, WorkloadEvents) automatically.
+    # Using ORM session.delete() in async context triggers lazy-loading of
+    # relationships for cascade processing, which fails with MissingGreenlet.
+    await db.execute(
+        sql_delete(Workload).where(Workload.id == workload.id)
+    )
     await db.commit()
 
 
