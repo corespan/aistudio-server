@@ -17,7 +17,7 @@ One-time setup on master node:
     # /etc/dnsmasq.conf — append:
     server=8.8.8.8
     server=8.8.4.4
-    address=/#/<master-node-ip>   # catch-all for custom hostnames
+    address=/.aistudio/<master-node-ip>   # only intercepts *.aistudio hostnames
     systemctl enable --now dnsmasq
 
 Clients: set master node IP as primary DNS in network settings.
@@ -55,8 +55,8 @@ server {{
 
 
 def proxy_url(gpu_type: str, task_id: str) -> str:
-    """Return the proxy URL for a Jupyter instance, e.g. http://A100.jup-20260729-abc123/lab"""
-    return "http://%s.%s/lab" % (gpu_type.upper(), task_id)
+    """Return the proxy URL for a Jupyter instance, e.g. http://A100.jup-20260729-abc123.aistudio/lab"""
+    return "http://%s.%s.aistudio/lab" % (gpu_type.upper(), task_id)
 
 
 def write_jupyter_config(task_id: str, gpu_type: str, node_ip: str, port: int) -> None:
@@ -68,7 +68,7 @@ def write_jupyter_config(task_id: str, gpu_type: str, node_ip: str, port: int) -
     if not settings.NGINX_ENABLED:
         return
 
-    hostname = "%s.%s" % (gpu_type.upper(), task_id)
+    hostname = "%s.%s.aistudio" % (gpu_type.upper(), task_id)
     conf = _TEMPLATE.format(
         task_id=task_id,
         hostname=hostname,
