@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     # Server
     PORT: int = 8001
 
+    # Nginx reverse proxy (hides internal node IPs from clients)
+    # When enabled, each Jupyter instance gets its own nginx server block:
+    #   http://{GPU_TYPE}.{task_id}/lab  →  http://node-ip:port
+    # Requires nginx + dnsmasq on the master node (see ops runbook).
+    NGINX_ENABLED: bool = False
+    NGINX_CONF_DIR: str = "/etc/nginx/conf.d"
+    # Command used to reload nginx after writing/removing a config file.
+    # Override if nginx runs as a docker container: "docker exec nginx nginx -s reload"
+    NGINX_RELOAD_CMD: str = "nginx -s reload"
+
     # Persistent Jupyter Assistant URL
     # Pre-configured Jupyter Lab instance that is always running.
     # The UI renders this directly — no container is created at runtime.

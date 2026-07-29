@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.models.workload import Workload
 from app.models.node import Node
+from app.services.nginx_proxy import remove_jupyter_config
 from app.services.ssh_executor import SSHExecutor
 from app.utils.sse import task_log_stream
 
@@ -360,6 +361,12 @@ async def delete_jupyter_instance(task_id: str, db: AsyncSession = Depends(get_d
         sql_delete(Workload).where(Workload.id == workload.id)
     )
     await db.commit()
+
+    # Remove nginx config if proxy is enabled — best-effort, don't raise.
+    try:
+        remove_jupyter_config(task_id)
+    except Exception as exc:
+        logger.warning("Could not remove nginx config for %s: %s", task_id, exc)
 
 
 @router.get("/api/v1/jupyter/instances/{task_id}/health")

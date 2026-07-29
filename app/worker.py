@@ -19,6 +19,7 @@ from app.models.workload_type import WorkloadType
 from app.services.node_inspector import NodeInspector
 from app.services.dependency_installer import DependencyInstaller
 from app.services.manifest_builder import ManifestBuilder
+from app.services.nginx_proxy import write_jupyter_config, proxy_url as nginx_proxy_url
 from app.services.ssh_executor import SSHExecutor
 from app.services.state_machine import transition_workload_state
 
@@ -565,7 +566,13 @@ def launch_jupyter(self, workload_id):
                         pass
                     break
 
-            jupyter_url = "http://%s:%d/lab" % (node.machine_ip, jupyter_port)
+            # Build the URL — proxy URL if nginx is enabled, direct otherwise.
+            gpu_type = _extract_gpu_type(node.specs)
+            if settings.NGINX_ENABLED:
+                write_jupyter_config(workload_id, gpu_type, node.machine_ip, jupyter_port)
+                jupyter_url = nginx_proxy_url(gpu_type, workload_id)
+            else:
+                jupyter_url = "http://%s:%d/lab" % (node.machine_ip, jupyter_port)
             _write_log(db, task.id, "✓ Jupyter Lab running at: %s" % jupyter_url)
 
             task.status = "success"
