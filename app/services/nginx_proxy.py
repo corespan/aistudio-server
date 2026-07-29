@@ -79,11 +79,16 @@ def write_jupyter_config(task_id: str, gpu_type: str, node_ip: str, port: int) -
     try:
         with open(path, "w") as f:
             f.write(conf)
-        _reload_nginx()
-        logger.info("nginx: %s → http://%s:%d", hostname, node_ip, port)
+        logger.info("nginx: config written for %s → http://%s:%d", hostname, node_ip, port)
     except Exception as exc:
         logger.error("Failed to write nginx config for %s: %s", task_id, exc)
         raise
+
+    # Reload nginx — best-effort, never fail the Jupyter launch
+    try:
+        _reload_nginx()
+    except Exception as exc:
+        logger.warning("nginx reload failed for %s (config written, reload manually): %s", task_id, exc)
 
 
 def remove_jupyter_config(task_id: str) -> None:
@@ -109,8 +114,11 @@ def _conf_path(task_id: str) -> str:
 
 
 def _reload_nginx() -> None:
+    # shell=True so NGINX_RELOAD_CMD can be a full shell string, e.g.:
+    # "ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no kube@10.6.12.13 sudo nginx -s reload"
     result = subprocess.run(
-        settings.NGINX_RELOAD_CMD.split(),
+        settings.NGINX_RELOAD_CMD,
+        shell=True,
         capture_output=True,
         text=True,
         timeout=10,
