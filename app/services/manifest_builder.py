@@ -256,17 +256,22 @@ class ManifestBuilder:
         return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
 
     @staticmethod
-    def build_jupyter_health_command(run_id: str = "") -> str:
-        """Poll localhost:8899 until Jupyter is ready (up to 5 min)."""
+    def build_jupyter_health_command(run_id: str = "", base_url: str = "") -> str:
+        """Poll localhost:$JUPYTER_PORT until Jupyter is ready (up to 5 min).
+        base_url must match --ServerApp.base_url so the health check hits the right path.
+        """
         container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
+        # Jupyter API endpoint respects the base_url prefix.
+        # e.g. base_url=/jupyter/T4/jup-xxx/ → check /jupyter/T4/jup-xxx/api
+        api_path = (base_url.rstrip("/") + "/api") if base_url and base_url != "/" else "/api"
         return (
             "READY=0 && "
             "for i in $(seq 1 300); do "
-            "  curl -sf http://localhost:$JUPYTER_PORT/api >/dev/null 2>&1 && READY=1 && break; "
+            "  curl -sf http://localhost:$JUPYTER_PORT%(api_path)s >/dev/null 2>&1 && READY=1 && break; "
             "  [ $((i %% 10)) -eq 0 ] && echo \"[$i/300] waiting for Jupyter...\"; sleep 1; "
             "done && "
             "[ \"$READY\" -eq 1 ] || "
             "{ echo 'ERROR: Jupyter did not start in 5 min'; "
             "  docker stop %(name)s 2>/dev/null; exit 1; } && "
             "echo 'Jupyter ready.'"
-        ) % {"name": container_name}
+        ) % {"name": container_name, "api_path": api_path}

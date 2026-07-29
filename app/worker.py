@@ -549,7 +549,7 @@ def launch_jupyter(self, workload_id):
                 base_url = jupyter_base_path(gpu_type, workload_id)
 
             server_cmd = ManifestBuilder.build_jupyter_command(run_id=workload_id, base_url=base_url)
-            health_cmd = ManifestBuilder.build_jupyter_health_command(run_id=workload_id)
+            health_cmd = ManifestBuilder.build_jupyter_health_command(run_id=workload_id, base_url=base_url)
 
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(

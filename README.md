@@ -170,7 +170,8 @@ curl -X POST http://localhost:8002/api/v1/jupyter/launch \
 
 # Poll until READY, then open the URL in your browser
 curl http://localhost:8002/api/v1/jupyter/jup-20260708-dc4f70/status
-# → {"state":"READY","jupyter_url":"http://10.6.12.26:8899/lab"}
+# Without nginx proxy: {"state":"READY","jupyter_url":"http://10.6.12.26:8899/lab"}
+# With nginx proxy:    {"state":"READY","jupyter_url":"http://corespan.ddnsgeek.com/jupyter/T4/jup-20260708-dc4f70/lab"}
 ```
 
 ### Jupyter Lab with AI Assistant
@@ -369,13 +370,90 @@ No local builds on the GPU node — images are pulled automatically on each run.
 | Image | Used for |
 |-------|---------|
 | `llminference:2.3.1-nvidia` | vLLM benchmark server |
-| `jupyternotebook:2.0.0-nvidia` | Jupyter Lab |
+| `jupyternotebook:2.1.0-nvidia` | Jupyter Lab (supports `--ServerApp.base_url` for nginx subpath proxy) |
 
 To update an image tag: change it in `catalog.json` and run `make seed` — no code change needed.
 
 ---
 
+## Nginx Reverse Proxy (optional)
+
+By default, `jupyter_url` in the launch response is a direct `http://<node-ip>:<port>/lab` link. Enabling the nginx proxy routes all Jupyter sessions through a single public domain (`corespan.ddnsgeek.com`) so GPU node IPs are never exposed to users.
+
+**URL format with proxy enabled:**
+```
+http://corespan.ddnsgeek.com/jupyter/<GPU_TYPE>/<task_id>/lab
+```
+
+### How it works
+
+When `NGINX_ENABLED=true` the worker:
+1. Writes a location block to `NGINX_CONF_DIR/jupyter-<task_id>.conf` on the nginx host.
+2. Passes `JUPYTER_BASE_URL=/jupyter/<GPU_TYPE>/<task_id>/` to the container so JupyterLab serves assets from the correct subpath.
+3. Reloads nginx via `NGINX_RELOAD_CMD`.
+
+Location files are deleted automatically when a session ends.
+
+### One-time server setup (master node)
+
+Run these once on the machine running nginx (`10.6.12.15`):
+
+```bash
+# Install nginx if not present
+sudo apt install -y nginx
+
+# Create the directory for per-instance location files
+sudo mkdir -p /etc/nginx/jupyter-locations
+
+# Create the main server block (only needed once)
+sudo tee /etc/nginx/conf.d/aistudio-jupyter.conf > /dev/null << 'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name corespan.ddnsgeek.com;
+    include /etc/nginx/jupyter-locations/*.conf;
+}
+EOF
+
+# Remove the default nginx site to avoid server_name conflicts
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test and reload
+sudo nginx -t && sudo nginx -s reload
+```
+
+> **Network prerequisites:** pfSense (or your router) must forward external port 80 → `10.6.12.15:80`. Internal clients must resolve `corespan.ddnsgeek.com` → `10.6.12.15` via split DNS; without it, requests loop through the WAN IP (NAT hairpin) and time out.
+
+### `.env` settings to enable
+
+```dotenv
+NGINX_ENABLED=true
+PROXY_BASE_URL=http://corespan.ddnsgeek.com
+
+# Path that is bind-mounted from the nginx host into the worker container
+NGINX_CONF_DIR=/etc/nginx/jupyter-locations
+
+# If nginx is on the same host as the worker
+NGINX_RELOAD_CMD=nginx -s reload
+
+# If nginx is on a separate machine (e.g. master node at 10.6.12.15)
+NGINX_RELOAD_CMD=ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no drut@10.6.12.15 sudo nginx -s reload
+```
+
+Also update `docker-compose.yml` to bind-mount the nginx locations directory into the worker container:
+
+```yaml
+worker:
+  volumes:
+    - /etc/nginx/jupyter-locations:/etc/nginx/jupyter-locations
+    - ~/.ssh:/root/.ssh:ro
+```
+
+---
+
 ## Configuration (`.env`)
+
+Copy `.env.example` to `.env` and fill in the values below.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -386,9 +464,13 @@ To update an image tag: change it in `catalog.json` and run `make seed` — no c
 | `GCP_REPOSITORY` | `workbench-registry` | Artifact Registry repo |
 | `GCP_IMAGE_PATH` | `services/workloads` | Path prefix inside the repo |
 | `WORKLOAD_IMAGE_TAG` | `2.3.1-nvidia` | Fallback image tag (overridden by `catalog.json`) |
-| `JUPYTER_IMAGE_TAG` | `2.0.0-nvidia` | Tag for the jupyternotebook image |
+| `JUPYTER_IMAGE_TAG` | `2.1.0-nvidia` | Tag for the jupyternotebook image |
 | `MODEL_STORAGE_MODE` | `huggingface` | `huggingface`, `local`, or `gcs` |
 | `MODEL_LOCAL_PATH` | `/home/ubuntu/models` | Used when `MODEL_STORAGE_MODE=local` |
+| `NGINX_ENABLED` | `false` | Set to `true` to route Jupyter through nginx (hides GPU node IPs) |
+| `PROXY_BASE_URL` | *(empty)* | Public domain with scheme and no trailing slash — e.g. `http://corespan.ddnsgeek.com`. Required when `NGINX_ENABLED=true`. |
+| `NGINX_CONF_DIR` | `/etc/nginx/jupyter-locations` | Directory where the worker writes per-instance location files. Must be bind-mounted in `docker-compose.yml`. |
+| `NGINX_RELOAD_CMD` | `nginx -s reload` | Command to reload nginx after a config is written. When nginx runs on a separate host, use an SSH command — e.g. `ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no user@master-node sudo nginx -s reload`. |
 
 ---
 
