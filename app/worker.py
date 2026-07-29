@@ -80,9 +80,9 @@ def _fail_workload(workload_id, trigger, error):
                 existing = db.query(BenchmarkResult).filter(
                     BenchmarkResult.run_id == workload_id
                 ).first()
+                now = datetime.now(timezone.utc)
                 if not existing:
                     node = db.query(Node).filter(Node.workload_id == workload.id).first()
-                    now = datetime.now(timezone.utc)
                     db.add(BenchmarkResult(
                         run_id=workload_id,
                         sub_run_index=0,
@@ -107,6 +107,13 @@ def _fail_workload(workload_id, trigger, error):
                         completed_at=now,
                         duration_seconds=0,
                     ))
+                    db.commit()
+                elif existing.status == "running":
+                    # Benchmark was in-progress when it failed — mark the row failed.
+                    existing.status = "failed"
+                    existing.completed_at = now
+                    if existing.started_at:
+                        existing.duration_seconds = (now - existing.started_at).total_seconds()
                     db.commit()
     except Exception:
         logger.critical(
@@ -320,7 +327,45 @@ def execute_benchmark(self, workload_id):
                 "awk -F',' '{printf \"GPU: %s  VRAM used: %s MB  free: %s MB  util: %s%%\\n\",$1,$2,$3,$4}' "
                 "|| echo 'nvidia-smi not available'"
             )
+            # Create a pending "running" BenchmarkResult so the run is immediately
+            # visible in the leaderboard while the SSH benchmark executes.
+            # node.specs was captured by validate_node and stored on the DB row.
+            _gpus     = (node.specs or {}).get("gpus", [])
+            _gc       = len(_gpus) or 1
+            _gm       = _gpus[0].get("name", "") if _gpus else ""
+            _gt       = _extract_gpu_type(node.specs)
+            _sn       = (node.specs or {}).get("server_name", node.machine_ip)
             bench_started_at = datetime.now(timezone.utc)
+            try:
+                db.add(BenchmarkResult(
+                    run_id=workload_id,
+                    sub_run_index=0,
+                    workload_type="llm",
+                    model_name=workload.model_name.lower(),
+                    pipeline_version="vllm-openai-latest",
+                    node_ips=[node.machine_ip],
+                    gpu_type=_gt,
+                    gpu_count=_gc,
+                    gpu_model=_gm,
+                    server_name=_sn,
+                    precision=cfg.get("precision", "fp32").lower(),
+                    input_tokens=cfg.get("input_tokens", 0),
+                    output_tokens=cfg.get("output_tokens", 0),
+                    concurrency=cfg.get("concurrency", 1),
+                    status="running",
+                    total_token_throughput=None,
+                    mean_ttft_ms=None,
+                    mean_tpot_ms=None,
+                    mean_e2el_ms=None,
+                    metrics={},
+                    started_at=bench_started_at,
+                    completed_at=None,
+                    duration_seconds=None,
+                ))
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.warning("Could not create pending BenchmarkResult for %s", workload_id)
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
                     "%s && %s && %s && %s" % (port_cmd, gpu_cmd, server_cmd, client_cmd), task.id,
@@ -350,38 +395,58 @@ def execute_benchmark(self, workload_id):
             if result_log:
                 try:
                     metrics = json.loads(result_log.line[len("BENCH_RESULT:"):])
-                    gpus_list = (node.specs or {}).get("gpus", [])
-                    gpu_count = len(gpus_list) or 1
-                    gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
-                    gpu_type = _extract_gpu_type(node.specs)
-                    precision = cfg.get("precision", "fp32").lower()
-                    server_name = (node.specs or {}).get("server_name", node.machine_ip)
-                    db.add(BenchmarkResult(
-                        run_id=workload_id,
-                        sub_run_index=0,
-                        workload_type="llm",
-                        model_name=workload.model_name.lower(),
-                        pipeline_version="vllm-openai-latest",
-                        node_ips=[node.machine_ip],
-                        gpu_type=gpu_type,
-                        gpu_count=gpu_count,
-                        gpu_model=gpu_model,
-                        server_name=server_name,
-                        precision=precision,
-                        input_tokens=cfg.get("input_tokens", 0),
-                        output_tokens=cfg.get("output_tokens", 0),
-                        concurrency=cfg.get("concurrency", 1),
-                        status="success",
-                        total_token_throughput=metrics.get("total_token_throughput"),
-                        mean_ttft_ms=metrics.get("mean_ttft_ms"),
-                        mean_tpot_ms=metrics.get("mean_tpot_ms"),
-                        mean_e2el_ms=metrics.get("mean_e2el_ms"),
-                        metrics=metrics,
-                        started_at=bench_started_at,
-                        completed_at=bench_completed_at,
-                        duration_seconds=(bench_completed_at - bench_started_at).total_seconds(),
-                    ))
-                    db.commit()
+                    # Update the pending "running" row created before the SSH call.
+                    pending = (
+                        db.query(BenchmarkResult)
+                        .filter(
+                            BenchmarkResult.run_id == workload_id,
+                            BenchmarkResult.sub_run_index == 0,
+                        )
+                        .first()
+                    )
+                    if pending:
+                        pending.status = "success"
+                        pending.total_token_throughput = metrics.get("total_token_throughput")
+                        pending.mean_ttft_ms = metrics.get("mean_ttft_ms")
+                        pending.mean_tpot_ms = metrics.get("mean_tpot_ms")
+                        pending.mean_e2el_ms = metrics.get("mean_e2el_ms")
+                        pending.metrics = metrics
+                        pending.completed_at = bench_completed_at
+                        pending.duration_seconds = (bench_completed_at - bench_started_at).total_seconds()
+                        flag_modified(pending, "metrics")
+                        db.commit()
+                    else:
+                        # Pending row wasn't created (e.g. DB error) — insert fresh.
+                        gpus_list = (node.specs or {}).get("gpus", [])
+                        gpu_count = len(gpus_list) or 1
+                        gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
+                        gpu_type = _extract_gpu_type(node.specs)
+                        db.add(BenchmarkResult(
+                            run_id=workload_id,
+                            sub_run_index=0,
+                            workload_type="llm",
+                            model_name=workload.model_name.lower(),
+                            pipeline_version="vllm-openai-latest",
+                            node_ips=[node.machine_ip],
+                            gpu_type=gpu_type,
+                            gpu_count=gpu_count,
+                            gpu_model=gpu_model,
+                            server_name=(node.specs or {}).get("server_name", node.machine_ip),
+                            precision=cfg.get("precision", "fp32").lower(),
+                            input_tokens=cfg.get("input_tokens", 0),
+                            output_tokens=cfg.get("output_tokens", 0),
+                            concurrency=cfg.get("concurrency", 1),
+                            status="success",
+                            total_token_throughput=metrics.get("total_token_throughput"),
+                            mean_ttft_ms=metrics.get("mean_ttft_ms"),
+                            mean_tpot_ms=metrics.get("mean_tpot_ms"),
+                            mean_e2el_ms=metrics.get("mean_e2el_ms"),
+                            metrics=metrics,
+                            started_at=bench_started_at,
+                            completed_at=bench_completed_at,
+                            duration_seconds=(bench_completed_at - bench_started_at).total_seconds(),
+                        ))
+                        db.commit()
                     logger.info("BenchmarkResult saved for workload %s", workload_id)
 
                     # Write a human-readable results summary to the log stream

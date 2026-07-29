@@ -3,9 +3,18 @@ app/utils/sse.py — Shared SSE log-streaming helper.
 """
 
 import asyncio
+import re
 import uuid
 from datetime import datetime
 from typing import AsyncGenerator, Optional
+
+# Masks the last two octets of any IPv4 address in log lines so node IPs are
+# never exposed to the client. e.g. 10.6.12.26 → 10.6.x.x
+_IP_RE = re.compile(r'(?<![.\d])(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}(?![.\d])')
+
+
+def _mask_ip(text: str) -> str:
+    return _IP_RE.sub(r'\1.x.x', text)
 
 from fastapi import Request
 from sqlalchemy import select
@@ -85,7 +94,7 @@ async def task_log_stream(
                     last_sent_ids.add(str(log.id))
                     continue
                 ts = log.logged_at.isoformat() if log.logged_at else ""
-                yield "id: %s\ndata: %s\n\n" % (ts, log.line)
+                yield "id: %s\ndata: %s\n\n" % (ts, _mask_ip(log.line))
                 if log.logged_at != last_seen_date:
                     last_sent_ids.clear()
                     last_seen_date = log.logged_at

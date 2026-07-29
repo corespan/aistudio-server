@@ -12,95 +12,58 @@ _GCR_LOGIN_CMD = (
 )
 
 
-# ── Benchmark Python script (runs on the remote node via base64 exec) ────────
-# Sends concurrent completions requests to the local vLLM server and collects
-# E2E latency + throughput metrics. Outputs a single "BENCH_RESULT:{json}" line
-# that execute_benchmark() parses to create a BenchmarkResult row.
-_BENCHMARK_SCRIPT = textwrap.dedent("""\
-    import os, time, threading, json, urllib.request
-
-    model         = os.environ["BENCH_MODEL"]
-    concurrency   = int(os.environ["BENCH_CONCURRENCY"])
-    input_tokens  = int(os.environ["BENCH_INPUT_TOKENS"])
-    output_tokens = int(os.environ["BENCH_OUTPUT_TOKENS"])
-    num_requests  = int(os.environ["BENCH_NUM_REQUESTS"])
-
-    url    = "http://localhost:%s/v1/completions" % os.environ["VLLM_PORT"]
-    prompt = ("bench " * 2000)[: input_tokens * 5]
-
-    results = []
-    lock    = threading.Lock()
-
-    def send_req(i):
-        data = json.dumps({
-            "model": model, "prompt": prompt,
-            "max_tokens": output_tokens, "temperature": 0,
-        }).encode()
-        req = urllib.request.Request(
-            url, data=data, headers={"Content-Type": "application/json"}
-        )
-        t0 = time.time()
+# ── Result parser (runs inside the vLLM container via base64 exec) ───────────
+# After `vllm bench serve --save-result` writes /tmp/bench_result.json,
+# this script reads it and prints the single "BENCH_RESULT:{json}" line that
+# execute_benchmark() parses to create a BenchmarkResult row.
+#
+# vllm bench serve produces all the TTFT/TPOT/E2EL metrics via the official
+# streaming benchmark tool — far more accurate than our old urllib script.
+_PARSE_SCRIPT = textwrap.dedent("""\
+    import json, sys
+    try:
+        with open('/tmp/bench_result.json') as f:
+            content = f.read().strip()
+        # vllm bench --save-result writes a single JSON object (no --append-result).
+        # Guard against JSONL in case --append-result was used previously.
         try:
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                body = json.loads(resp.read())
-            t1 = time.time()
-            toks = body.get("usage", {}).get("completion_tokens", output_tokens)
-            with lock:
-                results.append({"ok": True, "latency": t1 - t0, "tokens": toks})
-        except Exception as e:
-            with lock:
-                results.append({"ok": False, "error": str(e)})
-            print("Request %d failed: %s" % (i, e), flush=True)
+            d = json.loads(content)
+        except json.JSONDecodeError:
+            lines = [l for l in content.split('\\n') if l.strip()]
+            d = json.loads(lines[-1]) if lines else {}
 
-    print(
-        "Benchmarking: model=%s concurrency=%d input=%d output=%d n=%d"
-        % (model, concurrency, input_tokens, output_tokens, num_requests),
-        flush=True,
-    )
-    t_start = time.time()
-    pending = list(range(num_requests))
-    active  = []
-    while pending or active:
-        active = [t for t in active if t.is_alive()]
-        while len(active) < concurrency and pending:
-            t = threading.Thread(target=send_req, args=(pending.pop(0),))
-            t.start()
-            active.append(t)
-        if pending or active:
-            time.sleep(0.05)
-    duration = time.time() - t_start
+        def _r(v, digits=2):
+            return round(v, digits) if v is not None else None
 
-    ok        = [r for r in results if r.get("ok")]
-    latencies = sorted(r["latency"] for r in ok)
-    total_out = sum(r["tokens"] for r in ok)
-    total_tok = (input_tokens + output_tokens) * len(ok)
-    mean_lat  = sum(latencies) / len(latencies) if latencies else None
-    p50       = latencies[len(latencies) // 2]                  if latencies else None
-    p99       = latencies[int(len(latencies) * 0.99)]           if latencies else None
-
-    res = {
-        "total_requests":        num_requests,
-        "successful_requests":   len(ok),
-        "duration_s":            round(duration, 3),
-        "total_token_throughput":  round(total_tok / duration, 2) if duration else 0,
-        "output_token_throughput": round(total_out / duration, 2) if duration else 0,
-        "mean_e2el_ms": round(mean_lat * 1000, 2)                            if mean_lat else None,
-        "p50_e2el_ms":  round(p50 * 1000, 2)                                 if p50      else None,
-        "p99_e2el_ms":  round(p99 * 1000, 2)                                 if p99      else None,
-        "mean_ttft_ms": None,
-        "mean_tpot_ms": round(mean_lat * 1000 / output_tokens, 2)
-                        if mean_lat and output_tokens else None,
-    }
-    print(
-        "Done: %d/%d ok  throughput=%.1f tok/s  e2el=%.0f ms"
-        % (len(ok), num_requests, res["total_token_throughput"], res["mean_e2el_ms"] or 0),
-        flush=True,
-    )
-    print("BENCH_RESULT:" + json.dumps(res), flush=True)
+        res = {
+            "total_requests":          d.get("num_prompts", 0),
+            "successful_requests":     d.get("completed", 0),
+            "duration_s":              _r(d.get("duration"), 3),
+            "total_token_throughput":  _r(d.get("total_token_throughput")),
+            "output_token_throughput": _r(d.get("output_throughput")),
+            "mean_ttft_ms":            _r(d.get("mean_ttft_ms")),
+            "p99_ttft_ms":             _r(d.get("p99_ttft_ms")),
+            "mean_tpot_ms":            _r(d.get("mean_tpot_ms")),
+            "mean_e2el_ms":            _r(d.get("mean_e2el_ms")),
+            "p50_e2el_ms":             _r(d.get("p50_e2el_ms")),
+            "p99_e2el_ms":             _r(d.get("p99_e2el_ms")),
+        }
+        tpt = res["total_token_throughput"] or 0
+        e2e = res["mean_e2el_ms"] or 0
+        ttft = res["mean_ttft_ms"] or 0
+        print(
+            "Done: %d/%d ok  throughput=%.1f tok/s  ttft=%.0f ms  e2el=%.0f ms"
+            % (res["successful_requests"], res["total_requests"], tpt, ttft, e2e),
+            flush=True,
+        )
+        print("BENCH_RESULT:" + json.dumps(res), flush=True)
+    except Exception as e:
+        print("ERROR parsing bench_result.json: " + str(e), file=sys.stderr, flush=True)
+        sys.exit(1)
 """)
 
-# Encode once at import time; safe to embed in any shell command.
-_SCRIPT_B64 = base64.b64encode(_BENCHMARK_SCRIPT.encode()).decode()
+# Encode once at import time; safe to embed in any docker exec command.
+_PARSE_B64 = base64.b64encode(_PARSE_SCRIPT.encode()).decode()
 
 # Map UI precision labels → vLLM --dtype values
 _DTYPE_MAP = {
@@ -198,28 +161,54 @@ class ManifestBuilder:
             "echo \"vLLM server ready on port $VLLM_PORT.\""
         ) % {"name": container_name}
 
-        # ── 2. Export config as env vars and run the embedded benchmark ───────
+        # ── 2. Run `vllm bench serve` inside the container ───────────────────
+        # The vLLM container already has the vllm package installed, so we
+        # docker-exec into it to use the official streaming benchmark tool.
+        # This measures TTFT, TPOT, and E2EL properly — the old urllib script
+        # could not measure TTFT because it used non-streaming completions.
+        #
+        # The server inside the container listens on port 8000 (internal).
+        # `vllm bench serve` with --dataset-name random generates prompts of
+        # exactly --random-input-len tokens, so ISL/OSL are precisely controlled.
         bench = (
-            "export BENCH_MODEL='%(model)s' && "
-            "export BENCH_CONCURRENCY=%(concurrency)d && "
-            "export BENCH_INPUT_TOKENS=%(input_tokens)d && "
-            "export BENCH_OUTPUT_TOKENS=%(output_tokens)d && "
-            "export BENCH_NUM_REQUESTS=%(num_requests)d && "
-            "export VLLM_PORT=$VLLM_PORT && "
-            "python3 -c \"import base64; exec(base64.b64decode('%(b64)s').decode())\""
+            "echo \"Running benchmark: model=%(model)s concurrency=%(conc)d "
+            "isl=%(isl)d osl=%(osl)d n=%(n)d\" && "
+            "docker exec %(name)s vllm bench serve "
+            "--backend vllm "
+            "--host 0.0.0.0 "
+            "--port 8000 "
+            "--endpoint /v1/completions "
+            "--model %(model)s "
+            "--dataset-name random "
+            "--random-input-len %(isl)d "
+            "--random-output-len %(osl)d "
+            "--num-prompts %(n)d "
+            "--max-concurrency %(conc)d "
+            "--ignore-eos "
+            "--percentile-metrics ttft,tpot,itl,e2el "
+            "--save-result "
+            "--result-dir /tmp "
+            "--result-filename bench_result.json "
+            "--trust-remote-code"
         ) % {
-            "model":        model_name,
-            "concurrency":  concurrency,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "num_requests": num_requests,
-            "b64":          _SCRIPT_B64,
+            "name":  container_name,
+            "model": model_name,
+            "isl":   input_tokens,
+            "osl":   output_tokens,
+            "n":     num_requests,
+            "conc":  concurrency,
         }
 
-        # ── 3. Always stop the vLLM container whether benchmark passes or fails
+        # ── 3. Parse /tmp/bench_result.json inside the container and print BENCH_RESULT:
+        parse = (
+            "docker exec %(name)s python3 -c "
+            "\"import base64; exec(base64.b64decode('%(b64)s').decode())\""
+        ) % {"name": container_name, "b64": _PARSE_B64}
+
+        # ── 4. Always stop the vLLM container whether benchmark passes or fails
         cleanup = "docker stop %s 2>/dev/null || true" % container_name
 
-        return "%s && %s ; %s" % (wait, bench, cleanup)
+        return "%s && %s && %s ; %s" % (wait, bench, parse, cleanup)
 
     @staticmethod
     def build_jupyter_command(run_id: str = "") -> str:

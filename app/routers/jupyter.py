@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import time
 import uuid
 from datetime import datetime
@@ -13,7 +15,10 @@ from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.models.workload import Workload
 from app.models.node import Node
+from app.services.ssh_executor import SSHExecutor
 from app.utils.sse import task_log_stream
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Jupyter"])
 
@@ -138,7 +143,7 @@ async def launch_jupyter(
 ):
     """
     Launch a new on-demand Jupyter instance on the given node.
-    The Celery chain (validate → install → launch) runs asynchronously.
+    The Celery chain (validate → launch) runs asynchronously.
     Once the workload reaches READY state with a jupyter_url, it appears
     automatically in GET /api/v1/jupyter/instances.
     """
@@ -178,6 +183,8 @@ async def launch_jupyter(
     )
 
 
+# ── Per-instance endpoints ────────────────────────────────────────────────────
+
 @router.get("/api/v1/jupyter/instances/{task_id}/status")
 async def get_jupyter_instance_status(task_id: str, db: AsyncSession = Depends(get_db)):
     """
@@ -210,15 +217,24 @@ async def stream_jupyter_logs(task_id: str, request: Request):
     SSE stream of launch logs for a Jupyter workload (validate → launch steps).
     Streams in real-time while the launch is in progress, then closes.
     Supports Last-Event-ID for reconnect without replaying already-seen lines.
+    Retries DB lookup up to 5s to handle race where frontend calls this
+    immediately after POST /launch before the commit is visible.
     """
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Workload.id).where(
-                Workload.workload_id == task_id,
-                Workload.model_name == "jupyter",
+    # Retry up to 5 times with 1s delay — the frontend calls this endpoint
+    # immediately after POST /launch, but the DB commit may not be visible yet.
+    workload_db_id = None
+    for _ in range(5):
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Workload.id).where(
+                    Workload.workload_id == task_id,
+                    Workload.model_name == "jupyter",
+                )
             )
-        )
-        workload_db_id = result.scalar_one_or_none()
+            workload_db_id = result.scalar_one_or_none()
+        if workload_db_id:
+            break
+        await asyncio.sleep(1)
 
     if not workload_db_id:
         raise HTTPException(status_code=404, detail="Jupyter workload not found")
@@ -234,6 +250,59 @@ async def stream_jupyter_logs(task_id: str, request: Request):
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )
+
+
+@router.delete("/api/v1/jupyter/instances/{task_id}", status_code=204)
+async def delete_jupyter_instance(task_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Stop the Jupyter container on the remote node and remove it from the DB.
+    Cascades: Workload → Tasks → TaskLogs, WorkloadEvents, Nodes all deleted.
+    Returns 400 if task_id is 'persistent' (not a DB-managed instance).
+    SSH errors are logged but do not block the DB deletion — the container
+    may already be gone on the node.
+    """
+    if task_id == "persistent":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the persistent assistant — it is not managed by this server.",
+        )
+
+    # Fetch workload + node
+    wl_result = await db.execute(
+        select(Workload).where(
+            Workload.workload_id == task_id,
+            Workload.model_name == "jupyter",
+        )
+    )
+    workload = wl_result.scalar_one_or_none()
+    if not workload:
+        raise HTTPException(status_code=404, detail="Jupyter workload not found")
+
+    node_result = await db.execute(
+        select(Node).where(Node.workload_id == workload.id)
+    )
+    node = node_result.scalar_one_or_none()
+
+    # SSH into node and stop the container — best-effort, don't block on failure
+    if node:
+        try:
+            container_name = "jupyter-%s" % task_id
+            stop_cmd = "docker rm -f %s 2>/dev/null || true" % container_name
+            with SSHExecutor(
+                node.machine_ip,
+                node.machine_username,
+                key_filename=settings.SSH_KEY_PATH,
+            ) as ssh:
+                ssh.run_command(stop_cmd, task_id=None)
+        except Exception as exc:
+            logger.warning(
+                "Could not stop container for %s on %s: %s",
+                task_id, node.machine_ip, exc,
+            )
+
+    # Delete workload — cascades to Tasks, TaskLogs, WorkloadEvents, Nodes
+    await db.delete(workload)
+    await db.commit()
 
 
 @router.get("/api/v1/jupyter/instances/{task_id}/health")

@@ -158,7 +158,9 @@ async def list_benchmarks(
     for c in conditions:
         query = query.where(c)
     query = query.order_by(
-        # tier_rank first — H100 before RTX 5090 before A100, etc.
+        # In-progress runs always float to the top of the leaderboard.
+        case((BenchmarkResult.status == "running", 0), else_=1).asc(),
+        # tier_rank next — H100 before RTX 5090 before A100, etc.
         GpuSpec.tier_rank.asc().nulls_last(),
         # within the same tier, PRU runs come first
         case((BenchmarkResult.server_name == "PRU", 0), else_=1).asc(),

@@ -1,7 +1,16 @@
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+# Matches any 4-octet IPv4 address that is not part of a longer number string.
+# Replaces the last two octets with 'x.x' so e.g. 10.6.12.26 → 10.6.x.x.
+_IP_RE = re.compile(r'(?<![.\d])(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}(?![.\d])')
+
+
+def _mask_ip(ip: str) -> str:
+    return _IP_RE.sub(r'\1.x.x', ip)
 
 
 # ── 1. Legacy Ingestion Schema (POST /api/v1/metrics) ───────────────────────
@@ -119,6 +128,9 @@ class BenchmarkResultResponse(BaseModel):
         tpt = data.get("total_token_throughput")
         gc = data.get("gpu_count") or 1
         data["per_gpu_throughput_tok_s"] = round(tpt / gc, 2) if tpt else None
+        # Mask the last two octets of node IPs before returning to the client.
+        if data.get("node_ips"):
+            data["node_ips"] = [_mask_ip(ip) for ip in data["node_ips"]]
         return cls(**data)
 
 
