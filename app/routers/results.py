@@ -50,6 +50,7 @@ def _build_filter_conditions(
     date: Optional[str],
     server_name: Optional[str] = None,
     workload_type: Optional[str] = None,
+    run_id: Optional[str] = None,
 ) -> list:
     """
     Build the standard BenchmarkResult WHERE conditions from filter params.
@@ -80,6 +81,8 @@ def _build_filter_conditions(
         conditions.append(BenchmarkResult.server_name == server_name)
     if workload_type:
         conditions.append(BenchmarkResult.workload_type == workload_type.lower())
+    if run_id:
+        conditions.append(BenchmarkResult.run_id == run_id)
     if date:
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -134,6 +137,7 @@ async def list_benchmarks(
     date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     server_name: Optional[str] = Query(None),
     workload_type: Optional[str] = Query(None, description="e.g. 'llm', 'resnet'"),
+    run_id: Optional[str] = Query(None, description="Filter by exact run_id"),
     limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
 ):
@@ -150,6 +154,7 @@ async def list_benchmarks(
         model=model, gpu_type=gpu_type, node_ip=node_ip, concurrency=concurrency,
         precision=precision, input_tokens=input_tokens, output_tokens=output_tokens,
         status=status, date=date, server_name=server_name, workload_type=workload_type,
+        run_id=run_id,
     )
     query = (
         select(BenchmarkResult)
