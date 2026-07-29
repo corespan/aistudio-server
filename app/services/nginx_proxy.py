@@ -4,7 +4,7 @@ nginx reverse proxy management for Jupyter instances.
 When NGINX_ENABLED=true, each Jupyter instance gets a path-based nginx route:
 
     http://corespan.ddnsgeek.com/jupyter/T4/jup-20260729-abc123/lab
-      → http://10.6.12.26:37975/
+      → http://10.6.12.26:37975 (full path forwarded — no prefix stripping)
 
 No DNS setup required — uses the public domain configured in PROXY_BASE_URL.
 
@@ -70,7 +70,7 @@ _LOCATION_TEMPLATE = """\
 # Jupyter proxy for task: {task_id}
 # GPU: {gpu_type}  →  {node_ip}:{port}
 location /jupyter/{gpu_type}/{task_id}/ {{
-    proxy_pass http://{node_ip}:{port}/;
+    proxy_pass http://{node_ip}:{port};
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
