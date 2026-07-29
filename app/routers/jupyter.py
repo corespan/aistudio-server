@@ -69,24 +69,54 @@ async def check_assistant_health():
     return {"url": url, **result}
 
 
+# ── Request models ────────────────────────────────────────────────────────────
+
+class JupyterLaunchRequest(BaseModel):
+    node_ip: str
+
+
+class PersistentJupyterRequest(BaseModel):
+    url: str
+
+
+class JupyterLaunchResponse(BaseModel):
+    status: str
+    task_id: str
+    message: str
+
+
 # ── On-demand Jupyter instances ───────────────────────────────────────────────
 
 @router.get("/api/v1/jupyter/instances")
 async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
     """
-    Returns READY Jupyter instances that have a jupyter_url set, plus the
-    persistent assistant entry (JUPYTER_ASSISTANT_URL) if configured.
-
-    The persistent assistant is not a workload in the DB — it's prepended
-    as a synthetic entry with task_id='persistent' so the UI can always
-    show it alongside on-demand instances.
+    Returns READY Jupyter instances that have a jupyter_url set.
+    The persistent entry (task_id='persistent') is always first, sourced from:
+      1. DB — a workload row with workload_id='persistent' (set via POST /persistent)
+      2. Fallback: JUPYTER_ASSISTANT_URL env var
+    On-demand instances follow, sorted newest-first.
     """
+    from urllib.parse import urlparse
+
+    # ── Persistent entry (DB takes precedence over env var) ──────────────────
+    p_result = await db.execute(
+        select(Workload).where(Workload.workload_id == "persistent")
+    )
+    persistent_wl = p_result.scalar_one_or_none()
+
+    if persistent_wl:
+        p_url = (persistent_wl.workload_config or {}).get("jupyter_url")
+    else:
+        p_url = settings.JUPYTER_ASSISTANT_URL or None
+
+    # ── On-demand READY instances (exclude persistent row) ────────────────────
     result = await db.execute(
         select(Workload, Node.machine_ip)
         .outerjoin(Node, Node.workload_id == Workload.id)
         .where(
             Workload.model_name == "jupyter",
             Workload.state == "READY",
+            Workload.workload_id != "persistent",
         )
         .order_by(Workload.created_at.desc())
     )
@@ -105,36 +135,58 @@ async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
         if (workload.workload_config or {}).get("jupyter_url")
     ]
 
-    # Prepend persistent assistant if configured and not already in the list
-    if settings.JUPYTER_ASSISTANT_URL:
-        from urllib.parse import urlparse
-        parsed = urlparse(settings.JUPYTER_ASSISTANT_URL)
-        node_ip = parsed.hostname
-        already_listed = any(i["jupyter_url"] == settings.JUPYTER_ASSISTANT_URL for i in instances)
-        if not already_listed:
-            instances.insert(0, {
-                "task_id": "persistent",
-                "state": "READY",
-                "node_ip": node_ip,
-                "jupyter_url": settings.JUPYTER_ASSISTANT_URL,
-                "created_at": None,
-                "updated_at": None,
-            })
+    # Prepend persistent entry at position 0
+    if p_url:
+        parsed = urlparse(p_url)
+        instances.insert(0, {
+            "task_id": "persistent",
+            "state": "READY",
+            "node_ip": parsed.hostname,
+            "jupyter_url": p_url,
+            "created_at": persistent_wl.created_at if persistent_wl else None,
+            "updated_at": persistent_wl.updated_at if persistent_wl else None,
+        })
 
     return instances
 
 
+@router.post("/api/v1/jupyter/persistent", status_code=200)
+async def set_persistent_jupyter(
+    body: PersistentJupyterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Store or update the persistent Jupyter URL in the DB.
+    This entry is always shown first in GET /api/v1/jupyter/instances
+    and cannot be deleted via the DELETE endpoint.
+    Send {"url": "http://<node-ip>:<port>/lab?token=..."}.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(body.url)
+    node_ip = parsed.hostname
+
+    p_result = await db.execute(
+        select(Workload).where(Workload.workload_id == "persistent")
+    )
+    existing = p_result.scalar_one_or_none()
+
+    if existing:
+        existing.workload_config = {"jupyter_url": body.url, "workload_type": "jupyter"}
+        existing.updated_at = datetime.utcnow()
+    else:
+        new_wl = Workload(
+            workload_id="persistent",
+            model_name="jupyter",
+            workload_config={"jupyter_url": body.url, "workload_type": "jupyter"},
+            state="READY",
+        )
+        db.add(new_wl)
+
+    await db.commit()
+    return {"status": "ok", "task_id": "persistent", "url": body.url, "node_ip": node_ip}
+
+
 # ── Launch on-demand instance ─────────────────────────────────────────────────
-
-class JupyterLaunchRequest(BaseModel):
-    node_ip: str
-
-
-class JupyterLaunchResponse(BaseModel):
-    status: str
-    task_id: str
-    message: str
-
 
 @router.post("/api/v1/jupyter/launch", response_model=JupyterLaunchResponse)
 async def launch_jupyter(
