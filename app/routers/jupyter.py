@@ -77,7 +77,7 @@ class JupyterLaunchRequest(BaseModel):
 
 
 class PersistentJupyterRequest(BaseModel):
-    url: str
+    task_id: str
 
 
 class JupyterLaunchResponse(BaseModel):
@@ -92,32 +92,16 @@ class JupyterLaunchResponse(BaseModel):
 async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
     """
     Returns READY Jupyter instances that have a jupyter_url set.
-    The persistent entry (task_id='persistent') is always first, sourced from:
-      1. DB — a workload row with workload_id='persistent' (set via POST /persistent)
-      2. Fallback: JUPYTER_ASSISTANT_URL env var
-    On-demand instances follow, sorted newest-first.
+    Persistent instances (is_persistent=true in workload_config) are shown first.
+    All instances use their real task_id — no fake 'persistent' row.
     """
-    from urllib.parse import urlparse
-
-    # ── Persistent entry (DB takes precedence over env var) ──────────────────
-    p_result = await db.execute(
-        select(Workload).where(Workload.workload_id == "persistent")
-    )
-    persistent_wl = p_result.scalar_one_or_none()
-
-    if persistent_wl:
-        p_url = (persistent_wl.workload_config or {}).get("jupyter_url")
-    else:
-        p_url = settings.JUPYTER_ASSISTANT_URL or None
-
-    # ── On-demand READY instances (exclude persistent row) ────────────────────
     result = await db.execute(
         select(Workload, Node.machine_ip)
         .outerjoin(Node, Node.workload_id == Workload.id)
         .where(
             Workload.model_name == "jupyter",
             Workload.state == "READY",
-            Workload.workload_id != "persistent",
+            Workload.workload_id != "persistent",  # drop legacy fake row if present
         )
         .order_by(Workload.created_at.desc())
     )
@@ -129,6 +113,7 @@ async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
             "state": workload.state,
             "node_ip": node_ip,
             "jupyter_url": (workload.workload_config or {}).get("jupyter_url"),
+            "is_persistent": bool((workload.workload_config or {}).get("is_persistent")),
             "created_at": workload.created_at,
             "updated_at": workload.updated_at,
         }
@@ -136,17 +121,8 @@ async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
         if (workload.workload_config or {}).get("jupyter_url")
     ]
 
-    # Prepend persistent entry at position 0
-    if p_url:
-        parsed = urlparse(p_url)
-        instances.insert(0, {
-            "task_id": "persistent",
-            "state": "READY",
-            "node_ip": parsed.hostname,
-            "jupyter_url": p_url,
-            "created_at": persistent_wl.created_at if persistent_wl else None,
-            "updated_at": persistent_wl.updated_at if persistent_wl else None,
-        })
+    # Persistent instances first, then newest-first
+    instances.sort(key=lambda x: (not x["is_persistent"], x["created_at"] or ""), reverse=False)
 
     return instances
 
@@ -157,34 +133,54 @@ async def set_persistent_jupyter(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Store or update the persistent Jupyter URL in the DB.
-    This entry is always shown first in GET /api/v1/jupyter/instances
-    and cannot be deleted via the DELETE endpoint.
-    Send {"url": "http://<node-ip>:<port>/lab?token=..."}.
+    Mark an existing Jupyter instance as persistent.
+    Send {"task_id": "jup-20260729-xxx"}.
+    The instance keeps its real task_id — no fake 'persistent' row is created.
+    Persistent instances appear first in GET /instances and cannot be deleted.
+    Any previously persistent instance is un-marked automatically.
     """
-    from urllib.parse import urlparse
-    parsed = urlparse(body.url)
-    node_ip = parsed.hostname
-
-    p_result = await db.execute(
-        select(Workload).where(Workload.workload_id == "persistent")
-    )
-    existing = p_result.scalar_one_or_none()
-
-    if existing:
-        existing.workload_config = {"jupyter_url": body.url, "workload_type": "jupyter"}
-        existing.updated_at = datetime.utcnow()
-    else:
-        new_wl = Workload(
-            workload_id="persistent",
-            model_name="jupyter",
-            workload_config={"jupyter_url": body.url, "workload_type": "jupyter"},
-            state="READY",
+    # Target workload must exist
+    result = await db.execute(
+        select(Workload).where(
+            Workload.workload_id == body.task_id,
+            Workload.model_name == "jupyter",
         )
-        db.add(new_wl)
+    )
+    workload = result.scalar_one_or_none()
+    if not workload:
+        raise HTTPException(status_code=404, detail="Jupyter workload not found: %s" % body.task_id)
+
+    # Un-mark any previously persistent instance
+    prev_result = await db.execute(
+        select(Workload).where(
+            Workload.model_name == "jupyter",
+            Workload.workload_id != body.task_id,
+        )
+    )
+    for prev in prev_result.scalars().all():
+        cfg = dict(prev.workload_config or {})
+        if cfg.get("is_persistent"):
+            cfg["is_persistent"] = False
+            prev.workload_config = cfg
+            prev.updated_at = datetime.utcnow()
+
+    # Also delete the legacy fake 'persistent' row if it exists
+    await db.execute(
+        sql_delete(Workload).where(Workload.workload_id == "persistent")
+    )
+
+    # Mark the target as persistent
+    cfg = dict(workload.workload_config or {})
+    cfg["is_persistent"] = True
+    workload.workload_config = cfg
+    workload.updated_at = datetime.utcnow()
 
     await db.commit()
-    return {"status": "ok", "task_id": "persistent", "url": body.url, "node_ip": node_ip}
+    return {
+        "status": "ok",
+        "task_id": body.task_id,
+        "jupyter_url": cfg.get("jupyter_url"),
+    }
 
 
 # ── Launch on-demand instance ─────────────────────────────────────────────────
@@ -315,10 +311,8 @@ async def delete_jupyter_instance(task_id: str, db: AsyncSession = Depends(get_d
     may already be gone on the node.
     """
     if task_id == "persistent":
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot delete the persistent assistant — it is not managed by this server.",
-        )
+        raise HTTPException(status_code=400, detail="Legacy persistent row — delete via DB directly.")
+
 
     # Fetch workload + node
     wl_result = await db.execute(
@@ -330,6 +324,12 @@ async def delete_jupyter_instance(task_id: str, db: AsyncSession = Depends(get_d
     workload = wl_result.scalar_one_or_none()
     if not workload:
         raise HTTPException(status_code=404, detail="Jupyter workload not found")
+
+    if (workload.workload_config or {}).get("is_persistent"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a persistent instance. Un-mark it first via POST /api/v1/jupyter/persistent with another task_id.",
+        )
 
     node_result = await db.execute(
         select(Node).where(Node.workload_id == workload.id)
