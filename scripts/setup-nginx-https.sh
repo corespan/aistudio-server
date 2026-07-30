@@ -3,21 +3,13 @@ set -e
 
 DOMAIN="corespan.ddnsgeek.com"
 
-# Install certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# Get/renew cert via nginx plugin
-sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m muraharirao@corespan.ai
-
-# Write HTTPS server block with API proxy
+# Add nginx server block on port 8443 (plain HTTP).
+# SSL is terminated by pfSense HAProxy — no cert needed on this server.
 sudo tee /etc/nginx/conf.d/aistudio-api.conf > /dev/null << EOF
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
+    listen 8443;
+    listen [::]:8443;
     server_name $DOMAIN;
-
-    ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
 
     # API proxy
     location /api/ {
@@ -40,5 +32,5 @@ EOF
 
 sudo nginx -t && sudo nginx -s reload
 
-echo "Done. HTTPS is live at https://$DOMAIN"
-echo "Update your Vercel env: VITE_API_BASE_URL=https://$DOMAIN"
+echo "Done. API + Jupyter live at https://$DOMAIN:8443"
+echo "Update Vercel env: VITE_API_URL=https://$DOMAIN:8443"
