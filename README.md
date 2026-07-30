@@ -424,6 +424,30 @@ sudo nginx -t && sudo nginx -s reload
 
 > **Network prerequisites:** pfSense (or your router) must forward external port 80 → `10.6.12.15:80`. Internal clients must resolve `corespan.ddnsgeek.com` → `10.6.12.15` via split DNS; without it, requests loop through the WAN IP (NAT hairpin) and time out.
 
+### Internal team access — hosts file (required once per machine)
+
+`corespan.ddnsgeek.com` has split DNS on pfSense: the internal DNS server (`10.1.18.21`) returns `10.6.12.15`, but public DNS servers (8.8.8.8 etc.) return the WAN IP. The VPN does **not** automatically push pfSense as the DNS server to clients. If your machine falls back to public DNS, `corespan.ddnsgeek.com` resolves to the WAN IP, pfSense drops the connection, and you see `ERR_EMPTY_RESPONSE` in the browser.
+
+**Every team member on the VPN must add this once:**
+
+**Windows — run Notepad as Administrator:**
+1. Open `C:\Windows\System32\drivers\etc\hosts`
+2. Add this line at the bottom:
+   ```
+   10.6.12.15 corespan.ddnsgeek.com
+   ```
+3. Save, then flush DNS in PowerShell:
+   ```powershell
+   ipconfig /flushdns
+   ```
+
+**Linux / macOS:**
+```bash
+echo "10.6.12.15 corespan.ddnsgeek.com" | sudo tee -a /etc/hosts
+```
+
+After this, `corespan.ddnsgeek.com` always resolves to `10.6.12.15` regardless of which DNS server is active — Jupyter Lab URLs will work consistently every time.
+
 ### `.env` settings to enable
 
 ```dotenv
