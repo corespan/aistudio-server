@@ -165,10 +165,10 @@ async def list_benchmarks(
     query = query.order_by(
         # In-progress runs always float to the top of the leaderboard.
         case((BenchmarkResult.status == "running", 0), else_=1).asc(),
-        # Server priority: PRU first, JOHNAIC second, everything else after.
+        # Server priority: PRU first, Johnaic second, everything else after.
         case(
             (BenchmarkResult.server_name == "PRU",     0),
-            (BenchmarkResult.server_name == "JOHNAIC", 1),
+            (BenchmarkResult.server_name == "Johnaic", 1),
             else_=2,
         ).asc(),
         # tier_rank next — H100 before RTX 5090 before A100, etc.
