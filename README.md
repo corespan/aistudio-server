@@ -4,6 +4,20 @@ Open-source LLM benchmarking and workload orchestration backend. SSHes into GPU 
 
 ---
 
+## One-line Install
+
+**Linux / Mac:**
+```bash
+curl -sL https://raw.githubusercontent.com/corespan/aistudio-server/master/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/corespan/aistudio-server/master/install.ps1 -OutFile install.ps1; .\install.ps1
+```
+
+---
+
 ## Prerequisites
 
 | Tool | Install |
