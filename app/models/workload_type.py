@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from sqlalchemy import String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -13,6 +14,9 @@ class WorkloadType(Base):
     In AIStudio, we are currently focusing purely on 'LLMInference'.
     This table allows the UI to query available workload types dynamically
     via GET /api/v1/workload-types, rather than hardcoding them.
+
+    image_tag stores the Docker image tag for the workload container,
+    e.g. '2.3.1-nvidia'. Seeded from catalog.json at startup.
     """
 
     __tablename__ = "workload_types"
@@ -36,7 +40,7 @@ class WorkloadType(Base):
     display_name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
-        comment="Human-readable name shown in the UI. e.g. 'LLM Inference'.",
+        comment="Human-readable name shown in the UI. e.g. 'LLM Inference (vLLM)'.",
     )
 
     description: Mapped[str] = mapped_column(
@@ -45,5 +49,16 @@ class WorkloadType(Base):
         comment="Detailed description of what this workload type does.",
     )
 
+    # ── Docker Image Tag ──────────────────────────────────────────────────────
+    image_tag: Mapped[Optional[str]] = mapped_column(
+        String(64),
+        nullable=True,
+        comment=(
+            "Docker image tag for the workload container. "
+            "e.g. '2.3.1-nvidia'. Seeded from catalog.json. "
+            "Used by ManifestBuilder to build the docker run command."
+        ),
+    )
+
     def __repr__(self) -> str:
-        return f"<WorkloadType name={self.name!r}>"
+        return f"<WorkloadType name={self.name!r} image_tag={self.image_tag!r}>"

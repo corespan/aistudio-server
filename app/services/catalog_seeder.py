@@ -9,14 +9,15 @@ Usage:
     from app.services.catalog_seeder import seed_catalog
     seed_catalog()
 
-Idempotent: safe to run multiple times. Uses INSERT ... ON CONFLICT DO NOTHING.
+Idempotent: safe to run multiple times.
+  - New workload types are inserted.
+  - Existing ones have display_name, description, and image_tag updated if changed.
 """
 
 import json
 import logging
 import os
 
-from sqlalchemy import text
 from app.database import SyncSessionLocal
 from app.models.workload_type import WorkloadType
 
@@ -28,7 +29,7 @@ CATALOG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "catalog.json
 def seed_catalog(catalog_path: str = CATALOG_PATH) -> int:
     """
     Read catalog.json and upsert workload_types into PostgreSQL.
-    Returns the number of types seeded.
+    Returns the number of new types inserted.
     """
     catalog_path = os.path.abspath(catalog_path)
 
@@ -40,7 +41,7 @@ def seed_catalog(catalog_path: str = CATALOG_PATH) -> int:
         catalog = json.load(f)
 
     workload_types = catalog.get("workload_types", [])
-    seeded = 0
+    inserted = 0
 
     with SyncSessionLocal() as db:
         for wt in workload_types:
@@ -50,22 +51,30 @@ def seed_catalog(catalog_path: str = CATALOG_PATH) -> int:
                 .first()
             )
             if existing:
-                # Update display_name and description if changed
+                # Update mutable fields — image_tag can change between releases
                 existing.display_name = wt["display_name"]
                 existing.description = wt.get("description", "")
-                logger.info("Updated workload type: %s", wt["name"])
+                existing.image_tag = wt.get("image_tag")
+                logger.info(
+                    "Updated workload type: %s  image_tag=%s",
+                    wt["name"], wt.get("image_tag"),
+                )
             else:
                 db.add(WorkloadType(
                     name=wt["name"],
                     display_name=wt["display_name"],
                     description=wt.get("description", ""),
+                    image_tag=wt.get("image_tag"),
                 ))
-                logger.info("Seeded workload type: %s", wt["name"])
-                seeded += 1
+                logger.info(
+                    "Seeded workload type: %s  image_tag=%s",
+                    wt["name"], wt.get("image_tag"),
+                )
+                inserted += 1
         db.commit()
 
-    logger.info("Catalog seed complete. %d new type(s) added.", seeded)
-    return seeded
+    logger.info("Catalog seed complete. %d new type(s) inserted.", inserted)
+    return inserted
 
 
 if __name__ == "__main__":

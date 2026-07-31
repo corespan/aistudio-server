@@ -20,11 +20,24 @@ class NodeInspector:
         specs = {
             "gpus": [],
             "driver_version": "unknown",
-            "cuda_version": "unknown"
+            "cuda_version": "unknown",
+            "server_name": ip,  # fallback to IP if DMI read fails
         }
-        
+
         try:
             with SSHExecutor(ip, username, key_filename=settings.SSH_KEY_PATH) as ssh:
+                # Read hardware vendor from DMI — no sudo required.
+                # Returns strings like "SuperMicro", "Dell Inc.", or "PRU" for our own hardware.
+                # Stored as specs["server_name"] and written to BenchmarkResult.server_name.
+                try:
+                    vendor_out = ssh.run_command_quiet(
+                        "cat /sys/class/dmi/id/sys_vendor"
+                    ).strip()
+                    if vendor_out:
+                        specs["server_name"] = vendor_out
+                except Exception:
+                    pass  # keep IP fallback set above
+
                 # Get basic GPU info in CSV format: index, name, memory.total
                 out = ssh.run_command_quiet(
                     "nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits"

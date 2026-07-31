@@ -1,19 +1,17 @@
 import uuid
 from datetime import datetime
 
-import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.models.workload import Workload
 from app.models.node import Node
-from app.models.task import Task
-from app.models.task_log import TaskLog
 from app.schemas.benchmark import BenchmarkStartRequest, BenchmarkStartResponse
-from app.config import settings
+from app.utils.sse import task_log_stream
 
 router = APIRouter(tags=["Benchmarks"])
 
@@ -96,6 +94,9 @@ async def stream_benchmark_logs(
     Server-Sent Events (SSE) endpoint that streams logs from ALL steps
     (validate → install → benchmark) for a workload in chronological order.
 
+    Supports Last-Event-ID: on browser reconnect, only logs after the last
+    received event are sent — the full history is NOT replayed.
+
     Uses short-lived DB sessions per poll to avoid holding a pool connection
     for the full stream duration.
     """
@@ -109,48 +110,16 @@ async def stream_benchmark_logs(
     if not workload_db_id:
         raise HTTPException(status_code=404, detail="Workload not found.")
 
-    async def log_generator():
-        last_seen_date = None
+    last_event_id = request.headers.get("last-event-id", "")
 
-        while True:
-            if await request.is_disconnected():
-                break
-
-            async with AsyncSessionLocal() as db:
-                # Collect logs across ALL tasks for this workload in time order
-                query = (
-                    select(TaskLog)
-                    .join(Task, TaskLog.task_id == Task.id)
-                    .where(Task.workload_id == workload_db_id)
-                    .order_by(TaskLog.logged_at.asc())
-                )
-                if last_seen_date:
-                    query = query.where(TaskLog.logged_at > last_seen_date)
-
-                result = await db.execute(query)
-                logs = result.scalars().all()
-
-                for log in logs:
-                    # BENCH_RESULT: is an internal marker used for DB ingestion;
-                    # the worker already writes a human-readable summary instead.
-                    if not log.line.startswith("BENCH_RESULT:"):
-                        yield "data: %s\n\n" % log.line
-                    last_seen_date = log.logged_at
-
-                # Close the stream once the workload reaches a terminal state
-                state_result = await db.execute(
-                    select(Workload.state).where(Workload.id == workload_db_id)
-                )
-                workload_state = state_result.scalar()
-
-            if workload_state in ("READY", "FAILED") and not logs:
-                yield "event: close\ndata: stream closed\n\n"
-                break
-
-            await asyncio.sleep(1.0)
-
+    # BENCH_RESULT: lines are internal markers used for DB ingestion;
+    # the worker writes a human-readable summary instead — filter them from the stream.
     return StreamingResponse(
-        log_generator(),
+        task_log_stream(
+            workload_db_id, request,
+            filter_bench_result=True,
+            last_event_id=last_event_id,
+        ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )

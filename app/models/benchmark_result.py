@@ -104,6 +104,12 @@ class BenchmarkResult(Base):
         nullable=True,
         comment="Full GPU model string from nvidia-smi. e.g. 'NVIDIA A100-SXM4-80GB'.",
     )
+    server_name: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+        comment="Hardware vendor from /sys/class/dmi/id/sys_vendor, captured via SSH during validation. e.g. 'PRU', 'SuperMicro', 'Dell Inc.'",
+    )
 
     # ── Execution Config ──────────────────────────────────────────────────────
     precision: Mapped[str] = mapped_column(
@@ -126,6 +132,24 @@ class BenchmarkResult(Base):
         nullable=False,
         index=True,
         comment="Number of concurrent requests sent to the inference server.",
+    )
+    parallelism: Mapped[Optional[str]] = mapped_column(
+        String(16),
+        nullable=True,
+        index=True,
+        comment="Parallelism strategy. e.g. 'tp4', 'pp4', 'tp8'. Null for single-GPU runs.",
+    )
+
+    # ── Workload Type ─────────────────────────────────────────────────────────
+    # Discriminator field that drives which filters, chart axes, and table
+    # columns the UI renders.  e.g. 'llm', 'resnet', 'vgg'.  Always lowercase.
+    # Defaulted to 'llm' so all existing rows stay valid after migration.
+    workload_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="llm",
+        index=True,
+        comment="Workload category. e.g. 'llm', 'resnet', 'vgg'. Always lowercase.",
     )
 
     # ── Status ────────────────────────────────────────────────────────────────
@@ -171,6 +195,7 @@ class BenchmarkResult(Base):
         comment="Full raw metrics payload from the runner. No schema enforced.",
     )
 
+
     # ── Timestamps ────────────────────────────────────────────────────────────
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -205,6 +230,7 @@ class BenchmarkResult(Base):
         CheckConstraint("model_name = lower(model_name)", name="ck_model_name_lower"),
         CheckConstraint("gpu_type = lower(gpu_type)", name="ck_gpu_type_lower"),
         CheckConstraint("precision = lower(precision)", name="ck_precision_lower"),
+        CheckConstraint("workload_type = lower(workload_type)", name="ck_workload_type_lower"),
     )
 
     def __repr__(self) -> str:

@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy.exc import SQLAlchemyError
 
 # The app instance
 app = FastAPI(
@@ -15,7 +14,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -61,11 +60,12 @@ async def generic_exception_handler(request: Request, exc: Exception):
         },
     )
 
-from app.routers import system, ingest, benchmarks, results, jupyter
+from app.routers import system, ingest, benchmarks, results, jupyter, gpu_specs
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(system.router)
 app.include_router(ingest.router)
 app.include_router(benchmarks.router)
 app.include_router(results.router)
+app.include_router(gpu_specs.router)
 app.include_router(jupyter.router)

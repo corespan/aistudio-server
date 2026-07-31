@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     GCP_REPOSITORY: str = "workbench-registry"
     GCP_IMAGE_PATH: str = "services/workloads"
     WORKLOAD_IMAGE_TAG: str = "2.3.0-nvidia"
-    JUPYTER_IMAGE_TAG: str = "1.1.1-nvidia"
+    JUPYTER_IMAGE_TAG: str = "2.2.0-nvidia"
 
     # Model Storage
     MODEL_STORAGE_MODE: str = "huggingface"
@@ -43,6 +43,27 @@ class Settings(BaseSettings):
 
     # Server
     PORT: int = 8001
+
+    # Nginx reverse proxy (hides internal GPU node IPs from clients)
+    # When enabled, each Jupyter instance gets a path-based route:
+    #   {PROXY_BASE_URL}/jupyter/{GPU_TYPE}/{task_id}/  →  http://node-ip:port
+    # No DNS setup required — uses the existing public domain.
+    NGINX_ENABLED: bool = False
+    # Public base URL used to construct the jupyter_url returned by the API.
+    # e.g. http://corespan.ddnsgeek.com  (no trailing slash)
+    PROXY_BASE_URL: str = ""
+    # Directory where per-instance nginx location blocks are written.
+    # This directory is included by /etc/nginx/conf.d/aistudio-jupyter.conf
+    NGINX_CONF_DIR: str = "/etc/nginx/jupyter-locations"
+    # Command used to reload nginx after writing/removing a config file.
+    # When running inside docker: "ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no user@host sudo nginx -s reload"
+    NGINX_RELOAD_CMD: str = "nginx -s reload"
+
+    # Persistent Jupyter Assistant URL
+    # Pre-configured Jupyter Lab instance that is always running.
+    # The UI renders this directly — no container is created at runtime.
+    # Override via environment variable JUPYTER_ASSISTANT_URL.
+    JUPYTER_ASSISTANT_URL: str = ""
 
     class Config:
         env_file = ".env"

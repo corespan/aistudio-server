@@ -2,56 +2,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.catalog import _DEFAULT_CONFIG, _MODEL_CONFIGS
 from app.database import get_db
 from app.models.workload_type import WorkloadType
 
 router = APIRouter(tags=["System"])
-
-# Default vLLM configs per model. The UI fetches these on "Next" in the Start Run form.
-# P40-safe defaults use fp32 since the P40 (Pascal) has no native FP16 tensor cores.
-_MODEL_CONFIGS = {
-    "tinyllama/tinyllama-1.1b-chat-v1.0": {
-        "precision": "fp32",
-        "concurrency": 4,
-        "input_tokens": 512,
-        "output_tokens": 128,
-        "max_model_len": 2048,
-        "tensor_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "batch_size": 32,
-    },
-    "llama3-8b-instruct": {
-        "precision": "fp16",
-        "concurrency": 8,
-        "input_tokens": 512,
-        "output_tokens": 256,
-        "max_model_len": 4096,
-        "tensor_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "batch_size": 32,
-    },
-    "mistral-7b-instruct": {
-        "precision": "fp16",
-        "concurrency": 8,
-        "input_tokens": 512,
-        "output_tokens": 256,
-        "max_model_len": 4096,
-        "tensor_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "batch_size": 32,
-    },
-}
-
-_DEFAULT_CONFIG = {
-    "precision": "fp16",
-    "concurrency": 4,
-    "input_tokens": 512,
-    "output_tokens": 256,
-    "max_model_len": 4096,
-    "tensor_parallel_size": 1,
-    "pipeline_parallel_size": 1,
-    "batch_size": 32,
-}
 
 
 @router.get("/health")

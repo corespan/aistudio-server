@@ -15,9 +15,11 @@ from app.models.node import Node
 from app.models.task import Task
 from app.models.task_log import TaskLog
 from app.models.benchmark_result import BenchmarkResult
+from app.models.workload_type import WorkloadType
 from app.services.node_inspector import NodeInspector
 from app.services.dependency_installer import DependencyInstaller
 from app.services.manifest_builder import ManifestBuilder
+from app.services.nginx_proxy import write_jupyter_config, proxy_url as nginx_proxy_url, jupyter_base_path
 from app.services.ssh_executor import SSHExecutor
 from app.services.state_machine import transition_workload_state
 
@@ -59,13 +61,61 @@ def _write_log(db, task_id, line: str) -> None:
 
 
 def _fail_workload(workload_id, trigger, error):
-    """Transition a workload to FAILED with an error message."""
+    """
+    Transition a workload to FAILED with an error message.
+
+    For benchmark workloads (not Jupyter) also writes a BenchmarkResult row with
+    status='failed' so the run appears in the leaderboard API after a page refresh
+    instead of disappearing when the in-memory stream store is cleared.
+    """
     try:
         with SyncSessionLocal() as db:
             transition_workload_state(
                 db, workload_id, WorkloadState.FAILED,
                 trigger=trigger, message=error,
             )
+            # Write a minimal BenchmarkResult so GET /api/v1/benchmarks returns
+            # the failed run. Skip Jupyter workloads — they have no benchmark metrics.
+            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+            if workload and (workload.workload_config or {}).get("workload_type") != "jupyter":
+                existing = db.query(BenchmarkResult).filter(
+                    BenchmarkResult.run_id == workload_id
+                ).first()
+                now = datetime.now(timezone.utc)
+                if not existing:
+                    node = db.query(Node).filter(Node.workload_id == workload.id).first()
+                    db.add(BenchmarkResult(
+                        run_id=workload_id,
+                        sub_run_index=0,
+                        workload_type="llm",
+                        model_name=(workload.model_name or "").lower(),
+                        pipeline_version="vllm-openai-latest",
+                        node_ips=[node.machine_ip] if node else [],
+                        gpu_type="",
+                        gpu_count=0,
+                        gpu_model="",
+                        precision=(workload.workload_config or {}).get("precision", ""),
+                        input_tokens=0,
+                        output_tokens=0,
+                        concurrency=0,
+                        status="failed",
+                        total_token_throughput=None,
+                        mean_ttft_ms=None,
+                        mean_tpot_ms=None,
+                        mean_e2el_ms=None,
+                        metrics={},
+                        started_at=now,
+                        completed_at=now,
+                        duration_seconds=0,
+                    ))
+                    db.commit()
+                elif existing.status == "running":
+                    # Benchmark was in-progress when it failed — mark the row failed.
+                    existing.status = "failed"
+                    existing.completed_at = now
+                    if existing.started_at:
+                        existing.duration_seconds = (now - existing.started_at).total_seconds()
+                    db.commit()
     except Exception:
         logger.critical(
             "WORKLOAD %s STUCK: could not write FAILED state (trigger=%s). "
@@ -73,6 +123,13 @@ def _fail_workload(workload_id, trigger, error):
             workload_id, trigger,
             exc_info=True,
         )
+
+
+def _fetch_workload_and_nodes(db, workload_id: str):
+    """Fetch the Workload record and its associated Nodes in one call."""
+    workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+    nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+    return workload, nodes
 
 
 @celery_app.task(bind=True, soft_time_limit=600, time_limit=660)
@@ -85,8 +142,7 @@ def validate_node(self, workload_id):
                 trigger="validate_node",
                 message="Starting node validation",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
 
             # Create a Task so validate logs are visible in the SSE stream
             val_task = Task(
@@ -123,6 +179,7 @@ def validate_node(self, workload_id):
                     specs.get("driver_version", "unknown"),
                     specs.get("cuda_version", "unknown"),
                 ))
+                _write_log(db, val_task.id, "Server:   %s" % specs.get("server_name", node.machine_ip))
                 node.specs = specs
                 node.gpus = specs.get("gpus")
                 node.state = "VALIDATED"
@@ -157,8 +214,7 @@ def install_dependencies(self, workload_id):
                 trigger="install_dependencies",
                 message="Installing dependencies on nodes",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
             for node in nodes:
                 node.state = "INSTALLING"
                 install_task = Task(
@@ -213,8 +269,7 @@ def execute_benchmark(self, workload_id):
                 trigger="execute_benchmark",
                 message="Starting benchmark execution",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
             if not nodes:
                 raise RuntimeError("No nodes available for benchmark execution")
             node = nodes[0]
@@ -230,11 +285,20 @@ def execute_benchmark(self, workload_id):
             )
             db.add(task)
             db.commit()
+            # Look up the per-workload image tag from workload_types table.
+            # Falls back to settings.WORKLOAD_IMAGE_TAG if not seeded.
+            wt = (
+                db.query(WorkloadType)
+                .filter(WorkloadType.name == "LLMInference")
+                .first()
+            )
+            image_tag = wt.image_tag if wt and wt.image_tag else None
             server_cmd = ManifestBuilder.build_vllm_command(
                 workload.model_name, workload.workload_config,
+                image_tag=image_tag, run_id=workload_id,
             )
             client_cmd = ManifestBuilder.build_benchmark_client_command(
-                workload.model_name, workload.workload_config,
+                workload.model_name, workload.workload_config, run_id=workload_id,
             )
             cfg = workload.workload_config or {}
             _write_log(db, task.id, "=== [3/3] Running Benchmark ===")
@@ -246,10 +310,66 @@ def execute_benchmark(self, workload_id):
                 cfg.get("input_tokens", 0),
                 cfg.get("output_tokens", 0),
             ))
+            # Pick a free host port at runtime so we never collide with anything
+            # already running on the node. $VLLM_PORT is shared across server_cmd
+            # and client_cmd since they run in the same SSH session.
+            port_cmd = (
+                "VLLM_PORT=$(python3 -c \""
+                "import socket; s=socket.socket(); s.bind(('',0)); "
+                "p=s.getsockname()[1]; s.close(); print(p)"
+                "\") && echo \"Using port $VLLM_PORT for vLLM server\""
+            )
+            # Print GPU state before starting so we can confirm the GPU is real
+            # and see it transition from idle to loaded during the health-check wait.
+            gpu_cmd = (
+                "echo '--- GPU state before benchmark ---' && "
+                "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu "
+                "--format=csv,noheader,nounits 2>/dev/null | "
+                "awk -F',' '{printf \"GPU: %s  VRAM used: %s MB  free: %s MB  util: %s%%\\n\",$1,$2,$3,$4}' "
+                "|| echo 'nvidia-smi not available'"
+            )
+            # Create a pending "running" BenchmarkResult so the run is immediately
+            # visible in the leaderboard while the SSH benchmark executes.
+            # node.specs was captured by validate_node and stored on the DB row.
+            _gpus     = (node.specs or {}).get("gpus", [])
+            _gc       = len(_gpus) or 1
+            _gm       = _gpus[0].get("name", "") if _gpus else ""
+            _gt       = _extract_gpu_type(node.specs)
+            _sn       = (node.specs or {}).get("server_name", node.machine_ip)
             bench_started_at = datetime.now(timezone.utc)
+            try:
+                db.add(BenchmarkResult(
+                    run_id=workload_id,
+                    sub_run_index=0,
+                    workload_type="llm",
+                    model_name=workload.model_name.lower(),
+                    pipeline_version="vllm-openai-latest",
+                    node_ips=[node.machine_ip],
+                    gpu_type=_gt,
+                    gpu_count=_gc,
+                    gpu_model=_gm,
+                    server_name=_sn,
+                    precision=cfg.get("precision", "fp32").lower(),
+                    input_tokens=cfg.get("input_tokens", 0),
+                    output_tokens=cfg.get("output_tokens", 0),
+                    concurrency=cfg.get("concurrency", 1),
+                    status="running",
+                    total_token_throughput=None,
+                    mean_ttft_ms=None,
+                    mean_tpot_ms=None,
+                    mean_e2el_ms=None,
+                    metrics={},
+                    started_at=bench_started_at,
+                    completed_at=None,
+                    duration_seconds=None,
+                ))
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.warning("Could not create pending BenchmarkResult for %s", workload_id)
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
-                    "%s && %s" % (server_cmd, client_cmd), task.id,
+                    "%s && %s && %s && %s" % (port_cmd, gpu_cmd, server_cmd, client_cmd), task.id,
                 )
             bench_completed_at = datetime.now(timezone.utc)
 
@@ -276,35 +396,58 @@ def execute_benchmark(self, workload_id):
             if result_log:
                 try:
                     metrics = json.loads(result_log.line[len("BENCH_RESULT:"):])
-                    gpus_list = (node.specs or {}).get("gpus", [])
-                    gpu_count = len(gpus_list) or 1
-                    gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
-                    gpu_type = _extract_gpu_type(node.specs)
-                    precision = cfg.get("precision", "fp32").lower()
-                    db.add(BenchmarkResult(
-                        run_id=workload_id,
-                        sub_run_index=0,
-                        model_name=workload.model_name.lower(),
-                        pipeline_version="vllm-openai-latest",
-                        node_ips=[node.machine_ip],
-                        gpu_type=gpu_type,
-                        gpu_count=gpu_count,
-                        gpu_model=gpu_model,
-                        precision=precision,
-                        input_tokens=cfg.get("input_tokens", 0),
-                        output_tokens=cfg.get("output_tokens", 0),
-                        concurrency=cfg.get("concurrency", 1),
-                        status="success",
-                        total_token_throughput=metrics.get("total_token_throughput"),
-                        mean_ttft_ms=metrics.get("mean_ttft_ms"),
-                        mean_tpot_ms=metrics.get("mean_tpot_ms"),
-                        mean_e2el_ms=metrics.get("mean_e2el_ms"),
-                        metrics=metrics,
-                        started_at=bench_started_at,
-                        completed_at=bench_completed_at,
-                        duration_seconds=(bench_completed_at - bench_started_at).total_seconds(),
-                    ))
-                    db.commit()
+                    # Update the pending "running" row created before the SSH call.
+                    pending = (
+                        db.query(BenchmarkResult)
+                        .filter(
+                            BenchmarkResult.run_id == workload_id,
+                            BenchmarkResult.sub_run_index == 0,
+                        )
+                        .first()
+                    )
+                    if pending:
+                        pending.status = "success"
+                        pending.total_token_throughput = metrics.get("total_token_throughput")
+                        pending.mean_ttft_ms = metrics.get("mean_ttft_ms")
+                        pending.mean_tpot_ms = metrics.get("mean_tpot_ms")
+                        pending.mean_e2el_ms = metrics.get("mean_e2el_ms")
+                        pending.metrics = metrics
+                        pending.completed_at = bench_completed_at
+                        pending.duration_seconds = (bench_completed_at - bench_started_at).total_seconds()
+                        flag_modified(pending, "metrics")
+                        db.commit()
+                    else:
+                        # Pending row wasn't created (e.g. DB error) — insert fresh.
+                        gpus_list = (node.specs or {}).get("gpus", [])
+                        gpu_count = len(gpus_list) or 1
+                        gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
+                        gpu_type = _extract_gpu_type(node.specs)
+                        db.add(BenchmarkResult(
+                            run_id=workload_id,
+                            sub_run_index=0,
+                            workload_type="llm",
+                            model_name=workload.model_name.lower(),
+                            pipeline_version="vllm-openai-latest",
+                            node_ips=[node.machine_ip],
+                            gpu_type=gpu_type,
+                            gpu_count=gpu_count,
+                            gpu_model=gpu_model,
+                            server_name=(node.specs or {}).get("server_name", node.machine_ip),
+                            precision=cfg.get("precision", "fp32").lower(),
+                            input_tokens=cfg.get("input_tokens", 0),
+                            output_tokens=cfg.get("output_tokens", 0),
+                            concurrency=cfg.get("concurrency", 1),
+                            status="success",
+                            total_token_throughput=metrics.get("total_token_throughput"),
+                            mean_ttft_ms=metrics.get("mean_ttft_ms"),
+                            mean_tpot_ms=metrics.get("mean_tpot_ms"),
+                            mean_e2el_ms=metrics.get("mean_e2el_ms"),
+                            metrics=metrics,
+                            started_at=bench_started_at,
+                            completed_at=bench_completed_at,
+                            duration_seconds=(bench_completed_at - bench_started_at).total_seconds(),
+                        ))
+                        db.commit()
                     logger.info("BenchmarkResult saved for workload %s", workload_id)
 
                     # Write a human-readable results summary to the log stream
@@ -367,8 +510,7 @@ def launch_jupyter(self, workload_id):
                 trigger="launch_jupyter",
                 message="Launching Jupyter Lab server",
             )
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
-            nodes = db.query(Node).filter(Node.workload_id == workload.id).all()
+            workload, nodes = _fetch_workload_and_nodes(db, workload_id)
             if not nodes:
                 raise RuntimeError("No nodes found for workload %s" % workload_id)
             node = nodes[0]
@@ -387,12 +529,31 @@ def launch_jupyter(self, workload_id):
             _write_log(db, task.id, "=== [2/2] Launching Jupyter Lab ===")
             _write_log(db, task.id, "Node: %s" % node.machine_ip)
 
-            server_cmd = ManifestBuilder.build_jupyter_command()
-            health_cmd = ManifestBuilder.build_jupyter_health_command()
+            # Discover a free host port at runtime — avoids 8899 being already in
+            # use on the node. The port is exported as $JUPYTER_PORT and used by
+            # both the docker run (-p $JUPYTER_PORT:7008) and the health-check curl.
+            # We echo "JUPYTER_PORT=<n>" so the worker can parse it back from logs.
+            port_cmd = (
+                "JUPYTER_PORT=$(python3 -c \""
+                "import socket; s=socket.socket(); s.bind(('',0)); "
+                "p=s.getsockname()[1]; s.close(); print(p)"
+                "\") && echo \"JUPYTER_PORT=$JUPYTER_PORT\""
+            )
+
+            # When nginx proxy is enabled, tell JupyterLab to mount at the subpath
+            # so all its internal asset/API URLs are correctly prefixed.
+            # e.g. /jupyter/T4/jup-20260729-abc123/
+            gpu_type = _extract_gpu_type(node.specs)
+            base_url = ""
+            if settings.NGINX_ENABLED and settings.PROXY_BASE_URL:
+                base_url = jupyter_base_path(gpu_type, workload_id)
+
+            server_cmd = ManifestBuilder.build_jupyter_command(run_id=workload_id, base_url=base_url)
+            health_cmd = ManifestBuilder.build_jupyter_health_command(run_id=workload_id, base_url=base_url)
 
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
-                    "%s && %s" % (server_cmd, health_cmd), task.id,
+                    "%s && %s && %s" % (port_cmd, server_cmd, health_cmd), task.id,
                 )
 
             if exit_code != 0:
@@ -402,7 +563,25 @@ def launch_jupyter(self, workload_id):
                 db.commit()
                 raise RuntimeError("Jupyter launch failed with exit code %d" % exit_code)
 
-            jupyter_url = "http://%s:8899/lab" % node.machine_ip
+            # Parse the port from the log line "JUPYTER_PORT=<n>" written above.
+            jupyter_port = 7008  # fallback (container internal port)
+            from app.models.task_log import TaskLog as _TaskLog
+            port_logs = db.query(_TaskLog).filter(_TaskLog.task_id == task.id).all()
+            for _log in port_logs:
+                if _log.line.startswith("JUPYTER_PORT="):
+                    try:
+                        jupyter_port = int(_log.line.split("=", 1)[1].strip())
+                    except (ValueError, IndexError):
+                        pass
+                    break
+
+            # Build the URL — path-based proxy URL if nginx is enabled, direct otherwise.
+            # gpu_type was already extracted above when computing base_url.
+            if settings.NGINX_ENABLED and settings.PROXY_BASE_URL:
+                write_jupyter_config(workload_id, gpu_type, node.machine_ip, jupyter_port)
+                jupyter_url = nginx_proxy_url(gpu_type, workload_id)
+            else:
+                jupyter_url = "http://%s:%d/lab" % (node.machine_ip, jupyter_port)
             _write_log(db, task.id, "✓ Jupyter Lab running at: %s" % jupyter_url)
 
             task.status = "success"

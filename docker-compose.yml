@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
 
   postgres:
@@ -58,11 +60,22 @@ services:
     volumes:
       - .:/AIStudio
       - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+      - jupyter-locations:/etc/nginx/jupyter-locations
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "8443:8443"
+    volumes:
+      - jupyter-locations:/etc/nginx/jupyter-locations
+    restart: unless-stopped
+    depends_on:
+      - api
 
   pgadmin:
     image: dpage/pgadmin4
@@ -81,3 +94,4 @@ services:
 
 volumes:
   pgdata:
+  jupyter-locations:

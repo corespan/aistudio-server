@@ -69,4 +69,16 @@ class TaskLog(Base):
         back_populates="logs",
     )
 
-    # ── Composite Index ──────────────────────────────────────�
+    # ── Composite Index ────────────────────────────────────────────
+    # The SSE endpoint queries: WHERE task_id = ? AND logged_at > ?
+    # A composite index on (task_id, logged_at) serves this perfectly.
+    from sqlalchemy import Index
+    __table_args__ = (
+        Index("ix_task_logs_task_id_logged_at", "task_id", "logged_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TaskLog task={self.task_id!r} "
+            f"line={self.line[:40]!r}>"
+        )
