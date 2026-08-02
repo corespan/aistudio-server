@@ -52,6 +52,26 @@ jobs:
           done
           exit $missing
 
+      - name: Scripts with a shebang are executable
+        run: |
+          # This repo has core.fileMode=false (it is developed on Windows), so
+          # chmod +x in a working tree is invisible to git and every script was
+          # committed 100644. A CI runner then checks them out non-executable
+          # and `./scripts/foo.sh` dies with exit 126 — which is how this check
+          # came to exist.
+          #
+          # The mode has to be set in the index directly:
+          #     git update-index --chmod=+x <file>
+          failed=0
+          while IFS= read -r path; do
+            head -c2 "$path" 2>/dev/null | grep -q '^#!' || continue
+            [ -x "$path" ] && continue
+            echo "::error file=$path::has a shebang but is not executable. Fix with: git update-index --chmod=+x $path"
+            failed=1
+          done < <(git ls-files)
+          [ "$failed" -eq 0 ] && echo "All shebang scripts are executable."
+          exit $failed
+
       - name: GitHub classifies the repo licence as Apache-2.0
         # Only meaningful on the default branch of the real repo; the API reads
         # the pushed state, not the working tree.
@@ -98,15 +118,30 @@ jobs:
           fi
           echo "All requirements pinned ($(grep -cE '^[^#[:space:]]+==' requirements.txt) packages)."
 
-      - name: requirements.txt matches requirements.in
+      - name: requirements.txt is a valid resolution of requirements.in
         run: |
           pipx install uv || pip install uv
+
+          # Seed the output with the committed pins before recompiling.
+          #
+          # uv preserves existing pins in the output file unless --upgrade is
+          # passed. Compiling into an empty scratch file instead would resolve
+          # everything to latest, so this check would fail the moment any of the
+          # 52 packages cut a release — turning an unrelated PR red for a reason
+          # its author cannot act on.
+          #
+          # What we want to assert is "requirements.txt satisfies
+          # requirements.in", not "requirements.txt is the newest possible
+          # resolution". Deliberate upgrades go through `make deps-lock`.
+          cp requirements.txt /tmp/recompiled.txt
           uv pip compile requirements.in --python-version 3.11 -o /tmp/recompiled.txt --quiet
-          # Ignore the header comment, which records the output filename.
+
+          # Ignore comments: the header records the output filename, which differs.
           if ! diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/recompiled.txt); then
-            echo "::error file=requirements.txt::out of date with requirements.in. Run 'make deps-lock' and commit."
+            echo "::error file=requirements.txt::not a valid resolution of requirements.in. Run 'make deps-lock' and commit."
             exit 1
           fi
+          echo "requirements.txt satisfies requirements.in."
 
       - name: THIRD-PARTY-NOTICES.md matches the pinned set
         run: python3 scripts/generate_third_party_notices.py --check

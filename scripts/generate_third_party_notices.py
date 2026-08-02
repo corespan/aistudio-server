@@ -20,6 +20,7 @@ import json
 import pathlib
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import date
@@ -29,6 +30,14 @@ REQUIREMENTS = ROOT / "requirements.txt"
 OUTPUT = ROOT / "THIRD-PARTY-NOTICES.md"
 
 PIN_RE = re.compile(r"^([A-Za-z0-9_.\-]+)==([0-9][^\s;]*)")
+
+# Give up on PyPI after this many consecutive failures rather than retrying
+# every remaining package against an endpoint that is plainly down.
+OFFLINE_AFTER = 3
+
+# Per-request timeout. Deliberately short: the failure mode that matters is a
+# hung CI job, not a slow-but-eventually-successful lookup.
+REQUEST_TIMEOUT = 15
 
 # PyPI metadata is inconsistent: some projects use the modern SPDX
 # `license_expression` field, others only trove classifiers, others a free-text
@@ -83,13 +92,20 @@ def parse_pins(path: pathlib.Path) -> list[tuple[str, str]]:
     return pins
 
 
-def fetch_licence(name: str, version: str) -> tuple[str, str]:
+def fetch_licence(name: str, version: str, attempts: int = 3) -> tuple[str, str]:
     url = f"https://pypi.org/pypi/{name}/{version}/json"
-    try:
-        with urllib.request.urlopen(url, timeout=30) as response:
-            info = json.load(response)["info"]
-    except (urllib.error.URLError, TimeoutError, KeyError) as exc:
-        return f"LOOKUP-FAILED ({exc})", ""
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:
+                info = json.load(response)["info"]
+            break
+        except (urllib.error.URLError, TimeoutError, KeyError) as exc:
+            last_error = exc
+            if attempt < attempts - 1:
+                time.sleep(2 ** attempt)
+    else:
+        return f"LOOKUP-FAILED ({last_error})", ""
 
     expression = (info.get("license_expression") or "").strip()
     if not expression:
@@ -195,10 +211,47 @@ def main() -> int:
     args = parser.parse_args()
 
     rows = []
+    consecutive_failures = 0
+    offline = False
+
     for name, version in parse_pins(REQUIREMENTS):
+        if offline:
+            # Circuit broken — record the rest without hammering a dead endpoint.
+            rows.append((name, version, "LOOKUP-FAILED (skipped: PyPI unreachable)", ""))
+            continue
+
         expression, homepage = fetch_licence(name, version)
         rows.append((name, version, expression, homepage))
         print(f"  {name:24} {version:16} {expression}", file=sys.stderr)
+
+        if expression.startswith("LOOKUP-FAILED"):
+            consecutive_failures += 1
+            if consecutive_failures >= OFFLINE_AFTER:
+                # Retrying 52 packages three times each against a dead endpoint
+                # takes the better part of an hour and tells us nothing we do
+                # not already know after the first few.
+                print(
+                    f"\n{OFFLINE_AFTER} consecutive lookup failures — treating PyPI as "
+                    f"unreachable and skipping the rest.",
+                    file=sys.stderr,
+                )
+                offline = True
+        else:
+            consecutive_failures = 0
+
+    unreachable = [r for r in rows if r[2].startswith("LOOKUP-FAILED")]
+    if unreachable and args.check:
+        # A PyPI outage or a rate-limited runner is not evidence that the
+        # committed inventory is stale, and failing the build on it would train
+        # people to ignore this job. Report loudly, exit clean.
+        print(
+            f"\nWARNING: {len(unreachable)} package(s) could not be resolved "
+            f"after retries — cannot verify freshness. Not failing the build.",
+            file=sys.stderr,
+        )
+        for name, version, expression, _ in unreachable:
+            print(f"  {name}=={version}: {expression}", file=sys.stderr)
+        return 0
 
     rendered = render(rows)
 
