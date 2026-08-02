@@ -10,3 +10,20 @@ build/
 .pytest_cache/
 .mypy_cache/
 *.db
+node_modules/
+.idea/
+.vscode/
+
+# Vendored frontend binaries — fetched at setup time by
+# scripts/vendor_frontend_assets.sh, which `make setup` runs automatically.
+# Kept out of git to avoid ~460 KB of binaries in the history.
+#
+# NOTE: the generated CSS, the NOTICE and the licence texts in demo-ui/vendor/
+# are NOT ignored. They are compliance artifacts — the OFL-1.1 and MIT notices
+# have to be present in the repository itself, not conjured by a build step.
+demo-ui/vendor/fonts/*.woff2
+demo-ui/vendor/fonts/*.woff
+demo-ui/vendor/js/*.js
+
+# sbom/ is intentionally NOT ignored — the workload image inventory is a
+# compliance artifact and must be committed alongside each release.

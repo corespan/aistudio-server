@@ -5,10 +5,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AIStudio — Inference Benchmark Dashboard</title>
   <meta name="description" content="Compare AI inference throughput, latency, and TTFT across GPUs. AIStudio benchmark dashboard.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!--
+    All assets are served from this origin. No third-party requests.
+
+    Two reasons this matters, beyond preference:
+      1. GPU clusters are commonly air-gapped. A CDN reference is a hard failure
+         there, not a slow load — the dashboard renders unstyled and the charts
+         never initialise.
+      2. Requesting fonts from fonts.googleapis.com discloses the visitor's IP to
+         a third party. LG München I, 3 O 17493/20 (20 Jan 2022) held that this
+         is a GDPR breach absent consent.
+
+    Assets are vendored by scripts/vendor_frontend_assets.sh. Licences live
+    alongside them in vendor/. Re-run that script to update versions; do not
+    reintroduce a CDN reference.
+  -->
+  <link rel="stylesheet" href="./vendor/fonts.css">
+  <script src="./vendor/js/chart.umd.js"></script>
+  <script>
+    // The vendored binaries are gitignored and fetched by `make setup`. On a
+    // fresh clone where that has not run, chart.umd.js 404s and the first
+    // `new Chart(...)` throws a bare ReferenceError with no clue as to why.
+    // Say what is actually wrong instead.
+    //
+    // Fonts need no equivalent guard — every font-family declaration already
+    // falls back to a system stack, so a missing .woff2 degrades quietly.
+    if (typeof Chart === 'undefined') {
+      document.addEventListener('DOMContentLoaded', function () {
+        var banner = document.createElement('div');
+        banner.style.cssText =
+          'position:fixed;top:0;left:0;right:0;z-index:9999;padding:12px 16px;' +
+          'background:#7f1d1d;color:#fff;font:14px/1.5 system-ui,sans-serif;text-align:center';
+        banner.textContent =
+          'Charts unavailable: demo-ui/vendor/js/chart.umd.js is missing. ' +
+          'Run  make vendor-assets  (or ./scripts/vendor_frontend_assets.sh) from the repo root.';
+        document.body.prepend(banner);
+      });
+    }
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

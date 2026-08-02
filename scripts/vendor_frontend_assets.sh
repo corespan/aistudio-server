@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Vendor demo-ui frontend assets into demo-ui/vendor/
+# =============================================================================
+#
+# demo-ui/index.html must make zero third-party network requests. This script
+# regenerates everything it needs from npm, including licence texts.
+#
+# Why not a CDN:
+#   - Air-gapped GPU clusters have no route to jsdelivr or Google. A CDN
+#     reference means the dashboard breaks in the target deployment.
+#   - Requesting fonts from fonts.googleapis.com discloses visitor IPs to a
+#     third party. LG München I, 3 O 17493/20 (20 Jan 2022) held that to be a
+#     GDPR breach absent consent.
+#
+# Self-hosting the fonts creates an SIL OFL-1.1 obligation to ship the copyright
+# and licence notice with them. That is handled here — the LICENSE files are
+# copied next to the .woff2 files, and demo-ui/vendor/NOTICE summarises them.
+#
+# The binary artifacts (.woff2, chart.umd.js) are gitignored and fetched here.
+# The generated CSS, NOTICE and licence texts ARE committed — those are
+# compliance artifacts and must exist in the repository itself, not be produced
+# by a build step someone might not run.
+#
+# Usage:
+#   ./scripts/vendor_frontend_assets.sh              # always re-fetch
+#   ./scripts/vendor_frontend_assets.sh --if-missing # no-op if already present
+#
+# Requires: npm and network access. Both are needed only at setup time, not at
+# page load — which is the whole point. If this machine is itself air-gapped,
+# copy demo-ui/vendor/ from a machine that ran the script.
+# =============================================================================
+
+set -euo pipefail
+
+IF_MISSING=0
+[ "${1:-}" = "--if-missing" ] && IF_MISSING=1
+
+# Exact versions, not floating majors. CI regenerates into a scratch directory
+# and diffs against the committed tree; a floating "5" would pick up any 5.x
+# release, ship different .woff2 binaries, and fail an unrelated PR.
+INTER_VERSION="5.3.0"
+JETBRAINS_VERSION="5.3.0"
+CHARTJS_VERSION="4.4.0"
+
+# Weights actually referenced by demo-ui/index.html. Keep in sync — every extra
+# weight is ~25 KB shipped for nothing.
+INTER_WEIGHTS=(300 400 500 600 700 800)
+JETBRAINS_WEIGHTS=(400 500 600)
+
+# Latin subset only. Add subsets here if the UI is ever localised.
+SUBSET="latin"
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Overridable so CI can regenerate to a scratch dir and diff against the
+# committed copy, proving the vendored assets match the declared versions.
+DEST="${VENDOR_DEST:-$ROOT/demo-ui/vendor}"
+EXPECTED_FILES=$(( ${#INTER_WEIGHTS[@]} + ${#JETBRAINS_WEIGHTS[@]} ))
+
+if [ "$IF_MISSING" -eq 1 ]; then
+  have=$(find "$DEST/fonts" -name '*.woff2' 2>/dev/null | wc -l)
+  if [ "$have" -eq "$EXPECTED_FILES" ] && [ -f "$DEST/js/chart.umd.js" ]; then
+    echo "Frontend assets already vendored ($have fonts + chart.js) — skipping."
+    exit 0
+  fi
+  echo "Frontend assets missing or incomplete ($have/$EXPECTED_FILES fonts) — fetching."
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "ERROR: npm is required to vendor frontend assets." >&2
+  echo "       Install Node.js, or copy demo-ui/vendor/ from a machine that has it." >&2
+  exit 1
+fi
+
+WORK="$(mktemp -d)"
+STAGE="$WORK/stage"
+trap 'rm -rf "$WORK"' EXIT
+
+echo "Fetching packages into $WORK ..."
+cd "$WORK"
+npm init -y >/dev/null 2>&1
+npm install --no-audit --no-fund --silent \
+  "@fontsource/inter@${INTER_VERSION}" \
+  "@fontsource/jetbrains-mono@${JETBRAINS_VERSION}" \
+  "chart.js@${CHARTJS_VERSION}"
+
+MODULES="$WORK/node_modules"
+
+# Build into a staging directory and swap at the end. A failure partway through
+# must not leave demo-ui/vendor/ half-populated — the licence texts live there,
+# and a truncated tree would trip the compliance check for a reason that has
+# nothing to do with licensing.
+BUILD="$STAGE"
+mkdir -p "$BUILD/fonts" "$BUILD/js"
+
+echo "Copying font files ..."
+for w in "${INTER_WEIGHTS[@]}"; do
+  cp "$MODULES/@fontsource/inter/files/inter-${SUBSET}-${w}-normal.woff2" "$BUILD/fonts/"
+done
+for w in "${JETBRAINS_WEIGHTS[@]}"; do
+  cp "$MODULES/@fontsource/jetbrains-mono/files/jetbrains-mono-${SUBSET}-${w}-normal.woff2" "$BUILD/fonts/"
+done
+
+echo "Copying licences ..."
+cp "$MODULES/@fontsource/inter/LICENSE"          "$BUILD/fonts/LICENSE-Inter-OFL.txt"
+cp "$MODULES/@fontsource/jetbrains-mono/LICENSE" "$BUILD/fonts/LICENSE-JetBrainsMono-OFL.txt"
+cp "$MODULES/chart.js/LICENSE.md"                "$BUILD/js/LICENSE-chartjs.md"
+
+echo "Copying chart.js ..."
+cp "$MODULES/chart.js/dist/chart.umd.js" "$BUILD/js/chart.umd.js"
+
+# Unicode range matching the Google Fonts latin subset, so the browser skips the
+# download entirely for pages that render no Latin text.
+RANGE='U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD'
+
+echo "Generating fonts.css ..."
+{
+  echo "/* Self-hosted web fonts. Generated by scripts/vendor_frontend_assets.sh — do not edit. */"
+  echo "/* Inter — SIL OFL-1.1 — see fonts/LICENSE-Inter-OFL.txt */"
+  for w in "${INTER_WEIGHTS[@]}"; do
+    printf '@font-face{font-family:"Inter";font-style:normal;font-display:swap;font-weight:%s;src:url("./fonts/inter-%s-%s-normal.woff2") format("woff2");unicode-range:%s;}\n' \
+      "$w" "$SUBSET" "$w" "$RANGE"
+  done
+  echo "/* JetBrains Mono — SIL OFL-1.1 — see fonts/LICENSE-JetBrainsMono-OFL.txt */"
+  for w in "${JETBRAINS_WEIGHTS[@]}"; do
+    printf '@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:%s;src:url("./fonts/jetbrains-mono-%s-%s-normal.woff2") format("woff2");unicode-range:%s;}\n' \
+      "$w" "$SUBSET" "$w" "$RANGE"
+  done
+} > "$BUILD/fonts.css"
+
+echo "Writing NOTICE ..."
+cat > "$BUILD/NOTICE" <<NOTICE
+Third-party assets bundled with the AIStudio demo UI
+====================================================
+
+Regenerate with: ./scripts/vendor_frontend_assets.sh
+
+Inter
+  Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+  SIL Open Font License 1.1 — fonts/LICENSE-Inter-OFL.txt
+  Packaged via @fontsource/inter@${INTER_VERSION}
+
+JetBrains Mono
+  Copyright 2020 The JetBrains Mono Project Authors
+  (https://github.com/JetBrains/JetBrainsMono)
+  SIL Open Font License 1.1 — fonts/LICENSE-JetBrainsMono-OFL.txt
+  Packaged via @fontsource/jetbrains-mono@${JETBRAINS_VERSION}
+
+Chart.js ${CHARTJS_VERSION}
+  Copyright Chart.js Contributors
+  MIT — js/LICENSE-chartjs.md
+
+OFL-1.1 note: these fonts are redistributed unmodified, under their original
+names, and are not sold on their own. The licence and copyright notice above
+travel with them, which is what OFL section 2 requires. If a font file is ever
+subsetted or renamed, re-read sections 3 and 4 before shipping.
+NOTICE
+
+
+# ── Swap staged tree into place ──────────────────────────────────────────────
+mkdir -p "$DEST"
+rm -rf "$DEST/fonts" "$DEST/js"
+mv "$BUILD/fonts" "$BUILD/js" "$DEST/"
+mv "$BUILD/fonts.css" "$BUILD/NOTICE" "$DEST/"
+
+echo
+echo "Done. $(du -sh "$DEST" | cut -f1) in demo-ui/vendor/"
+echo "Verify no third-party requests remain:"
+echo "  grep -nE 'https?://(cdn|fonts)\.' demo-ui/index.html"
