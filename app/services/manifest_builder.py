@@ -11,6 +11,53 @@ _GCR_LOGIN_CMD = (
     "--password-stdin https://us-docker.pkg.dev"
 )
 
+# ── Node environment prelude ─────────────────────────────────────────────────
+# Loads per-node secrets before any docker command runs. Currently that is
+# HF_TOKEN, required to download gated models — see MODEL-LICENSES.md.
+#
+# This exists because the obvious approach does not work. Commands here are run
+# via SSHExecutor's exec_command(), which sshd executes as `$SHELL -c '<cmd>'`.
+# That is a NON-INTERACTIVE shell, and Debian/Ubuntu's stock ~/.bashrc opens
+# with:
+#
+#     case $- in
+#         *i*) ;;
+#           *) return;;
+#     esac
+#
+# so anything appended to ~/.bashrc — the natural place to put an export, and
+# what most setup instructions tell you to do — sits below that early `return`
+# and never runs for our commands. The variable would appear set when the
+# operator SSHes in by hand and unset for every benchmark, which is a
+# maddening way to discover the problem.
+#
+# A dedicated file sourced explicitly avoids the whole question. It also keeps
+# the token out of the interactive environment of anyone who logs into the node.
+_NODE_ENV_FILE = "$HOME/.aistudio/env"
+_LOAD_NODE_ENV = (
+    "if [ -f %s ]; then set -a; . %s; set +a; fi" % (_NODE_ENV_FILE, _NODE_ENV_FILE)
+)
+
+
+def _hf_token_flags() -> str:
+    """Docker flags that forward the node's HF_TOKEN into the workload container.
+
+    Uses docker's passthrough form (`-e VAR` with no `=value`), which reads the
+    value from the daemon client's environment. That avoids interpolating the
+    secret into a shell string entirely — no quoting hazard, and the token never
+    appears in the command text that gets logged or stored in a run manifest.
+
+    Expands to nothing when HF_TOKEN is unset, so behaviour is unchanged for
+    ungated models and for weights already present in the mounted cache.
+
+    HUGGING_FACE_HUB_TOKEN is the older name; huggingface_hub still honours both
+    and vLLM images in the wild read one or the other depending on vintage.
+    """
+    return (
+        '${HF_TOKEN:+-e HF_TOKEN} '
+        '${HF_TOKEN:+-e HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"}'
+    )
+
 
 # ── Result parser (runs inside the vLLM container via base64 exec) ───────────
 # After `vllm bench serve --save-result` writes /tmp/bench_result.json,
@@ -109,6 +156,16 @@ class ManifestBuilder:
             volume_flag = "-v $HOME/.cache/huggingface:/root/.cache/huggingface"
             env_flags   = ""
 
+        # Gated models (Meta Llama, and any repo with `gated: manual` on the Hub)
+        # cannot be downloaded without an access token tied to an account the
+        # publisher has approved. The token comes from the GPU node, loaded by
+        # _LOAD_NODE_ENV below — never from the server — so it does not transit
+        # the API or get written into a run manifest.
+        #
+        # See MODEL-LICENSES.md. Supplying a token does not grant a licence: the
+        # operator must accept each model's terms on their own account.
+        env_flags = " ".join(p for p in [env_flags, _hf_token_flags()] if p)
+
         login_cmd = _GCR_LOGIN_CMD
         # Remove only the named container from a previous run — no need to touch
         # other containers since we use a dynamically assigned free port below.
@@ -137,7 +194,10 @@ class ManifestBuilder:
             ("--max-model-len %d" % max_model_len if max_model_len else ""),
             "--tensor-parallel-size %d" % gpu_count,
         ] if p)
-        return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
+        # _LOAD_NODE_ENV first: it populates HF_TOKEN from the node's env file so
+        # the ${HF_TOKEN:+...} expansions in run_cmd resolve. See its definition
+        # for why ~/.bashrc cannot be used for this.
+        return "%s ; %s && %s && %s" % (_LOAD_NODE_ENV, login_cmd, rm_cmd, run_cmd)
 
     @staticmethod
     def build_benchmark_client_command(model_name: str, config: Dict[str, Any],
@@ -253,7 +313,10 @@ class ManifestBuilder:
             "-p $JUPYTER_PORT:7008 --ipc=host",
             "-v /data:/data",
         ] + env_parts + [image])
-        return "%s && %s && %s" % (login_cmd, rm_cmd, run_cmd)
+        # _LOAD_NODE_ENV first: it populates HF_TOKEN from the node's env file so
+        # the ${HF_TOKEN:+...} expansions in run_cmd resolve. See its definition
+        # for why ~/.bashrc cannot be used for this.
+        return "%s ; %s && %s && %s" % (_LOAD_NODE_ENV, login_cmd, rm_cmd, run_cmd)
 
     @staticmethod
     def build_jupyter_health_command(run_id: str = "", base_url: str = "") -> str:
