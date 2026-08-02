@@ -13,7 +13,11 @@ set -euo pipefail
 MODEL="meta-llama/Meta-Llama-3.1-70B-Instruct"
 TP=2
 PRECISION="float16"
-CONTAINER="vllm/vllm-openai:latest"
+# Container version is pinned centrally so this run is reproducible.
+# shellcheck source=../versions.env
+source "$(dirname "${BASH_SOURCE[0]}")/../versions.env"
+CONTAINER="$CONTAINER_NVIDIA"
+bench_provenance "$CONTAINER"
 
 # ── Step 1: Start vLLM inference server ──────────────────────────────────────
 docker run -d \

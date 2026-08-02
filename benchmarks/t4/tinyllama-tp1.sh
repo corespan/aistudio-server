@@ -12,7 +12,11 @@ set -euo pipefail
 MODEL="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 TP=1
 PRECISION="float16"
-CONTAINER="vllm/vllm-openai:latest"
+# Container version is pinned centrally so this run is reproducible.
+# shellcheck source=../versions.env
+source "$(dirname "${BASH_SOURCE[0]}")/../versions.env"
+CONTAINER="$CONTAINER_NVIDIA"
+bench_provenance "$CONTAINER"
 
 # ── Step 1: Start vLLM inference server ──────────────────────────────────────
 docker run -d \

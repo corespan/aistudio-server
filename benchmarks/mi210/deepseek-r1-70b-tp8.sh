@@ -13,7 +13,11 @@ set -euo pipefail
 MODEL="deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
 TP=8
 PRECISION="bfloat16"
-CONTAINER="rocm/vllm:latest"
+# Container version is pinned centrally so this run is reproducible.
+# shellcheck source=../versions.env
+source "$(dirname "${BASH_SOURCE[0]}")/../versions.env"
+CONTAINER="$CONTAINER_ROCM"
+bench_provenance "$CONTAINER"
 
 # ── Step 1: Start vLLM inference server ──────────────────────────────────────
 docker run -d \
