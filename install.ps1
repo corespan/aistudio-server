@@ -14,7 +14,7 @@ $DIR  = "aistudio-server"
 # cannot be repointed.
 #
 # Updated by the release process — see RELEASE.md step 3.
-$Commit = "103f529"   # v1.0.0 — replace with the full 40-char SHA at release
+$Commit = "103f529d9c927a0012c308e67f48974238202119"   # v1.0.0
 $TAG    = "ai-studio-server-1.0.0-1-opensource"   # informational only
 
 # ── Prerequisites check ────────────────────────────────────────────────────────
