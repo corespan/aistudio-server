@@ -4,12 +4,8 @@ from typing import Any, Dict
 
 from app.config import settings, get_workload_registry
 
-# GCR login command — shared by vLLM/Jupyter server commands and DependencyInstaller.
-# Defined once here so it's never out of sync across callers.
-_GCR_LOGIN_CMD = (
-    "cat $HOME/gcr.json | docker login -u _json_key "
-    "--password-stdin https://us-docker.pkg.dev"
-)
+# The aistudio GCR repository (us-docker.pkg.dev/aimlworkbench/aistudio) has public
+# read access — no login is required on GPU nodes to pull images.
 
 # ── Node environment prelude ─────────────────────────────────────────────────
 # Loads per-node secrets before any docker command runs. Currently that is
@@ -166,7 +162,6 @@ class ManifestBuilder:
         # operator must accept each model's terms on their own account.
         env_flags = " ".join(p for p in [env_flags, _hf_token_flags()] if p)
 
-        login_cmd = _GCR_LOGIN_CMD
         # Remove only the named container from a previous run — no need to touch
         # other containers since we use a dynamically assigned free port below.
         rm_cmd = "docker rm -f %s 2>/dev/null || true" % container_name
@@ -197,7 +192,7 @@ class ManifestBuilder:
         # _LOAD_NODE_ENV first: it populates HF_TOKEN from the node's env file so
         # the ${HF_TOKEN:+...} expansions in run_cmd resolve. See its definition
         # for why ~/.bashrc cannot be used for this.
-        return "%s ; %s && %s && %s" % (_LOAD_NODE_ENV, login_cmd, rm_cmd, run_cmd)
+        return "%s ; %s && %s" % (_LOAD_NODE_ENV, rm_cmd, run_cmd)
 
     @staticmethod
     def build_benchmark_client_command(model_name: str, config: Dict[str, Any],
@@ -294,8 +289,7 @@ class ManifestBuilder:
         image = "%s/jupyternotebook:%s" % (get_workload_registry(), settings.JUPYTER_IMAGE_TAG)
         container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
 
-        login_cmd = _GCR_LOGIN_CMD
-        rm_cmd    = "docker rm -f %s 2>/dev/null || true" % container_name
+        rm_cmd = "docker rm -f %s 2>/dev/null || true" % container_name
         # Pass workload_id and port as env vars so script.sh and startJupyter.py
         # write notebooks to the correct NFS path (/data/{workload_id}/).
         # $JUPYTER_PORT is resolved at runtime by the worker before this command runs.
@@ -316,7 +310,7 @@ class ManifestBuilder:
         # _LOAD_NODE_ENV first: it populates HF_TOKEN from the node's env file so
         # the ${HF_TOKEN:+...} expansions in run_cmd resolve. See its definition
         # for why ~/.bashrc cannot be used for this.
-        return "%s ; %s && %s && %s" % (_LOAD_NODE_ENV, login_cmd, rm_cmd, run_cmd)
+        return "%s ; %s && %s" % (_LOAD_NODE_ENV, rm_cmd, run_cmd)
 
     @staticmethod
     def build_jupyter_health_command(run_id: str = "", base_url: str = "") -> str:

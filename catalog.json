@@ -11,7 +11,7 @@
       "name": "JupyterNotebook",
       "display_name": "Jupyter Notebook",
       "description": "Interactive Jupyter environment for running microbenchmarks and GPU profiling on remote nodes.",
-      "image_tag": "2.0.0-nvidia"
+      "image_tag": "2.2.0-nvidia"
     }
   ],
   "supported_models": [
@@ -85,9 +85,8 @@
     }
   ],
   "images": {
-    "llm_inference": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference",
-    "jupyter_notebook": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/jupyternotebook",
-    "benchmark_client": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/benchmark-client"
+    "llm_inference": "us-docker.pkg.dev/aimlworkbench/aistudio/llminference",
+    "jupyter_notebook": "us-docker.pkg.dev/aimlworkbench/aistudio/jupyternotebook"
   },
   "datasets": {
     "sharegpt": {

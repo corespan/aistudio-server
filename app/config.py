@@ -24,11 +24,10 @@ class Settings(BaseSettings):
     RABBITMQ_USERNAME: str = "aistudio"
     RABBITMQ_PASSWORD: str = "aistudio"
 
-    # Workload Registry (GCP Artifact Registry)
+    # Workload Registry (GCP Artifact Registry — public read)
     GCP_REGISTRY_URL: str = "us-docker.pkg.dev"
     GCP_PROJECT_ID: str = "aimlworkbench"
-    GCP_REPOSITORY: str = "workbench-registry"
-    GCP_IMAGE_PATH: str = "services/workloads"
+    GCP_REPOSITORY: str = "aistudio"
     WORKLOAD_IMAGE_TAG: str = "2.3.0-nvidia"
     JUPYTER_IMAGE_TAG: str = "2.2.0-nvidia"
 
@@ -104,6 +103,4 @@ def get_celery_result_backend() -> str:
 
 def get_workload_registry() -> str:
     s = settings
-    return "%s/%s/%s/%s" % (
-        s.GCP_REGISTRY_URL, s.GCP_PROJECT_ID,
-        s.GCP_REPOSITORY, s.GCP_IMAGE_PATH)
+    return "%s/%s/%s" % (s.GCP_REGISTRY_URL, s.GCP_PROJECT_ID, s.GCP_REPOSITORY)
