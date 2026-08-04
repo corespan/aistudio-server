@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     MODEL_LOCAL_PATH: str = "/home/ubuntu/models"
     MODEL_GCS_BUCKET: str = ""
 
+    # GPU node paths
+    # NODE_RESULTS_PATH — where benchmark output is written on the GPU node.
+    #   Bind-mounted into the workload container as /results.
+    #   Each run creates /results/<run_id>/ with benchmark_result.json, summary.json, logs/.
+    NODE_RESULTS_PATH: str = "/results"
+
     # SSH
     SSH_KEY_PATH: str = "~/.ssh/id_rsa"
     SSH_DEFAULT_USER: str = "ubuntu"

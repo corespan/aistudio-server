@@ -60,6 +60,28 @@ def _write_log(db, task_id, line: str) -> None:
     db.commit()
 
 
+def _log_result_summary(db, task_id: str, metrics: dict) -> None:
+    """Write a human-readable results block to the task log stream."""
+    divider = "─" * 42
+    _write_log(db, task_id, divider)
+    _write_log(db, task_id, "Throughput:    %.1f tok/s" % (metrics.get("total_token_throughput") or 0))
+    if metrics.get("mean_ttft_ms"):
+        _write_log(db, task_id, "TTFT (mean):   %.0f ms" % metrics["mean_ttft_ms"])
+    if metrics.get("mean_tpot_ms"):
+        _write_log(db, task_id, "TPOT (mean):   %.1f ms" % metrics["mean_tpot_ms"])
+    _write_log(db, task_id, "E2E  (mean):   %.0f ms" % (metrics.get("mean_e2el_ms") or 0))
+    if metrics.get("p50_e2el_ms"):
+        _write_log(db, task_id, "E2E  (p50):    %.0f ms" % metrics["p50_e2el_ms"])
+    if metrics.get("p99_e2el_ms"):
+        _write_log(db, task_id, "E2E  (p99):    %.0f ms" % metrics["p99_e2el_ms"])
+    _write_log(db, task_id, "Duration:      %.1f s" % (metrics.get("duration_s") or 0))
+    if metrics.get("cost_metrics"):
+        cost = metrics["cost_metrics"]
+        _write_log(db, task_id, "Cost/1M tok:   $%.4f" % (cost.get("cost_per_million_tokens") or 0))
+    _write_log(db, task_id, divider)
+    _write_log(db, task_id, "✓ Result saved to leaderboard.")
+
+
 def _fail_workload(workload_id, trigger, error):
     """
     Transition a workload to FAILED with an error message.
@@ -293,34 +315,17 @@ def execute_benchmark(self, workload_id):
                 .first()
             )
             image_tag = wt.image_tag if wt and wt.image_tag else None
-            server_cmd = ManifestBuilder.build_vllm_command(
+            bench_cmd = ManifestBuilder.build_llm_benchmark_command(
                 workload.model_name, workload.workload_config,
                 image_tag=image_tag, run_id=workload_id,
-            )
-            client_cmd = ManifestBuilder.build_benchmark_client_command(
-                workload.model_name, workload.workload_config, run_id=workload_id,
             )
             cfg = workload.workload_config or {}
             _write_log(db, task.id, "=== [3/3] Running Benchmark ===")
             _write_log(db, task.id, "Model:       %s" % workload.model_name)
             _write_log(db, task.id, "Node:        %s" % node.machine_ip)
-            _write_log(db, task.id, "Precision:   %s" % cfg.get("precision", "fp32"))
-            _write_log(db, task.id, "Concurrency: %d   ISL: %d   OSL: %d" % (
-                cfg.get("concurrency", 1),
-                cfg.get("input_tokens", 0),
-                cfg.get("output_tokens", 0),
-            ))
-            # Pick a free host port at runtime so we never collide with anything
-            # already running on the node. $VLLM_PORT is shared across server_cmd
-            # and client_cmd since they run in the same SSH session.
-            port_cmd = (
-                "VLLM_PORT=$(python3 -c \""
-                "import socket; s=socket.socket(); s.bind(('',0)); "
-                "p=s.getsockname()[1]; s.close(); print(p)"
-                "\") && echo \"Using port $VLLM_PORT for vLLM server\""
-            )
-            # Print GPU state before starting so we can confirm the GPU is real
-            # and see it transition from idle to loaded during the health-check wait.
+            _write_log(db, task.id, "Concurrency: %d" % cfg.get("concurrency", 1))
+            _write_log(db, task.id, "Dataset:     sharegpt")
+            # Print GPU state before starting so we can confirm the GPU is real.
             gpu_cmd = (
                 "echo '--- GPU state before benchmark ---' && "
                 "nvidia-smi --query-gpu=name,memory.used,memory.free,utilization.gpu "
@@ -369,7 +374,7 @@ def execute_benchmark(self, workload_id):
                 logger.warning("Could not create pending BenchmarkResult for %s", workload_id)
             with SSHExecutor(node.machine_ip, node.machine_username, key_filename=settings.SSH_KEY_PATH) as ssh:
                 exit_code = ssh.run_command(
-                    "%s && %s && %s && %s" % (port_cmd, gpu_cmd, server_cmd, client_cmd), task.id,
+                    "%s && %s" % (gpu_cmd, bench_cmd), task.id,
                 )
             bench_completed_at = datetime.now(timezone.utc)
 
@@ -387,56 +392,73 @@ def execute_benchmark(self, workload_id):
             node.running_task = None
             db.commit()
 
-            # ── Parse BENCH_RESULT: line from task logs and store as BenchmarkResult
-            result_log = (
+            # ── Parse BENCH_RESULT: lines from task logs — one per concurrency level.
+            # benchmark.py prints one "BENCH_RESULT:{json}" line per concurrency sweep
+            # point. The first one updates the pending "running" row (sub_run_index=0);
+            # subsequent ones are inserted as new rows (sub_run_index=1, 2, …).
+            result_logs = (
                 db.query(TaskLog)
                 .filter(TaskLog.task_id == task.id, TaskLog.line.like("BENCH_RESULT:%"))
-                .first()
+                .order_by(TaskLog.id)
+                .all()
             )
-            if result_log:
-                try:
-                    metrics = json.loads(result_log.line[len("BENCH_RESULT:"):])
-                    # Update the pending "running" row created before the SSH call.
-                    pending = (
-                        db.query(BenchmarkResult)
-                        .filter(
-                            BenchmarkResult.run_id == workload_id,
-                            BenchmarkResult.sub_run_index == 0,
-                        )
-                        .first()
-                    )
-                    if pending:
-                        pending.status = "success"
-                        pending.total_token_throughput = metrics.get("total_token_throughput")
-                        pending.mean_ttft_ms = metrics.get("mean_ttft_ms")
-                        pending.mean_tpot_ms = metrics.get("mean_tpot_ms")
-                        pending.mean_e2el_ms = metrics.get("mean_e2el_ms")
-                        pending.metrics = metrics
-                        pending.completed_at = bench_completed_at
-                        pending.duration_seconds = (bench_completed_at - bench_started_at).total_seconds()
-                        flag_modified(pending, "metrics")
-                        db.commit()
-                    else:
-                        # Pending row wasn't created (e.g. DB error) — insert fresh.
-                        gpus_list = (node.specs or {}).get("gpus", [])
-                        gpu_count = len(gpus_list) or 1
-                        gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
-                        gpu_type = _extract_gpu_type(node.specs)
+            if result_logs:
+                gpus_list = (node.specs or {}).get("gpus", [])
+                gpu_count_node = len(gpus_list) or 1
+                gpu_model = gpus_list[0].get("name", "") if gpus_list else ""
+                gpu_type  = _extract_gpu_type(node.specs)
+                server_nm = (node.specs or {}).get("server_name", node.machine_ip)
+                total_duration = (bench_completed_at - bench_started_at).total_seconds()
+
+                for idx, result_log in enumerate(result_logs):
+                    try:
+                        metrics = json.loads(result_log.line[len("BENCH_RESULT:"):])
+                        # Concurrency for this row: from the BENCH_RESULT payload if
+                        # present, otherwise fall back to workload_config.
+                        conc = metrics.get("concurrency") or cfg.get("concurrency", 1)
+
+                        if idx == 0:
+                            # Update the pending "running" row created before SSH.
+                            pending = (
+                                db.query(BenchmarkResult)
+                                .filter(
+                                    BenchmarkResult.run_id == workload_id,
+                                    BenchmarkResult.sub_run_index == 0,
+                                )
+                                .first()
+                            )
+                            if pending:
+                                pending.status = "success"
+                                pending.concurrency = conc
+                                pending.total_token_throughput = metrics.get("total_token_throughput")
+                                pending.mean_ttft_ms = metrics.get("mean_ttft_ms")
+                                pending.mean_tpot_ms = metrics.get("mean_tpot_ms")
+                                pending.mean_e2el_ms = metrics.get("mean_e2el_ms")
+                                pending.metrics = metrics
+                                pending.completed_at = bench_completed_at
+                                pending.duration_seconds = total_duration
+                                flag_modified(pending, "metrics")
+                                db.commit()
+                                _log_result_summary(db, task.id, metrics)
+                                continue
+                            # Pending row missing — fall through to insert fresh below.
+
+                        # Additional concurrency levels (idx > 0) or missing pending row.
                         db.add(BenchmarkResult(
                             run_id=workload_id,
-                            sub_run_index=0,
+                            sub_run_index=idx,
                             workload_type="llm",
                             model_name=workload.model_name.lower(),
                             pipeline_version="vllm-openai:v0.14.1",
                             node_ips=[node.machine_ip],
                             gpu_type=gpu_type,
-                            gpu_count=gpu_count,
+                            gpu_count=gpu_count_node,
                             gpu_model=gpu_model,
-                            server_name=(node.specs or {}).get("server_name", node.machine_ip),
+                            server_name=server_nm,
                             precision=cfg.get("precision", "fp32").lower(),
                             input_tokens=cfg.get("input_tokens", 0),
                             output_tokens=cfg.get("output_tokens", 0),
-                            concurrency=cfg.get("concurrency", 1),
+                            concurrency=conc,
                             status="success",
                             total_token_throughput=metrics.get("total_token_throughput"),
                             mean_ttft_ms=metrics.get("mean_ttft_ms"),
@@ -445,31 +467,18 @@ def execute_benchmark(self, workload_id):
                             metrics=metrics,
                             started_at=bench_started_at,
                             completed_at=bench_completed_at,
-                            duration_seconds=(bench_completed_at - bench_started_at).total_seconds(),
+                            duration_seconds=total_duration,
                         ))
                         db.commit()
-                    logger.info("BenchmarkResult saved for workload %s", workload_id)
+                        if idx == 0:
+                            _log_result_summary(db, task.id, metrics)
 
-                    # Write a human-readable results summary to the log stream
-                    divider = "─" * 42
-                    _write_log(db, task.id, divider)
-                    _write_log(db, task.id, "Throughput:    %.1f tok/s" % (metrics.get("total_token_throughput") or 0))
-                    if metrics.get("mean_ttft_ms"):
-                        _write_log(db, task.id, "TTFT (mean):   %.0f ms" % metrics["mean_ttft_ms"])
-                    if metrics.get("mean_tpot_ms"):
-                        _write_log(db, task.id, "TPOT (mean):   %.1f ms" % metrics["mean_tpot_ms"])
-                    _write_log(db, task.id, "E2E  (mean):   %.0f ms" % (metrics.get("mean_e2el_ms") or 0))
-                    _write_log(db, task.id, "E2E  (p50):    %.0f ms" % (metrics.get("p50_e2el_ms") or 0))
-                    _write_log(db, task.id, "E2E  (p99):    %.0f ms" % (metrics.get("p99_e2el_ms") or 0))
-                    _write_log(db, task.id, "Requests:      %d / %d ok" % (
-                        metrics.get("successful_requests", 0),
-                        metrics.get("total_requests", 0),
-                    ))
-                    _write_log(db, task.id, "Duration:      %.1f s" % (metrics.get("duration_s") or 0))
-                    _write_log(db, task.id, divider)
-                    _write_log(db, task.id, "✓ Result saved to leaderboard.")
-                except Exception as exc:
-                    logger.warning("Could not save BenchmarkResult: %s", exc)
+                    except Exception as exc:
+                        logger.warning("Could not save BenchmarkResult[%d] for %s: %s",
+                                       idx, workload_id, exc)
+
+                logger.info("Saved %d BenchmarkResult row(s) for workload %s",
+                            len(result_logs), workload_id)
 
             transition_workload_state(
                 db, workload_id, WorkloadState.READY,
