@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     #   Each run creates /results/<run_id>/ with benchmark_result.json, summary.json, logs/.
     NODE_RESULTS_PATH: str = "/results"
 
+    # NODE_JUPYTER_DATA_PATH — where Jupyter notebooks are stored on the GPU node.
+    #   Bind-mounted into the Jupyter container as /data.
+    #   Each session creates /data/<workload_id>/ containing the user's notebooks.
+    #   Use any writable directory on the GPU node; it does not need to be shared storage.
+    #   Example: /home/ubuntu/aistudio-jupyter  or  /tmp/jupyter-data
+    NODE_JUPYTER_DATA_PATH: str = "/data"
+
     # SSH
     SSH_KEY_PATH: str = "~/.ssh/id_rsa"
     SSH_DEFAULT_USER: str = "ubuntu"

@@ -133,23 +133,26 @@ class ManifestBuilder:
         Start the jupyternotebook GCR image on the node.
 
         Runs the container's CMD (script.sh → startJupyter.py) directly — no
-        entrypoint override. script.sh copies notebooks to NFS at /data/{workload_id}/
+        entrypoint override. script.sh copies notebooks to /data/{workload_id}/
         and startJupyter.py launches Jupyter from that directory so:
           - Only notebooks are visible (no Dockerfile/script.sh/etc.)
-          - All user edits persist on NFS
+          - All user edits persist on the GPU node's data directory
 
         base_url — when set (e.g. "/jupyter/T4/jup-20260729-xxx/"), the container
         receives JUPYTER_BASE_URL as an env var. startJupyter.py must honour it by
         passing --ServerApp.base_url=$JUPYTER_BASE_URL to the jupyter lab command.
         This is required for JupyterLab to work correctly behind a subpath proxy.
         When NGINX_ENABLED=false the arg is omitted and Jupyter runs at root (/lab).
+
+        Volume mounts (bind-mounted from the GPU node):
+          NODE_JUPYTER_DATA_PATH → /data  (notebook storage; one subdir per workload_id)
         """
         image = "%s/jupyternotebook:%s" % (get_workload_registry(), settings.JUPYTER_IMAGE_TAG)
         container_name = "jupyter-%s" % run_id if run_id else "jupyter_server"
 
         rm_cmd = "docker rm -f %s 2>/dev/null || true" % container_name
         # Pass workload_id and port as env vars so script.sh and startJupyter.py
-        # write notebooks to the correct NFS path (/data/{workload_id}/).
+        # write notebooks to the correct path (/data/{workload_id}/).
         # $JUPYTER_PORT is resolved at runtime by the worker before this command runs.
         # JUPYTER_BASE_URL tells startJupyter.py which subpath to mount Jupyter at
         # (needed when nginx proxies requests under a non-root path).
@@ -163,7 +166,7 @@ class ManifestBuilder:
         run_cmd = " ".join([
             "docker run --gpus all -d --name %s" % container_name,
             "-p $JUPYTER_PORT:7008 --ipc=host",
-            "-v /data:/data",
+            "-v %s:/data" % settings.NODE_JUPYTER_DATA_PATH,
         ] + env_parts + [image])
         # _LOAD_NODE_ENV first: it populates HF_TOKEN from the node's env file so
         # the ${HF_TOKEN:+...} expansions in run_cmd resolve. See its definition
