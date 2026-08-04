@@ -255,6 +255,7 @@ async def get_jupyter_instance_status(task_id: str, db: AsyncSession = Depends(g
         "task_id": task_id,
         "state": workload.state,
         "jupyter_url": (workload.workload_config or {}).get("jupyter_url"),
+        "workload_port": workload.workload_port,
         "error_message": workload.error_message,
         "updated_at": workload.updated_at,
     }

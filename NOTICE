@@ -1,7 +1,7 @@
 AIStudio Server
-Copyright 2026 CoreSpan AI
+Copyright © 2026 Corespan Systems, Inc
 
-This product includes software developed at CoreSpan AI.
+This product includes software developed at Corespan Systems, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 this file except in compliance with the License. You may obtain a copy of the
@@ -30,7 +30,7 @@ artifact (container image, wheel, installer) that embeds them:
 AI MODELS AND DATASETS
 --------------------------------------------------------------------------------
 
-The Apache-2.0 licence on this repository covers CoreSpan AI's own source code
+The Apache-2.0 licence on this repository covers Corespan Systems, Inc's own source code
 only. It does NOT cover the model weights or datasets this software downloads,
 loads, or benchmarks. Those carry their own separate licences and, in several
 cases, access restrictions imposed by their publishers.
@@ -42,6 +42,6 @@ TRADEMARKS
 --------------------------------------------------------------------------------
 
 Apache License 2.0 Section 6 grants no trademark rights. "CoreSpan" and the
-CoreSpan logo are trademarks of CoreSpan AI. All other product names, logos and
+CoreSpan logo are trademarks of Corespan Systems, Inc. All other product names, logos and
 brands referenced in this repository are the property of their respective owners
 and are used for identification purposes only.

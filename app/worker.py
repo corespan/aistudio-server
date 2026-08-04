@@ -89,7 +89,7 @@ def _fail_workload(workload_id, trigger, error):
                         sub_run_index=0,
                         workload_type="llm",
                         model_name=(workload.model_name or "").lower(),
-                        pipeline_version="vllm-openai-latest",
+                        pipeline_version="vllm-openai:v0.14.1",
                         node_ips=[node.machine_ip] if node else [],
                         gpu_type="",
                         gpu_count=0,
@@ -343,7 +343,7 @@ def execute_benchmark(self, workload_id):
                     sub_run_index=0,
                     workload_type="llm",
                     model_name=workload.model_name.lower(),
-                    pipeline_version="vllm-openai-latest",
+                    pipeline_version="vllm-openai:v0.14.1",
                     node_ips=[node.machine_ip],
                     gpu_type=_gt,
                     gpu_count=_gc,
@@ -427,7 +427,7 @@ def execute_benchmark(self, workload_id):
                             sub_run_index=0,
                             workload_type="llm",
                             model_name=workload.model_name.lower(),
-                            pipeline_version="vllm-openai-latest",
+                            pipeline_version="vllm-openai:v0.14.1",
                             node_ips=[node.machine_ip],
                             gpu_type=gpu_type,
                             gpu_count=gpu_count,
@@ -597,6 +597,7 @@ def launch_jupyter(self, workload_id):
             new_cfg["jupyter_url"] = jupyter_url
             workload.workload_config = new_cfg
             flag_modified(workload, "workload_config")
+            workload.workload_port = jupyter_port
             db.commit()
 
             transition_workload_state(

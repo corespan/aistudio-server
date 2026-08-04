@@ -1,6 +1,6 @@
 # Model and Dataset Licences
 
-**The Apache-2.0 licence on this repository covers CoreSpan AI's source code only.
+**The Apache-2.0 licence on this repository covers Corespan Systems, Inc's source code only.
 It does not cover model weights or datasets.**
 
 AIStudio Server downloads and runs models published by third parties. Each carries

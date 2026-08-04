@@ -102,7 +102,6 @@ if missing:
     # resulting SBOM would either fail or describe the wrong image.
     print(
         "ERROR: no tag resolvable for: %s\n"
-        "Add it to workload_types in catalog.json, or map it in PAIRED_WITH "
         "in scripts/generate_sbom.sh." % ", ".join(missing),
         file=sys.stderr,
     )

@@ -145,7 +145,6 @@ SSH_DEFAULT_USER=drut
 | Docker installed and runnable as the SSH user | `docker ps` |
 | NVIDIA Container Toolkit | `docker run --gpus all --rm nvidia/cuda:12.0-base nvidia-smi` |
 | `~/.aistudio/env` with `HF_TOKEN` — only for gated models | `make check-node-env NODE=<host>` |
-| `~/gcr.json` — GCP key, only for private image tags | `ls ~/gcr.json` |
 | Port 8000 open (inbound) | vLLM benchmark server |
 | Port 8899 open (inbound) | Jupyter Lab |
 | Sufficient VRAM | TinyLlama: ~3 GB · Llama-3-8B: ~16 GB · Llama-3-70B: 4×A100 |
@@ -411,24 +410,22 @@ No local builds on the GPU node — images are pulled automatically on each run.
 
 | Image | Used for |
 |-------|---------|
-| `llminference:2.3.1-nvidia` | vLLM benchmark server |
+| `llminference:2.3.1-nvidia` | vLLM inference server — also used as the benchmark client via `docker exec` |
 | `jupyternotebook:2.2.0-nvidia` | Jupyter Lab (supports `--ServerApp.base_url` for nginx subpath proxy) |
-| `benchmark-client:2.3.1-nvidia` | Load generator that drives the inference server |
 
 Hosted in GCP Artifact Registry at
-`us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/`.
+`us-docker.pkg.dev/aimlworkbench/aistudio/`.
 
 ### Anonymous access
 
 The images are public. Verify before setting up a node:
 
 ```bash
-docker pull us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference:2.3.1-nvidia
+docker pull us-docker.pkg.dev/aimlworkbench/aistudio/llminference:2.3.1-nvidia
 ```
 
-If that succeeds without `gcloud auth`, no credential is needed. The `~/gcr.json`
-service-account key described under [Node requirements](#node-requirements) is
-only required for private or pre-release tags.
+If that succeeds without `gcloud auth`, no credential is needed. No `~/gcr.json`
+service-account key is required.
 
 > If the pull returns `UNAUTHORIZED`, the registry's public access binding has
 > been lost. That is a bug — please
@@ -437,10 +434,10 @@ only required for private or pre-release tags.
 
 ### What is in them
 
-These images are prebuilt artifacts that CoreSpan distributes, so third-party
-notice and redistribution obligations attach to us rather than to the projects
-whose code they contain. Each contains vLLM, PyTorch, Jupyter, several hundred
-Python wheels, the CUDA or ROCm userspace, and a Debian base layer.
+These images are prebuilt artifacts that Corespan Systems, Inc distributes, so
+third-party notice and redistribution obligations attach to us rather than to the
+projects whose code they contain. Each contains vLLM, PyTorch, Jupyter, several
+hundred Python wheels, the CUDA or ROCm userspace, and a Debian base layer.
 
 Generate the inventory with `make sbom` (requires
 [syft](https://github.com/anchore/syft) and pull access). Output lands in
@@ -536,8 +533,7 @@ Copy `.env.example` to `.env` and fill in the values below.
 | `SSH_DEFAULT_USER` | `drut` | SSH username on GPU nodes |
 | `GCP_REGISTRY_URL` | `us-docker.pkg.dev` | Artifact Registry hostname |
 | `GCP_PROJECT_ID` | `aimlworkbench` | GCP project ID |
-| `GCP_REPOSITORY` | `workbench-registry` | Artifact Registry repo |
-| `GCP_IMAGE_PATH` | `services/workloads` | Path prefix inside the repo |
+| `GCP_REPOSITORY` | `aistudio` | Artifact Registry repo |
 | `WORKLOAD_IMAGE_TAG` | `2.3.1-nvidia` | Fallback image tag (overridden by `catalog.json`) |
 | `JUPYTER_IMAGE_TAG` | `2.2.0-nvidia` | Tag for the jupyternotebook image |
 | `MODEL_STORAGE_MODE` | `huggingface` | `huggingface`, `local`, or `gcs` |
@@ -612,7 +608,7 @@ Apache-2.0. See [LICENSE](./LICENSE) for the full text and [NOTICE](./NOTICE) fo
 the copyright and attribution summary.
 
 Apache-2.0 Section 6 grants no trademark rights. "CoreSpan" and the CoreSpan logo
-are trademarks of CoreSpan AI.
+are trademarks of Corespan Systems, Inc.
 
 ### Everything else
 
