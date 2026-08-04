@@ -75,9 +75,9 @@ class BenchmarkResult(Base):
         comment="LLM model identifier. e.g. 'llama3-8b-instruct'. Always lowercase.",
     )
     pipeline_version: Mapped[str] = mapped_column(
-        String(32),
+        String(128),
         nullable=False,
-        comment="Version of the inference pipeline. e.g. 'vllm-0.4.2'.",
+        comment="Version of the inference pipeline. e.g. 'vllm-openai:v0.14.1'.",
     )
 
     # ── Hardware ──────────────────────────────────────────────────────────────
