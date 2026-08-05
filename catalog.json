@@ -16,6 +16,23 @@
   ],
   "supported_models": [
     {
+      "model_id": "tinyllama-1.1b-chat",
+      "display_name": "TinyLlama 1.1B Chat",
+      "hf_repo": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "license": "Apache-2.0",
+      "gated": false,
+      "license_url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "min_gpu_memory_gb": 4,
+      "default_config": {
+        "precision": "fp16",
+        "gpu_count": 1,
+        "max_model_len": 2048,
+        "concurrency": 4,
+        "input_tokens": 512,
+        "output_tokens": 128
+      }
+    },
+    {
       "model_id": "llama3-8b-instruct",
       "display_name": "Llama 3 8B Instruct",
       "hf_repo": "meta-llama/Meta-Llama-3-8B-Instruct",
