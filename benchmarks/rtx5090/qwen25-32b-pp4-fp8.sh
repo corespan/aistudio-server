@@ -15,7 +15,11 @@ set -euo pipefail
 MODEL="Qwen/Qwen2.5-32B-Instruct"
 PP=4
 PRECISION="fp8"
-CONTAINER="vllm/vllm-openai:latest"
+# Container version is pinned centrally so this run is reproducible.
+# shellcheck source=../versions.env
+source "$(dirname "${BASH_SOURCE[0]}")/../versions.env"
+CONTAINER="$CONTAINER_NVIDIA"
+bench_provenance "$CONTAINER"
 PORT=8000
 CONCURRENCY=20
 TOTAL_REQUESTS=200

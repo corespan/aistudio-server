@@ -1,5 +1,4 @@
 import uuid
-from app.services.manifest_builder import _GCR_LOGIN_CMD
 from app.services.ssh_executor import SSHExecutor
 
 
@@ -7,6 +6,9 @@ class DependencyInstaller:
     """
     Installs required dependencies on the GPU node via SSH.
     Pulls the workload container image from the public GCR registry.
+
+    The GCR repository (us-docker.pkg.dev/aimlworkbench/aistudio) has public
+    read access — no authentication is required on GPU nodes to pull images.
     """
 
     @staticmethod
@@ -23,8 +25,6 @@ class DependencyInstaller:
             'if ! command -v docker > /dev/null 2>&1; then '
             '  echo "Docker not found. Please install Docker first." && exit 1; '
             'fi && '
-            'echo "Authenticating with GCR..." && '
-            '%(login)s && '
             'echo "Pulling workload image: %(image)s" && '
             'docker pull %(image)s > /tmp/docker_pull.log 2>&1 & '
             'PULL_PID=$! && '
@@ -37,7 +37,7 @@ class DependencyInstaller:
             'cat /tmp/docker_pull.log && '
             '[ $PULL_EXIT -eq 0 ] && echo "Image ready." || '
             '{ echo "Pull failed (exit $PULL_EXIT)"; exit $PULL_EXIT; }'
-        ) % {"login": _GCR_LOGIN_CMD, "image": image}
+        ) % {"image": image}
 
         with SSHExecutor(ip, username, key_filename=settings.SSH_KEY_PATH) as ssh:
             exit_code = ssh.run_command(script, task_id)

@@ -24,11 +24,10 @@ class Settings(BaseSettings):
     RABBITMQ_USERNAME: str = "aistudio"
     RABBITMQ_PASSWORD: str = "aistudio"
 
-    # Workload Registry (GCP Artifact Registry)
+    # Workload Registry (GCP Artifact Registry — public read)
     GCP_REGISTRY_URL: str = "us-docker.pkg.dev"
     GCP_PROJECT_ID: str = "aimlworkbench"
-    GCP_REPOSITORY: str = "workbench-registry"
-    GCP_IMAGE_PATH: str = "services/workloads"
+    GCP_REPOSITORY: str = "aistudio"
     WORKLOAD_IMAGE_TAG: str = "2.3.0-nvidia"
     JUPYTER_IMAGE_TAG: str = "2.2.0-nvidia"
 
@@ -36,6 +35,19 @@ class Settings(BaseSettings):
     MODEL_STORAGE_MODE: str = "huggingface"
     MODEL_LOCAL_PATH: str = "/home/ubuntu/models"
     MODEL_GCS_BUCKET: str = ""
+
+    # GPU node paths
+    # NODE_RESULTS_PATH — where benchmark output is written on the GPU node.
+    #   Bind-mounted into the workload container as /results.
+    #   Each run creates /results/<run_id>/ with benchmark_result.json, summary.json, logs/.
+    NODE_RESULTS_PATH: str = "/results"
+
+    # NODE_JUPYTER_DATA_PATH — where Jupyter notebooks are stored on the GPU node.
+    #   Bind-mounted into the Jupyter container as /data.
+    #   Each session creates /data/<workload_id>/ containing the user's notebooks.
+    #   Use any writable directory on the GPU node; it does not need to be shared storage.
+    #   Example: /home/ubuntu/aistudio-jupyter  or  /tmp/jupyter-data
+    NODE_JUPYTER_DATA_PATH: str = "/data"
 
     # SSH
     SSH_KEY_PATH: str = "~/.ssh/id_rsa"
@@ -50,7 +62,7 @@ class Settings(BaseSettings):
     # No DNS setup required — uses the existing public domain.
     NGINX_ENABLED: bool = False
     # Public base URL used to construct the jupyter_url returned by the API.
-    # e.g. http://corespan.ddnsgeek.com  (no trailing slash)
+    # e.g. http://your-domain.com  (no trailing slash)
     PROXY_BASE_URL: str = ""
     # Directory where per-instance nginx location blocks are written.
     # This directory is included by /etc/nginx/conf.d/aistudio-jupyter.conf
@@ -104,6 +116,4 @@ def get_celery_result_backend() -> str:
 
 def get_workload_registry() -> str:
     s = settings
-    return "%s/%s/%s/%s" % (
-        s.GCP_REGISTRY_URL, s.GCP_PROJECT_ID,
-        s.GCP_REPOSITORY, s.GCP_IMAGE_PATH)
+    return "%s/%s/%s" % (s.GCP_REGISTRY_URL, s.GCP_PROJECT_ID, s.GCP_REPOSITORY)

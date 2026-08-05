@@ -76,7 +76,7 @@ def _llm(model, concurrency, duration, tpt, ttft, tpot, e2el, p99, otp, rtp,
             "output_tokens": out_tok,
             "gpu_count": gpu_count,
             "gpu_model": GPU_MODEL,
-            "pipeline_version": "vllm-rocm-latest",
+            "pipeline_version": "rocm/vllm-dev:nightly_0624_rc2_0624_rc2_20250620",
             "started_at": base.isoformat(),
             "notes": notes,
         },
@@ -158,7 +158,7 @@ def seed() -> None:
             "config": {
                 "concurrency": c, "precision": "bf16", "input_tokens": 1023,
                 "output_tokens": 1024, "gpu_count": 8, "gpu_model": GPU_MODEL,
-                "pipeline_version": "vllm-rocm-latest", "started_at": base.isoformat(),
+                "pipeline_version": "rocm/vllm-dev:nightly_0624_rc2_0624_rc2_20250620", "started_at": base.isoformat(),
                 "notes": "Llama-3.1-70B TP=8, 8× MI210 — Benchmarks page summary",
             },
         })
@@ -186,7 +186,7 @@ def seed() -> None:
             "config": {
                 "concurrency": c, "precision": "bf16", "input_tokens": 1023,
                 "output_tokens": 1024, "gpu_count": 4, "gpu_model": GPU_MODEL,
-                "pipeline_version": "vllm-rocm-latest", "started_at": base.isoformat(),
+                "pipeline_version": "rocm/vllm-dev:nightly_0624_rc2_0624_rc2_20250620", "started_at": base.isoformat(),
                 "notes": "Llama-3.1-70B TP=4, 4× MI210 — Benchmarks page summary",
             },
         })
@@ -214,7 +214,7 @@ def seed() -> None:
             "config": {
                 "concurrency": c, "precision": "bf16", "input_tokens": 1023,
                 "output_tokens": 1024, "gpu_count": 8, "gpu_model": GPU_MODEL,
-                "pipeline_version": "vllm-rocm-latest", "started_at": base.isoformat(),
+                "pipeline_version": "rocm/vllm-dev:nightly_0624_rc2_0624_rc2_20250620", "started_at": base.isoformat(),
                 "notes": "Llama-3.3-70B-Instruct TP=8, 8× MI210",
             },
         })

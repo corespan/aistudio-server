@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.catalog import _DEFAULT_CONFIG, _MODEL_CONFIGS
+from app.catalog import _DEFAULT_CONFIG, _MODEL_CONFIGS, _MODEL_INFO
 from app.database import get_db
 from app.models.workload_type import WorkloadType
 
@@ -36,7 +36,15 @@ async def get_model_config(model: str = Query(..., description="Model name, e.g.
     The Start Run UI fetches this after the user enters a node + model and clicks Next.
     Falls back to generic defaults for unknown models.
     """
-    return _MODEL_CONFIGS.get(model.lower(), _DEFAULT_CONFIG)
+    config = _MODEL_CONFIGS.get(model.lower(), _DEFAULT_CONFIG)
+    info   = _MODEL_INFO.get(model.lower(), {})
+    return {
+        **config,
+        "gated":       info.get("gated", False),
+        "license":     info.get("license", ""),
+        "license_url": info.get("license_url", ""),
+        "hf_repo":     info.get("hf_repo", ""),
+    }
 
 
 @router.get("/api/v1/workload-types")

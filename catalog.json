@@ -5,20 +5,40 @@
       "name": "LLMInference",
       "display_name": "LLM Inference (vLLM)",
       "description": "Benchmark LLM inference throughput and latency using vLLM. Measures tokens/sec, TTFT, TPOT, and end-to-end latency across configurable concurrency levels.",
-      "image_tag": "2.3.1-nvidia"
+      "image_tag": "1.0.0-nvidia"
     },
     {
       "name": "JupyterNotebook",
       "display_name": "Jupyter Notebook",
       "description": "Interactive Jupyter environment for running microbenchmarks and GPU profiling on remote nodes.",
-      "image_tag": "2.0.0-nvidia"
+      "image_tag": "1.0.0-nvidia"
     }
   ],
   "supported_models": [
     {
+      "model_id": "tinyllama-1.1b-chat",
+      "display_name": "TinyLlama 1.1B Chat",
+      "hf_repo": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "license": "Apache-2.0",
+      "gated": false,
+      "license_url": "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "min_gpu_memory_gb": 4,
+      "default_config": {
+        "precision": "fp16",
+        "gpu_count": 1,
+        "max_model_len": 2048,
+        "concurrency": 4,
+        "input_tokens": 512,
+        "output_tokens": 128
+      }
+    },
+    {
       "model_id": "llama3-8b-instruct",
       "display_name": "Llama 3 8B Instruct",
       "hf_repo": "meta-llama/Meta-Llama-3-8B-Instruct",
+      "license": "Llama-3-Community",
+      "gated": true,
+      "license_url": "https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct",
       "min_gpu_memory_gb": 16,
       "default_config": {
         "precision": "fp16",
@@ -33,6 +53,9 @@
       "model_id": "llama3-70b-instruct",
       "display_name": "Llama 3 70B Instruct",
       "hf_repo": "meta-llama/Meta-Llama-3-70B-Instruct",
+      "license": "Llama-3-Community",
+      "gated": true,
+      "license_url": "https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct",
       "min_gpu_memory_gb": 80,
       "default_config": {
         "precision": "fp16",
@@ -47,6 +70,9 @@
       "model_id": "mistral-7b-instruct",
       "display_name": "Mistral 7B Instruct v0.3",
       "hf_repo": "mistralai/Mistral-7B-Instruct-v0.3",
+      "license": "Apache-2.0",
+      "gated": false,
+      "license_url": "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3",
       "min_gpu_memory_gb": 16,
       "default_config": {
         "precision": "fp16",
@@ -61,6 +87,9 @@
       "model_id": "qwen2.5-7b-instruct",
       "display_name": "Qwen 2.5 7B Instruct",
       "hf_repo": "Qwen/Qwen2.5-7B-Instruct",
+      "license": "Apache-2.0",
+      "gated": false,
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct",
       "min_gpu_memory_gb": 16,
       "default_config": {
         "precision": "fp16",
@@ -73,12 +102,16 @@
     }
   ],
   "images": {
-    "llm_inference": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/llminference",
-    "jupyter_notebook": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/jupyternotebook",
-    "benchmark_client": "us-docker.pkg.dev/aimlworkbench/workbench-registry/services/workloads/benchmark-client"
+    "llm_inference": "us-docker.pkg.dev/aimlworkbench/aistudio/llminference",
+    "jupyter_notebook": "us-docker.pkg.dev/aimlworkbench/aistudio/jupyternotebook"
   },
   "datasets": {
-    "sharegpt": "gs://aistudio-datasets/sharegpt.json",
-    "humaneval": "gs://aistudio-datasets/humaneval.json"
-  }
+    "_note": "Datasets are user-supplied. Specify the absolute path to a ShareGPT-format JSON file on the GPU node via dataset_path in the benchmark config. No dataset is downloaded or bundled by this server.",
+    "humaneval": {
+      "uri": "gs://aistudio-datasets/humaneval.json",
+      "license": "MIT",
+      "note": "OpenAI HumanEval"
+    }
+  },
+  "_licensing": "Apache-2.0 on this repository covers CoreSpan AI source code only. Models and datasets listed here carry their own licences. See MODEL-LICENSES.md."
 }

@@ -1,0 +1,233 @@
+name: Licence compliance
+
+# Makes the licence position self-enforcing. Every finding fixed by hand once
+# has a check here so it cannot silently regress.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  schedule:
+    # Weekly. Model gate status and upstream licences change without warning.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  licence-files:
+    name: Licence files present and detectable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: LICENSE is the full Apache-2.0 text, not the header boilerplate
+        run: |
+          # The 17-line notice meant for source-file headers is ~740 bytes and
+          # gets classified NOASSERTION by every scanner, which enterprise
+          # licence tooling treats as unknown-licence and blocks on.
+          size=$(wc -c < LICENSE)
+          echo "LICENSE is $size bytes"
+          if [ "$size" -lt 10000 ]; then
+            echo "::error file=LICENSE::LICENSE is $size bytes — too short to be the full Apache-2.0 text (~11 KB). Looks like the header boilerplate was pasted instead."
+            exit 1
+          fi
+          for section in \
+            "2. Grant of Copyright License" \
+            "3. Grant of Patent License" \
+            "5. Submission of Contributions" \
+            "6. Trademarks" \
+            "END OF TERMS AND CONDITIONS"
+          do
+            grep -qF "$section" LICENSE || {
+              echo "::error file=LICENSE::missing section: $section"; exit 1; }
+          done
+
+      - name: Required compliance files exist
+        run: |
+          missing=0
+          for f in NOTICE THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do
+            [ -f "$f" ] || { echo "::error::missing $f"; missing=1; }
+          done
+          exit $missing
+
+      - name: Scripts with a shebang are executable
+        run: |
+          # This repo has core.fileMode=false (it is developed on Windows), so
+          # chmod +x in a working tree is invisible to git and every script was
+          # committed 100644. A CI runner then checks them out non-executable
+          # and `./scripts/foo.sh` dies with exit 126 — which is how this check
+          # came to exist.
+          #
+          # The mode has to be set in the index directly:
+          #     git update-index --chmod=+x <file>
+          failed=0
+          while IFS= read -r path; do
+            head -c2 "$path" 2>/dev/null | grep -q '^#!' || continue
+            [ -x "$path" ] && continue
+            echo "::error file=$path::has a shebang but is not executable. Fix with: git update-index --chmod=+x $path"
+            failed=1
+          done < <(git ls-files)
+          [ "$failed" -eq 0 ] && echo "All shebang scripts are executable."
+          exit $failed
+
+      - name: GitHub classifies the repo licence as Apache-2.0
+        # Only meaningful on the default branch of the real repo; the API reads
+        # the pushed state, not the working tree.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          spdx=$(gh api "repos/${{ github.repository }}/license" --jq '.license.spdx_id' 2>/dev/null || echo "NONE")
+          echo "GitHub reports: $spdx"
+          if [ "$spdx" != "Apache-2.0" ]; then
+            echo "::error::GitHub licence detection returned '$spdx', expected Apache-2.0. Enterprise scanners will treat this as unknown-licence."
+            exit 1
+          fi
+
+  dependencies:
+    name: Dependencies pinned and inventoried
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: requirements.txt is fully pinned
+        run: |
+          # A `>=` range means two installs a month apart resolve to different
+          # transitive sets, with different licences, and neither the SBOM nor
+          # the benchmark numbers describe what actually ran.
+          #
+          # Matches any requirement line (non-comment, non-indented — uv puts the
+          # "# via" provenance on indented lines) carrying a range operator
+          # rather than ==. Deliberately not a package-name character class:
+          # requirements.in contains `uvicorn[standard]>=0.30.0` and
+          # `sqlalchemy[asyncio]>=2.0.0`, and a class that fails to account for
+          # the brackets would let exactly those through.
+          if grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>|\*)' requirements.txt; then
+            echo "::error file=requirements.txt::unpinned requirement found. Edit requirements.in and run 'make deps-lock'."
+            exit 1
+          fi
+          if ! grep -qE '^[^#[:space:]].*==' requirements.txt; then
+            echo "::error file=requirements.txt::no pinned entries found at all."
+            exit 1
+          fi
+          echo "All requirements pinned ($(grep -cE '^[^#[:space:]]+==' requirements.txt) packages)."
+
+      - name: requirements.txt is a valid resolution of requirements.in
+        run: |
+          pipx install uv || pip install uv
+
+          # Seed the output with the committed pins before recompiling.
+          #
+          # uv preserves existing pins in the output file unless --upgrade is
+          # passed. Compiling into an empty scratch file instead would resolve
+          # everything to latest, so this check would fail the moment any of the
+          # 52 packages cut a release — turning an unrelated PR red for a reason
+          # its author cannot act on.
+          #
+          # What we want to assert is "requirements.txt satisfies
+          # requirements.in", not "requirements.txt is the newest possible
+          # resolution". Deliberate upgrades go through `make deps-lock`.
+          cp requirements.txt /tmp/recompiled.txt
+          uv pip compile requirements.in --python-version 3.11 -o /tmp/recompiled.txt --quiet
+
+          # Ignore comments: the header records the output filename, which differs.
+          if ! diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/recompiled.txt); then
+            echo "::error file=requirements.txt::not a valid resolution of requirements.in. Run 'make deps-lock' and commit."
+            exit 1
+          fi
+          echo "requirements.txt satisfies requirements.in."
+
+      - name: THIRD-PARTY-NOTICES.md matches the pinned set
+        run: python3 scripts/generate_third_party_notices.py --check
+
+  frontend-assets:
+    name: demo-ui makes no third-party requests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No CDN or Google Fonts references
+        run: |
+          # Two failure modes this prevents: GDPR exposure from disclosing
+          # visitor IPs to Google (LG München I, 3 O 17493/20), and a broken
+          # dashboard in air-gapped clusters, which is the target deployment.
+          if grep -rnE 'src=["'"'"']https?://|href=["'"'"']https?://(fonts|cdn)\.' demo-ui/ --include='*.html' --include='*.js' --include='*.css'; then
+            echo "::error::demo-ui references a third-party origin. Vendor the asset with scripts/vendor_frontend_assets.sh."
+            exit 1
+          fi
+          echo "No third-party asset references."
+
+      - name: Committed licence texts match a clean regeneration
+        run: |
+          # The binaries (.woff2, chart.umd.js) are gitignored and fetched at
+          # setup time, so they are not in the checkout to compare. What must
+          # match are the compliance artifacts that ARE committed: the generated
+          # CSS, the NOTICE, and the upstream licence texts. If those drift from
+          # what the declared versions actually produce, the notices no longer
+          # describe the fonts users receive.
+          VENDOR_DEST=/tmp/vendor-check ./scripts/vendor_frontend_assets.sh
+
+          failed=0
+          for f in fonts.css NOTICE fonts/LICENSE-Inter-OFL.txt \
+                   fonts/LICENSE-JetBrainsMono-OFL.txt js/LICENSE-chartjs.md; do
+            if ! diff "/tmp/vendor-check/$f" "demo-ui/vendor/$f"; then
+              echo "::error file=demo-ui/vendor/$f::differs from a clean regeneration"
+              failed=1
+            fi
+          done
+          [ "$failed" -eq 0 ] || {
+            echo "Run ./scripts/vendor_frontend_assets.sh and commit the result."
+            exit 1
+          }
+
+      - name: Every font referenced by fonts.css is actually produced
+        run: |
+          # fonts.css is committed but the .woff2 files it points at are not.
+          # Verify the generated pair is self-consistent, so a weight added to
+          # the script's list can never ship as a CSS rule with no file behind it.
+          missing=0
+          for url in $(grep -oE 'url\("\./[^"]+"\)' demo-ui/vendor/fonts.css \
+                       | sed -E 's|url\("\./||; s|"\)||'); do
+            [ -f "/tmp/vendor-check/$url" ] || { echo "::error::fonts.css references missing $url"; missing=1; }
+          done
+          exit $missing
+
+  models:
+    name: Model gate status and licences
+    runs-on: ubuntu-latest
+    # Informational: the Hub can rate-limit or be briefly unavailable, and that
+    # should not block a merge. Read the log on the weekly run.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python3 scripts/check_model_access.py
+
+  images:
+    name: Workload image SBOMs
+    runs-on: ubuntu-latest
+    # Needs registry credentials. Enable once the GCP workload-identity
+    # federation binding for this repo exists — see RELEASE.md.
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anchore/sbom-action/download-syft@v0
+      - name: Authenticate to Artifact Registry
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+      - run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+      - run: ./scripts/generate_sbom.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workload-image-sboms
+          path: sbom/

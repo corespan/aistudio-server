@@ -1,0 +1,24 @@
+Third-party assets bundled with the AIStudio demo UI
+====================================================
+
+Regenerate with: ./scripts/vendor_frontend_assets.sh
+
+Inter
+  Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+  SIL Open Font License 1.1 — fonts/LICENSE-Inter-OFL.txt
+  Packaged via @fontsource/inter@5.3.0
+
+JetBrains Mono
+  Copyright 2020 The JetBrains Mono Project Authors
+  (https://github.com/JetBrains/JetBrainsMono)
+  SIL Open Font License 1.1 — fonts/LICENSE-JetBrainsMono-OFL.txt
+  Packaged via @fontsource/jetbrains-mono@5.3.0
+
+Chart.js 4.4.0
+  Copyright Chart.js Contributors
+  MIT — js/LICENSE-chartjs.md
+
+OFL-1.1 note: these fonts are redistributed unmodified, under their original
+names, and are not sold on their own. The licence and copyright notice above
+travel with them, which is what OFL section 2 requires. If a font file is ever
+subsetted or renamed, re-read sections 3 and 4 before shipping.

@@ -3,8 +3,8 @@ nginx reverse proxy management for Jupyter instances.
 
 When NGINX_ENABLED=true, each Jupyter instance gets a path-based nginx route:
 
-    http://corespan.ddnsgeek.com/jupyter/T4/jup-20260729-abc123/lab
-      → http://10.6.12.26:37975 (full path forwarded — no prefix stripping)
+    http://your-domain.com/jupyter/T4/jup-20260729-abc123/lab
+      → http://<gpu-node-ip>:37975 (full path forwarded — no prefix stripping)
 
 No DNS setup required — uses the public domain configured in PROXY_BASE_URL.
 
@@ -38,9 +38,9 @@ One-time setup on master node (run as root/sudo, do this once)
 
 Then in .env set:
     NGINX_ENABLED=true
-    PROXY_BASE_URL=http://corespan.ddnsgeek.com
+    PROXY_BASE_URL=http://your-domain.com
     NGINX_CONF_DIR=/etc/nginx/jupyter-locations
-    NGINX_RELOAD_CMD=ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no kube@10.6.12.15 sudo nginx -s reload
+    NGINX_RELOAD_CMD=ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no user@<server-ip> sudo nginx -s reload
 
 And in docker-compose.yml mount the locations dir into the worker:
     - /etc/nginx/jupyter-locations:/etc/nginx/jupyter-locations
@@ -86,7 +86,7 @@ location /jupyter/{gpu_type}/{task_id}/ {{
 def proxy_url(gpu_type: str, task_id: str) -> str:
     """
     Return the public proxy URL for a Jupyter instance.
-    e.g. http://corespan.ddnsgeek.com/jupyter/T4/jup-20260729-abc123/lab
+    e.g. http://your-domain.com/jupyter/T4/jup-20260729-abc123/lab
     Falls back to empty string if PROXY_BASE_URL is not set.
     """
     base = settings.PROXY_BASE_URL.rstrip("/")
@@ -168,7 +168,7 @@ def _conf_path(task_id: str) -> str:
 
 def _reload_nginx() -> None:
     # shell=True lets NGINX_RELOAD_CMD be a full shell string, e.g.:
-    # "ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no kube@10.6.12.15 sudo nginx -s reload"
+    # "ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=no user@<server-ip> sudo nginx -s reload"
     result = subprocess.run(
         settings.NGINX_RELOAD_CMD,
         shell=True,

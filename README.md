@@ -2,6 +2,12 @@
 
 Open-source LLM benchmarking and workload orchestration backend. SSHes into GPU nodes, runs vLLM benchmarks or launches Jupyter Lab, streams live logs via SSE, and stores results in PostgreSQL with a full leaderboard API.
 
+**Licence:** Apache-2.0 for this repository's source. The workload container
+images are publicly pullable — see [Workload Images](#workload-images). The AI
+models this tool benchmarks are **not** covered by our licence and several
+require you to request access from their publisher — see
+[MODEL-LICENSES.md](./MODEL-LICENSES.md).
+
 ---
 
 ## One-line Install
@@ -39,14 +45,23 @@ cp .env.example .env
 make setup
 ```
 
-`make setup` builds containers, runs DB migrations, and seeds the workload catalog in one shot.
+`make setup` vendors the demo-ui frontend assets, builds containers, runs DB
+migrations, and seeds the workload catalog in one shot.
 
 **Without `make` (Linux / WSL):**
 ```bash
+./scripts/vendor_frontend_assets.sh --if-missing   # fonts + Chart.js, one time
 docker compose up --build -d
 docker compose exec api alembic upgrade head
 docker compose exec api python -m app.services.catalog_seeder
 ```
+
+> **Why the vendoring step:** the dashboard's fonts and Chart.js are served from
+> this repo rather than a CDN — CDN assets fail outright in air-gapped clusters,
+> and loading fonts from Google discloses visitor IPs. The binaries are
+> gitignored to keep them out of the history, so they are fetched once at setup
+> instead of on every page load. Skipping the step costs you charts and custom
+> fonts; nothing else. See [Licensing](#licensing).
 
 **Without `make` (Windows PowerShell):**
 ```powershell
@@ -129,7 +144,7 @@ SSH_DEFAULT_USER=drut
 |-------------|-------------|
 | Docker installed and runnable as the SSH user | `docker ps` |
 | NVIDIA Container Toolkit | `docker run --gpus all --rm nvidia/cuda:12.0-base nvidia-smi` |
-| `~/gcr.json` — GCP service account key | `ls ~/gcr.json` |
+| `~/.aistudio/env` with `HF_TOKEN` — only for gated models | `make check-node-env NODE=<host>` |
 | Port 8000 open (inbound) | vLLM benchmark server |
 | Port 8899 open (inbound) | Jupyter Lab |
 | Sufficient VRAM | TinyLlama: ~3 GB · Llama-3-8B: ~16 GB · Llama-3-70B: 4×A100 |
@@ -335,6 +350,18 @@ make shell     # Python shell inside the API container
 make spec      # Export OpenAPI spec to openapi.json
 ```
 
+Licence compliance — see [Licensing](#licensing):
+
+```bash
+make compliance     # Run every check CI runs: licence files, pins, inventory, CDN refs
+make deps-lock      # Re-pin requirements.txt from requirements.in (after editing .in)
+make third-party    # Regenerate THIRD-PARTY-NOTICES.md from the pinned set
+make vendor-assets  # Re-vendor demo-ui fonts and Chart.js from npm
+make sbom           # Inventory the workload images (needs syft + registry access)
+make check-models   # Report gate status and licence for every model referenced
+make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
+```
+
 ---
 
 ## Services and Ports
@@ -377,16 +404,49 @@ RabbitMQ  ←→  Celery Worker
 
 ---
 
-## Workload Images (GCP Artifact Registry)
+## Workload Images
 
 No local builds on the GPU node — images are pulled automatically on each run.
 
 | Image | Used for |
 |-------|---------|
-| `llminference:2.3.1-nvidia` | vLLM benchmark server |
+| `llminference:2.3.1-nvidia` | vLLM inference server — also used as the benchmark client via `docker exec` |
 | `jupyternotebook:2.2.0-nvidia` | Jupyter Lab (supports `--ServerApp.base_url` for nginx subpath proxy) |
 
-To update an image tag: change it in `catalog.json` and run `make seed` — no code change needed.
+Hosted in GCP Artifact Registry at
+`us-docker.pkg.dev/aimlworkbench/aistudio/`.
+
+### Anonymous access
+
+The images are public. Verify before setting up a node:
+
+```bash
+docker pull us-docker.pkg.dev/aimlworkbench/aistudio/llminference:2.3.1-nvidia
+```
+
+If that succeeds without `gcloud auth`, no credential is needed. No `~/gcr.json`
+service-account key is required.
+
+> If the pull returns `UNAUTHORIZED`, the registry's public access binding has
+> been lost. That is a bug — please
+> [open an issue](https://github.com/corespan/aistudio-server/issues). Public
+> pullability is a supported property of this project, not a convenience.
+
+### What is in them
+
+These images are prebuilt artifacts that Corespan Systems, Inc distributes, so
+third-party notice and redistribution obligations attach to us rather than to the
+projects whose code they contain. Each contains vLLM, PyTorch, Jupyter, several
+hundred Python wheels, the CUDA or ROCm userspace, and a Debian base layer.
+
+Generate the inventory with `make sbom` (requires
+[syft](https://github.com/anchore/syft) and pull access). Output lands in
+`sbom/`, with `sbom/REPORT.md` flagging anything that needs a licence decision.
+
+### Updating an image tag
+
+Change it in `catalog.json` and run `make seed` — no code change needed. Then
+re-run `make sbom` so the inventory still describes what users actually pull.
 
 ---
 
@@ -473,8 +533,7 @@ Copy `.env.example` to `.env` and fill in the values below.
 | `SSH_DEFAULT_USER` | `drut` | SSH username on GPU nodes |
 | `GCP_REGISTRY_URL` | `us-docker.pkg.dev` | Artifact Registry hostname |
 | `GCP_PROJECT_ID` | `aimlworkbench` | GCP project ID |
-| `GCP_REPOSITORY` | `workbench-registry` | Artifact Registry repo |
-| `GCP_IMAGE_PATH` | `services/workloads` | Path prefix inside the repo |
+| `GCP_REPOSITORY` | `aistudio` | Artifact Registry repo |
 | `WORKLOAD_IMAGE_TAG` | `2.3.1-nvidia` | Fallback image tag (overridden by `catalog.json`) |
 | `JUPYTER_IMAGE_TAG` | `2.2.0-nvidia` | Tag for the jupyternotebook image |
 | `MODEL_STORAGE_MODE` | `huggingface` | `huggingface`, `local`, or `gcs` |
@@ -541,6 +600,52 @@ Full interactive docs: **http://localhost:8002/docs**
 
 ---
 
-## License
+## Licensing
 
-Apache 2.0 — see [LICENSE](./LICENSE)
+### This repository
+
+Apache-2.0. See [LICENSE](./LICENSE) for the full text and [NOTICE](./NOTICE) for
+the copyright and attribution summary.
+
+Apache-2.0 Section 6 grants no trademark rights. "CoreSpan" and the CoreSpan logo
+are trademarks of Corespan Systems, Inc.
+
+### Everything else
+
+The Apache-2.0 grant covers CoreSpan's own source. It does not extend to the
+software and weights this tool pulls in at run time. Three separate inventories
+cover those:
+
+| What | Where | Covers |
+| --- | --- | --- |
+| Python dependencies | [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) | Every package in `requirements.txt`, with the three reciprocal licences called out |
+| Models and datasets | [MODEL-LICENSES.md](./MODEL-LICENSES.md) | Per-model terms, which models are gated, how to obtain access |
+| Workload images | `sbom/` — run `make sbom` | Contents of the distributed containers, including the CUDA EULA question |
+| Frontend assets | [demo-ui/vendor/NOTICE](./demo-ui/vendor/NOTICE) | Self-hosted fonts (OFL-1.1) and Chart.js (MIT) |
+
+**If you plan to run gated models** — all the Meta Llama entries in
+`catalog.json` — read [MODEL-LICENSES.md](./MODEL-LICENSES.md) first. You must
+request access from the publisher and set `HF_TOKEN` on the GPU node. CoreSpan
+cannot grant that access on your behalf.
+
+Check which models in your catalog are gated:
+
+```bash
+python3 scripts/check_model_access.py
+```
+
+### Verifying compliance yourself
+
+```bash
+make compliance        # licence files, pinned deps, inventory freshness, no CDN refs
+make sbom              # workload image inventory (needs syft + registry access)
+make check-models      # gate status and licence for every model referenced
+```
+
+CI runs the same checks on every push — see
+[.github/workflows/compliance.yml](./.github/workflows/compliance.yml).
+
+### Reporting a licence problem
+
+Open an issue, or email <legal@corespan.ai> if it concerns a third party's
+rights. We will respond within five working days.

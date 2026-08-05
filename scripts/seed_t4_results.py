@@ -89,7 +89,7 @@ def seed() -> None:
                     "output_tokens": 1024,
                     "gpu_count": gpu_count,
                     "gpu_model": GPU_MODEL,
-                    "pipeline_version": "vllm-openai-latest",
+                    "pipeline_version": "vllm-openai:v0.14.1",
                     "started_at": base.isoformat(),
                     "notes": f"TinyLlama-1.1B-Chat TP={tp}, {gpu_count}× T4",
                 },
