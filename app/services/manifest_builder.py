@@ -117,11 +117,12 @@ class ManifestBuilder:
         run_cmd = " ".join(p for p in [
             "docker run --gpus all --rm --name %s" % container_name,
             "--ipc=host",
+            "--entrypoint python3",
             "-v $HOME/.cache/huggingface:/root/.cache/huggingface",
             "-v %s:/results" % settings.NODE_RESULTS_PATH,
             _hf_token_flags(),
             image,
-            "python3 /llm-inference/benchmark.py",
+            "/llm-inference/benchmark.py",
             " ".join(bench_args),
         ] if p)
 
