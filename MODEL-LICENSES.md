@@ -115,43 +115,28 @@ publishing benchmark results that name it in marketing material.
 | Dataset | Source | Licence | Status |
 | --- | --- | --- | --- |
 | `humaneval` | OpenAI HumanEval | MIT | Clear |
-| `sharegpt` | `gs://aistudio-datasets/sharegpt.json` | **Unknown** | ⚠️ Unresolved |
+| user-supplied | specified via `dataset_path` in benchmark config | operator's responsibility | N/A |
 
-### sharegpt.json — unresolved provenance
+### Dataset policy
 
-The ShareGPT corpora in circulation are user-submitted transcripts of ChatGPT
-conversations, scraped from the sharegpt.com site. There is no single authoritative
-release and no consistent licence across the copies that exist. The widely-mirrored
-`anon8231489123/ShareGPT_Vicuna_unfiltered` is tagged Apache-2.0 on the Hub, but
-the uploader was not in a position to grant that: the underlying transcripts are
-model outputs subject to the originating provider's terms, contributed by users who
-did not license them for redistribution.
+AIStudio Server does not bundle, download, or distribute any benchmark dataset.
+The operator supplies a dataset file path via the `dataset_path` field in the
+benchmark configuration (UI or API). The file must already exist on the GPU node.
 
-This cannot be cleared by inspecting the file. It requires knowing which copy was
-downloaded and from where.
+This means the licence of the dataset is entirely the operator's responsibility.
+Common choices for vLLM throughput benchmarks:
 
-**Required action before the next release** — one of:
+| Dataset | Licence | Notes |
+| --- | --- | --- |
+| ShareGPT (any copy) | Contested — see below | Industry-standard for comparability |
+| `Open-Orca/OpenOrca` | MIT | Clean licence; realistic turn lengths |
+| `databricks/databricks-dolly-15k` | CC-BY-SA-3.0 | Clean; requires attribution |
 
-1. **Trace it.** Identify the exact upstream source of the copy in
-   `gs://aistudio-datasets/`, record it in this file, and assess that source's
-   terms. Document the provenance chain in the bucket alongside the file.
-2. **Replace it.** Swap in a dataset with a clean licence. For sampling prompt and
-   response length distributions in a throughput benchmark, any corpus with
-   realistic turn lengths works — the specific content is not load-bearing.
-   Candidates: `Open-Orca/OpenOrca` (MIT), `databricks/databricks-dolly-15k`
-   (CC-BY-SA-3.0), or a synthetic generator seeded from the target length
-   distribution.
-3. **Drop it.** Remove the `sharegpt` entry from `catalog.json` and the
-   `benchmarks/` scripts.
-
-Option 2 is the cheapest path to a defensible position and removes a dependency on
-a third-party bucket at the same time. Option 1 is only worth attempting if
-benchmark comparability against previously published ShareGPT numbers matters.
-
-**Note on comparability:** ShareGPT is the conventional prompt source for vLLM
-throughput benchmarks, so switching datasets makes new numbers non-comparable to
-previously published ones and to third-party results. If published numbers already
-exist, version them and state the dataset explicitly.
+**ShareGPT note:** The widely-used `anon8231489123/ShareGPT_Vicuna_unfiltered`
+copy is tagged Apache-2.0 on HuggingFace, but the provenance is contested —
+the transcripts are ChatGPT outputs and user messages that were not licensed for
+redistribution by the original contributors. If you use ShareGPT and publish
+benchmark results, state the exact source URL and version in your methodology.
 
 ---
 

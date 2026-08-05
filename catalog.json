@@ -106,11 +106,7 @@
     "jupyter_notebook": "us-docker.pkg.dev/aimlworkbench/aistudio/jupyternotebook"
   },
   "datasets": {
-    "sharegpt": {
-      "uri": "gs://aistudio-datasets/sharegpt.json",
-      "license": "UNRESOLVED",
-      "note": "Provenance unverified - see MODEL-LICENSES.md before use in published results"
-    },
+    "_note": "Datasets are user-supplied. Specify the absolute path to a ShareGPT-format JSON file on the GPU node via dataset_path in the benchmark config. No dataset is downloaded or bundled by this server.",
     "humaneval": {
       "uri": "gs://aistudio-datasets/humaneval.json",
       "license": "MIT",

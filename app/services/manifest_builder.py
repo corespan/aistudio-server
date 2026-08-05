@@ -65,7 +65,8 @@ class ManifestBuilder:
 
     @staticmethod
     def build_llm_benchmark_command(model_name: str, config: Dict[str, Any],
-                                    image_tag: str = None, run_id: str = "") -> str:
+                                    image_tag: str = None, run_id: str = "",
+                                    dataset_path: str = "") -> str:
         """
         Run the llminference image's benchmark.py on the GPU node.
 
@@ -82,6 +83,11 @@ class ManifestBuilder:
         Volume mounts (bind-mounted from the GPU node):
           ~/.cache/huggingface → /root/.cache/huggingface  (model cache; downloaded on first run)
           NODE_RESULTS_PATH   → /results                   (one subdir per run_id is created)
+          dataset_path        → same path inside container  (user-supplied dataset file)
+
+        dataset_path must be an absolute path to a ShareGPT-format JSON file on
+        the GPU node. It is bind-mounted into the container at the same path so
+        benchmark.py can access it via --dataset-path.
 
         HF_TOKEN is forwarded from the node's ~/.aistudio/env file via
         _LOAD_NODE_ENV. It is never written into this command string.
@@ -105,6 +111,7 @@ class ManifestBuilder:
             "--run_name",         run_id or model_name,
             "--tp",               str(gpu_count),
             "--concurrencies",    str(concurrency),
+            "--dataset-path",     dataset_path,
         ]
         if max_model_len:
             bench_args += ["--max_model_len", str(max_model_len)]
@@ -114,12 +121,15 @@ class ManifestBuilder:
         # Mount the node's HuggingFace cache so models are used from local cache
         # when already downloaded, and downloaded+cached on first run.
         # Mount results dir so benchmark output persists after --rm.
+        # Mount the user-supplied dataset file at the same path inside the container.
+        dataset_mount = "-v %s:%s" % (dataset_path, dataset_path) if dataset_path else ""
         run_cmd = " ".join(p for p in [
             "docker run --gpus all --rm --name %s" % container_name,
             "--ipc=host",
             "--entrypoint python3",
             "-v $HOME/.cache/huggingface:/root/.cache/huggingface",
             "-v %s:/results" % settings.NODE_RESULTS_PATH,
+            dataset_mount,
             _hf_token_flags(),
             image,
             "/llm-inference/benchmark.py",

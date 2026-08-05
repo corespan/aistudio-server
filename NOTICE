@@ -26,6 +26,19 @@ artifact (container image, wheel, installer) that embeds them:
   * psycopg2-binary     - LGPL-3.0-or-later (with OpenSSL exception)
   * certifi             - MPL-2.0
 
+The server container image also includes Debian/Ubuntu OS-level packages
+distributed under GPL-2.0-or-later and similar copyleft licences. These
+packages are not modified by CoreSpan. Corresponding source packages are
+available from the upstream archives:
+
+    https://deb.debian.org/debian/
+    https://archive.ubuntu.com/ubuntu/
+
+Written source offer: CoreSpan will provide copies of the corresponding source
+code for any GPL-covered OS package in the server image upon written request
+sent to muraharirao@corespan.ai, valid for three years from the date of
+distribution.
+
 --------------------------------------------------------------------------------
 AI MODELS AND DATASETS
 --------------------------------------------------------------------------------

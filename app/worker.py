@@ -315,16 +315,23 @@ def execute_benchmark(self, workload_id):
                 .first()
             )
             image_tag = wt.image_tag if wt and wt.image_tag else None
+            cfg = workload.workload_config or {}
+            dataset_path = cfg.get("dataset_path", "").strip()
+            if not dataset_path:
+                raise RuntimeError(
+                    "dataset_path is required in workload config. "
+                    "Set it in the UI before starting the benchmark."
+                )
             bench_cmd = ManifestBuilder.build_llm_benchmark_command(
                 workload.model_name, workload.workload_config,
                 image_tag=image_tag, run_id=workload_id,
+                dataset_path=dataset_path,
             )
-            cfg = workload.workload_config or {}
             _write_log(db, task.id, "=== [3/3] Running Benchmark ===")
             _write_log(db, task.id, "Model:       %s" % workload.model_name)
             _write_log(db, task.id, "Node:        %s" % node.machine_ip)
             _write_log(db, task.id, "Concurrency: %d" % cfg.get("concurrency", 1))
-            _write_log(db, task.id, "Dataset:     sharegpt")
+            _write_log(db, task.id, "Dataset:     %s" % dataset_path)
             # Print GPU state before starting so we can confirm the GPU is real.
             gpu_cmd = (
                 "echo '--- GPU state before benchmark ---' && "
