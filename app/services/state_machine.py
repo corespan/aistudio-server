@@ -12,7 +12,7 @@ Usage (in Celery tasks — synchronous context):
         workload_id="wl-20260601-abc123",
         new_state="VALIDATING",
         trigger="validate_node",
-        message="Starting GPU validation on 10.6.12.15",
+        message="Starting GPU validation on 192.168.1.100",
     )
 """
 

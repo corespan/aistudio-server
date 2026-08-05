@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # No DNS setup required — uses the existing public domain.
     NGINX_ENABLED: bool = False
     # Public base URL used to construct the jupyter_url returned by the API.
-    # e.g. http://corespan.ddnsgeek.com  (no trailing slash)
+    # e.g. http://your-domain.com  (no trailing slash)
     PROXY_BASE_URL: str = ""
     # Directory where per-instance nginx location blocks are written.
     # This directory is included by /etc/nginx/conf.d/aistudio-jupyter.conf
