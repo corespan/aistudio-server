@@ -86,4 +86,5 @@ _DEFAULT_CONFIG: dict = {
     "tensor_parallel_size":  1,
     "pipeline_parallel_size": 1,
     "batch_size":            32,
+    "dataset_path":          "",
 }
