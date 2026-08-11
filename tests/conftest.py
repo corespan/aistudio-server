@@ -20,18 +20,18 @@ import os
 # ── PostgreSQL connection ─────────────────────────────────────────────────────
 # Two execution contexts:
 #
-#   make test  (inside docker container)
-#     POSTGRES_HOST=postgres  (set by docker-compose)
-#     POSTGRES_PORT=5432      (internal container port, default in Settings)
+#   make test  (inside the api container — `docker compose exec api pytest tests/`)
+#     POSTGRES_HOST=postgres  already set by docker-compose environment block
+#     POSTGRES_PORT           NOT set by docker-compose → Settings default of 5432 is used
 #
-#   pytest on host machine
-#     POSTGRES_HOST=localhost
-#     POSTGRES_PORT=5433      (host-side mapping: docker-compose exposes 5433:5432)
+#   pytest directly on the host machine
+#     docker-compose maps postgres to host port 5433 (5433:5432).
+#     Run as:  POSTGRES_PORT=5433 pytest tests/ -v
 #
-# setdefault only kicks in when the var is not already set, so container env
-# overrides are preserved and host-side gets sensible defaults.
+# We do NOT setdefault POSTGRES_PORT here so that Settings.POSTGRES_PORT keeps
+# its built-in default of 5432, which is correct inside the container.
+# Host-side callers must pass POSTGRES_PORT=5433 explicitly.
 os.environ.setdefault("POSTGRES_HOST",     "localhost")
-os.environ.setdefault("POSTGRES_PORT",     "5433")
 os.environ.setdefault("POSTGRES_USERNAME", "aistudio")
 os.environ.setdefault("POSTGRES_PASSWORD", "aistudio")
 os.environ.setdefault("POSTGRES_DATABASE", "aistudio_test")
