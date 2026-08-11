@@ -17,8 +17,21 @@ import os
 # ── Point at the test DB BEFORE any app module is imported ─────────────────
 # pydantic-settings reads env vars at class-body time; lru_cache must be
 # cleared if settings was already cached by a prior import.
+# ── PostgreSQL connection ─────────────────────────────────────────────────────
+# Two execution contexts:
+#
+#   make test  (inside docker container)
+#     POSTGRES_HOST=postgres  (set by docker-compose)
+#     POSTGRES_PORT=5432      (internal container port, default in Settings)
+#
+#   pytest on host machine
+#     POSTGRES_HOST=localhost
+#     POSTGRES_PORT=5433      (host-side mapping: docker-compose exposes 5433:5432)
+#
+# setdefault only kicks in when the var is not already set, so container env
+# overrides are preserved and host-side gets sensible defaults.
 os.environ.setdefault("POSTGRES_HOST",     "localhost")
-os.environ.setdefault("POSTGRES_PORT",     "5432")
+os.environ.setdefault("POSTGRES_PORT",     "5433")
 os.environ.setdefault("POSTGRES_USERNAME", "aistudio")
 os.environ.setdefault("POSTGRES_PASSWORD", "aistudio")
 os.environ.setdefault("POSTGRES_DATABASE", "aistudio_test")
@@ -50,12 +63,8 @@ _PG_HOST  = os.environ["POSTGRES_HOST"]
 _PG_PORT  = os.environ["POSTGRES_PORT"]
 _TEST_DB  = os.environ["POSTGRES_DATABASE"]
 
-_ADMIN_SYNC_URL = (
-    f"postgresql://{_PG_USER}:{_PG_PASS}@{_PG_HOST}:{_PG_PORT}/postgres"
-)
-_TEST_ASYNC_URL = (
-    f"postgresql+asyncpg://{_PG_USER}:{_PG_PASS}@{_PG_HOST}:{_PG_PORT}/{_TEST_DB}"
-)
+_ADMIN_SYNC_URL = f"postgresql://{_PG_USER}:{_PG_PASS}@{_PG_HOST}:{_PG_PORT}/postgres"
+_TEST_ASYNC_URL = f"postgresql+asyncpg://{_PG_USER}:{_PG_PASS}@{_PG_HOST}:{_PG_PORT}/{_TEST_DB}"
 
 
 # ── Create the test database once (outside pytest fixtures) ─────────────────

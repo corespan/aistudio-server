@@ -1125,13 +1125,11 @@ class TestStateMachine:
         """Return a synchronous SQLAlchemy session connected to the test DB."""
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
+        from app.config import get_sync_database_url
 
-        _PG_USER  = os.environ["POSTGRES_USERNAME"]
-        _PG_PASS  = os.environ["POSTGRES_PASSWORD"]
-        _PG_HOST  = os.environ["POSTGRES_HOST"]
-        _PG_PORT  = os.environ["POSTGRES_PORT"]
-        _TEST_DB  = os.environ["POSTGRES_DATABASE"]
-        url = f"postgresql://{_PG_USER}:{_PG_PASS}@{_PG_HOST}:{_PG_PORT}/{_TEST_DB}"
+        # get_sync_database_url() already points at aistudio_test because
+        # conftest.py set POSTGRES_DATABASE=aistudio_test before any app import.
+        url = get_sync_database_url()
         engine = create_engine(url)
         Session = sessionmaker(bind=engine, expire_on_commit=False)
         return Session()
