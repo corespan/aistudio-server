@@ -1,5 +1,7 @@
 # aistudio-server
 
+[![CI](https://github.com/corespan/aistudio-server/actions/workflows/ci.yml/badge.svg)](https://github.com/corespan/aistudio-server/actions/workflows/ci.yml)
+
 Open-source LLM benchmarking and workload orchestration backend. SSHes into GPU nodes, runs vLLM benchmarks or launches Jupyter Lab, streams live logs via SSE, and stores results in PostgreSQL with a full leaderboard API.
 
 **Licence:** Apache-2.0 for this repository's source. The workload container
