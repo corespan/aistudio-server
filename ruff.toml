@@ -1,0 +1,41 @@
+# Ruff configuration — see .github/workflows/ci.yml for how this runs in CI.
+#
+# Scope is deliberately narrow: syntax errors and Pyflakes (undefined names,
+# unused imports, etc.) rather than Ruff's full default rule set (which also
+# pulls in pyupgrade, flake8-bugbear, flake8-datetimez and a dozen other
+# plugins). Turning all of that on for a codebase that has never been linted
+# produces hundreds of pre-existing findings unrelated to any given PR, which
+# makes the check noise rather than a real gate. Start narrow and correct;
+# widen deliberately later if the team wants stricter style enforcement.
+target-version = "py311"
+
+[lint]
+# E4/E7/E9 = pycodestyle error subset (real mistakes, not style nits).
+# F       = Pyflakes (undefined names, unused imports, etc).
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# Models are imported here purely so Alembic's autogenerate can discover them
+# via `Base.metadata` — the names are never referenced directly in this file.
+"app/models/__init__.py" = ["F401"]
+
+# SQLAlchemy 2.0 `Mapped["ClassName"]` relationship annotations use forward
+# references as plain strings resolved by SQLAlchemy at mapper-configuration
+# time, not by Python's own name resolution — Pyflakes has no way to know
+# that and flags them as undefined names. Known false positive; see
+# https://github.com/astral-sh/ruff/issues/8811.
+"app/models/*.py" = ["F821"]
+
+# alembic/env.py intentionally star-imports every model so Alembic's
+# autogenerate can see them via Base.metadata; Pyflakes can't verify names
+# from a star import.
+"alembic/env.py" = ["F403"]
+
+# Historical, already-applied migrations are immutable — don't hand-edit a
+# shipped revision just to satisfy a linter added long after it merged.
+"alembic/versions/*.py" = ["F401"]
+
+# conftest.py must set POSTGRES_*/RABBITMQ_* environment variables BEFORE
+# importing app.config, since pydantic-settings reads env vars at class-body
+# time. That requires imports after statements — intentional, not an oversight.
+"tests/conftest.py" = ["E402"]

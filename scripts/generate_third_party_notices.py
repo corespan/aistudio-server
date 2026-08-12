@@ -260,9 +260,10 @@ def main() -> int:
             print(f"error: {OUTPUT.name} is missing. Run `make third-party`.")
             return 1
         # Ignore the generated-on date line, which changes every run.
-        strip = lambda t: "\n".join(
-            l for l in t.splitlines() if not l.startswith("Generated:")
-        )
+        def strip(text):
+            return "\n".join(
+                line for line in text.splitlines() if not line.startswith("Generated:")
+            )
         if strip(OUTPUT.read_text(encoding="utf-8")) != strip(rendered):
             print(
                 f"error: {OUTPUT.name} is out of date with requirements.txt. "

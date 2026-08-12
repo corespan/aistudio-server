@@ -12,17 +12,12 @@ Run:
     pytest tests/test_services.py -k "ingest or manifest" -v
 """
 
-import json
-import os
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
-from sqlalchemy import text
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -461,11 +456,20 @@ class TestLogStreaming:
     async def test_known_workload_returns_event_stream(self, http_client, db_session):
         from app.models.workload import Workload
 
+        # NOTE: httpx's ASGITransport has no real socket underneath it — it
+        # awaits the whole ASGI app call to completion and buffers every
+        # chunk before handle_async_request() returns a Response at all
+        # (see httpx._transports.asgi.ASGITransport). It cannot do
+        # incremental/partial reads the way a real HTTP transport can.
+        # That means the generator behind this endpoint MUST terminate on
+        # its own within the test, or client.stream() hangs forever waiting
+        # for the (infinite) body to finish. Use a workload that is already
+        # terminal so the first poll immediately emits the close event.
         wl = Workload(
             workload_id="wl-stream-01",
             model_name="tinyllama",
             workload_config={},
-            state="RUNNING",
+            state="READY",
         )
         db_session.add(wl)
         await db_session.commit()
@@ -504,6 +508,12 @@ class TestLogStreaming:
 
         log = TaskLog(task_id=task.id, line="GPU validation passed.")
         db_session.add(log)
+
+        # Mark the workload terminal so the generator's poll loop sees this
+        # one log line, then closes on the next pass (no new logs + terminal
+        # state). See the NOTE above: with ASGITransport the whole response
+        # body must finish within the test, or the stream never returns.
+        wl.state = "READY"
         await db_session.commit()
 
         collected = []
@@ -515,7 +525,7 @@ class TestLogStreaming:
                 if line.startswith("data:"):
                     text_val = line[len("data:"):].strip()
                     collected.append(text_val)
-                    if "[DONE]" in text_val:
+                    if text_val in ("READY", "FAILED"):
                         break
 
         assert any("GPU validation passed." in ln for ln in collected)
@@ -932,10 +942,22 @@ class TestDropdowns:
 
     @pytest.mark.asyncio
     async def test_empty_db_returns_empty_lists(self, http_client):
-        for endpoint in ("/api/v1/models", "/api/v1/gpu-types", "/api/v1/precisions"):
+        # NOTE: /api/v1/models is intentionally excluded here. Per its own
+        # docstring, it returns the union of the catalog (always present,
+        # regardless of run history) and historical model names — so it is
+        # never empty even on a freshly truncated DB.
+        for endpoint in ("/api/v1/gpu-types", "/api/v1/precisions"):
             r = await http_client.get(endpoint)
             assert r.status_code == 200
             assert r.json() == []
+
+    @pytest.mark.asyncio
+    async def test_empty_db_models_returns_only_catalog(self, http_client):
+        from app.catalog import _MODEL_CONFIGS
+
+        r = await http_client.get("/api/v1/models")
+        assert r.status_code == 200
+        assert r.json() == list(_MODEL_CONFIGS.keys())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1069,7 +1091,8 @@ class TestCatalogSeeder:
     @pytest.mark.asyncio
     async def test_seed_updates_image_tag(self, db_session):
         """Running seed again with a different tag updates the existing row."""
-        import tempfile, json
+        import json
+        import tempfile
         from sqlalchemy import select
         from app.models.workload_type import WorkloadType
         from app.services.catalog_seeder import seed_catalog
@@ -1192,7 +1215,6 @@ class TestStateMachine:
             transition_workload_state,
             InvalidStateTransition,
         )
-        from app.models.workload import Workload
 
         db = self._make_sync_session()
         wl_id = self._create_workload_sync(db)
@@ -1310,7 +1332,7 @@ class TestManifestBuilder:
 
     def test_llm_command_uses_gcr_image(self):
         from app.services.manifest_builder import ManifestBuilder
-        from app.config import get_workload_registry, settings
+        from app.config import get_workload_registry
         cmd = ManifestBuilder.build_llm_benchmark_command(
             model_name="tinyllama",
             config={},
@@ -1376,8 +1398,15 @@ class TestConfig:
         assert settings.MODEL_STORAGE_MODE == "huggingface"
 
     def test_ssh_default_user_default(self):
-        from app.config import settings
-        assert settings.SSH_DEFAULT_USER == "ubuntu"
+        # Verifies the shipped code default for open-source users who clone
+        # this repo without a customized .env — not the live runtime value,
+        # which Corespan's own deployments intentionally override via .env
+        # to match our node machines' actual SSH user. Reading the field
+        # default directly (instead of the live `settings` singleton) makes
+        # this test correct regardless of what .env is present on the
+        # machine running it.
+        from app.config import Settings
+        assert Settings.model_fields["SSH_DEFAULT_USER"].default == "ubuntu"
 
     def test_database_url_contains_test_db_name(self):
         from app.config import get_database_url
@@ -1436,6 +1465,9 @@ class TestIPMasking:
             concurrency=4,
             status="success",
             pipeline_version="unknown",
+            # started_at has no server_default on benchmark_results (unlike
+            # task_logs) — it must be supplied explicitly on every insert.
+            started_at=datetime.now(timezone.utc),
         ).on_conflict_do_nothing()
         await db_session.execute(stmt)
         await db_session.commit()

@@ -79,6 +79,10 @@ async def get_benchmark_status(
 
     return {
         "task_id": workload.workload_id,
+        # Kept alongside task_id (same value) for callers that key off the
+        # DB column name directly — e.g. Composer lifecycle-event tracking,
+        # which correlates status polls against workload_id elsewhere.
+        "workload_id": workload.workload_id,
         "state": workload.state,
         "error_message": workload.error_message,
         "updated_at": workload.updated_at,

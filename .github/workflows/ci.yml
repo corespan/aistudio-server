@@ -1,0 +1,84 @@
+name: CI
+
+# Runs on every PR (and on pushes to the default branches, so a merge that
+# bypasses PR checks — e.g. an admin merge — still gets caught). See
+# ruff.toml for why the lint job's rule set is deliberately narrow, and
+# tests/conftest.py for why the test job needs a real Postgres service
+# rather than a mock.
+
+on:
+  pull_request:
+  push:
+    # TODO: remove "documents" once the CI setup itself has been verified —
+    # it's here temporarily so pushes to this feature branch (with no PR
+    # open yet) also trigger a run for testing.
+    branches: [master, main, documents]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff check
+        run: ruff check .
+
+  test:
+    name: Pytest
+    runs-on: ubuntu-latest
+
+    # tests/conftest.py requires a real PostgreSQL instance — it creates the
+    # aistudio_test database on first run and truncates tables between
+    # tests. A service container is the GitHub Actions equivalent of the
+    # `docker compose up -d postgres` step in local development.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: aistudio
+          POSTGRES_PASSWORD: aistudio
+          POSTGRES_DB: aistudio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aistudio"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      # Matches the "pytest directly on the host machine" case documented at
+      # the top of tests/conftest.py — the service container is reachable on
+      # localhost:5432 from the job's steps.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USERNAME: aistudio
+      POSTGRES_PASSWORD: aistudio
+      POSTGRES_DATABASE: aistudio_test
+      RABBITMQ_URL: localhost
+      RABBITMQ_USERNAME: aistudio
+      RABBITMQ_PASSWORD: aistudio
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -v

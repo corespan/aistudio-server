@@ -34,7 +34,14 @@ import os
 os.environ.setdefault("POSTGRES_HOST",     "localhost")
 os.environ.setdefault("POSTGRES_USERNAME", "aistudio")
 os.environ.setdefault("POSTGRES_PASSWORD", "aistudio")
-os.environ.setdefault("POSTGRES_DATABASE", "aistudio_test")
+# Force (not setdefault) — this MUST be an isolated database, never whatever
+# POSTGRES_DATABASE the app's own .env configures. Inside the api container,
+# docker-compose's `env_file: .env` already sets POSTGRES_DATABASE=aistudio
+# (the real dev/seed database) before pytest ever runs, which would make
+# setdefault() here a silent no-op. clean_tables below TRUNCATEs every table
+# before every test — running that against the real database wipes seeded
+# data instead of a disposable one.
+os.environ["POSTGRES_DATABASE"] = "aistudio_test"
 os.environ.setdefault("RABBITMQ_URL",      "localhost")
 os.environ.setdefault("RABBITMQ_USERNAME", "aistudio")
 os.environ.setdefault("RABBITMQ_PASSWORD", "aistudio")
