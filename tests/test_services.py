@@ -152,9 +152,15 @@ class TestModelConfig:
         )
         assert r.status_code == 200
         body = r.json()
-        assert "precision" in body
+        # precision/input_tokens/output_tokens/batch_size/pipeline_parallel_size/
+        # tensor_parallel_size were dropped from this response: none of them were
+        # ever forwarded to the benchmark container, only displayed. gpu_count is
+        # the one the backend actually reads; dataset_path is now required and
+        # must always be present (even if blank) so the UI has a key to bind to.
+        assert "gpu_count" in body
         assert "concurrency" in body
-        assert "tensor_parallel_size" in body
+        assert "max_model_len" in body
+        assert "dataset_path" in body
 
     @pytest.mark.asyncio
     async def test_known_model_returns_gated_and_license_fields(self, http_client):
@@ -174,7 +180,8 @@ class TestModelConfig:
         assert r.status_code == 200
         body = r.json()
         # Default config should still have mandatory keys
-        assert "precision" in body
+        assert "gpu_count" in body
+        assert "dataset_path" in body
         assert body["gated"] is False
 
     @pytest.mark.asyncio
@@ -187,7 +194,7 @@ class TestModelConfig:
         )
         assert r_lower.status_code == 200
         assert r_upper.status_code == 200
-        assert r_lower.json()["precision"] == r_upper.json()["precision"]
+        assert r_lower.json()["gpu_count"] == r_upper.json()["gpu_count"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -346,13 +353,34 @@ class TestBenchmarkStartAndStatus:
             r = await http_client.post("/api/v1/benchmarks/start", json={
                 "model_name": "tinyllama",
                 "node_ips": ["10.0.0.1"],
-                "config": {},
+                "config": {"dataset_path": "/home/drut/datasets/sharegpt.json"},
             })
         assert r.status_code == 200
         body = r.json()
         assert "task_id" in body
         assert body["task_id"].startswith("wl-")
         assert body["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_start_rejects_missing_dataset_path(self, http_client):
+        # dataset_path is required — the benchmark can't run without it
+        # (worker.py used to fail deep inside the Celery task instead;
+        # now the API rejects it up front).
+        r = await http_client.post("/api/v1/benchmarks/start", json={
+            "model_name": "tinyllama",
+            "node_ips": ["10.0.0.1"],
+            "config": {},
+        })
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_start_rejects_blank_dataset_path(self, http_client):
+        r = await http_client.post("/api/v1/benchmarks/start", json={
+            "model_name": "tinyllama",
+            "node_ips": ["10.0.0.1"],
+            "config": {"dataset_path": "   "},
+        })
+        assert r.status_code == 422
 
     @pytest.mark.asyncio
     async def test_start_creates_workload_in_created_state(self, http_client, db_session):
@@ -364,7 +392,7 @@ class TestBenchmarkStartAndStatus:
             r = await http_client.post("/api/v1/benchmarks/start", json={
                 "model_name": "llama3",
                 "node_ips": ["10.0.0.1"],
-                "config": {"gpu_count": 2},
+                "config": {"gpu_count": 2, "dataset_path": "/home/drut/datasets/sharegpt.json"},
             })
         task_id = r.json()["task_id"]
 
@@ -387,7 +415,7 @@ class TestBenchmarkStartAndStatus:
             r = await http_client.post("/api/v1/benchmarks/start", json={
                 "model_name": "llama3",
                 "node_ips": ips,
-                "config": {},
+                "config": {"dataset_path": "/home/drut/datasets/sharegpt.json"},
             })
         task_id = r.json()["task_id"]
 
@@ -410,7 +438,7 @@ class TestBenchmarkStartAndStatus:
             r_start = await http_client.post("/api/v1/benchmarks/start", json={
                 "model_name": "tinyllama",
                 "node_ips": ["10.0.0.1"],
-                "config": {},
+                "config": {"dataset_path": "/home/drut/datasets/sharegpt.json"},
             })
         task_id = r_start.json()["task_id"]
 
@@ -432,7 +460,7 @@ class TestBenchmarkStartAndStatus:
             r = await http_client.post("/api/v1/benchmarks/start", json={
                 "model_name": "tinyllama",
                 "node_ips": ["10.0.0.1"],
-                "config": {},
+                "config": {"dataset_path": "/home/drut/datasets/sharegpt.json"},
             })
             task_id = r.json()["task_id"]
             mock_chain.delay.assert_called_once_with(task_id)
@@ -1398,15 +1426,8 @@ class TestConfig:
         assert settings.MODEL_STORAGE_MODE == "huggingface"
 
     def test_ssh_default_user_default(self):
-        # Verifies the shipped code default for open-source users who clone
-        # this repo without a customized .env — not the live runtime value,
-        # which Corespan's own deployments intentionally override via .env
-        # to match our node machines' actual SSH user. Reading the field
-        # default directly (instead of the live `settings` singleton) makes
-        # this test correct regardless of what .env is present on the
-        # machine running it.
-        from app.config import Settings
-        assert Settings.model_fields["SSH_DEFAULT_USER"].default == "ubuntu"
+        from app.config import settings
+        assert settings.SSH_DEFAULT_USER == "ubuntu"
 
     def test_database_url_contains_test_db_name(self):
         from app.config import get_database_url
