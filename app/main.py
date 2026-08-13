@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from app.routers import system, ingest, benchmarks, results, jupyter, gpu_specs
+
 # The app instance
 app = FastAPI(
     title="AIStudio API",
@@ -59,8 +61,6 @@ async def generic_exception_handler(request: Request, exc: Exception):
             "hint": str(exc) # For debugging. In production, this should be masked.
         },
     )
-
-from app.routers import system, ingest, benchmarks, results, jupyter, gpu_specs
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(system.router)

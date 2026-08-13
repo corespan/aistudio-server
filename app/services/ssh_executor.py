@@ -1,7 +1,7 @@
 import re
 import uuid
 import paramiko
-from typing import Generator, Optional
+from typing import Optional
 
 from app.database import SyncSessionLocal
 from app.models.task_log import TaskLog

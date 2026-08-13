@@ -8,14 +8,6 @@ import uuid
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 
-# Masks the last two octets of any IPv4 address in log lines so node IPs are
-# never exposed to the client. e.g. 10.6.12.26 → 10.6.x.x
-_IP_RE = re.compile(r'(?<![.\d])(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}(?![.\d])')
-
-
-def _mask_ip(text: str) -> str:
-    return _IP_RE.sub(r'\1.x.x', text)
-
 from fastapi import Request
 from sqlalchemy import select
 
@@ -23,6 +15,14 @@ from app.database import AsyncSessionLocal
 from app.models.task import Task
 from app.models.task_log import TaskLog
 from app.models.workload import Workload
+
+# Masks the last two octets of any IPv4 address in log lines so node IPs are
+# never exposed to the client. e.g. 10.6.12.26 → 10.6.x.x
+_IP_RE = re.compile(r'(?<![.\d])(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}(?![.\d])')
+
+
+def _mask_ip(text: str) -> str:
+    return _IP_RE.sub(r'\1.x.x', text)
 
 
 async def task_log_stream(
