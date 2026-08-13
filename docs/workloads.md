@@ -113,6 +113,42 @@ DELETE /api/v1/jupyter/instances/{task_id}
 
 Or from the UI — click the delete button on the instance row.
 
+### AI Assistant Setup
+
+JupyterLab ships with `jupyter-ai` built in — write, execute, and visualize code with LLM assistance inside the notebook.
+
+**Prerequisites:**
+- GPUs with CUDA compute capability ≥ 7
+- Docker installed with the NVIDIA Container Toolkit
+
+**1. Run a vLLM inference server (or point at one already running):**
+
+```bash
+sudo docker run --restart=always --gpus all \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  --network host -p 8000:8000 --ipc=host \
+  vllm/<vllm_docker_image> \
+  --model <model_name> \
+  --dtype half \
+  --gpu-memory-utilization 0.95 \
+  --trust-remote-code \
+  --tensor-parallel-size <NUMBER_OF_GPUS> \
+  --max-model-len 131072 \
+  --max-num-seqs 8 \
+  --host 0.0.0.0
+```
+
+Replace `<NUMBER_OF_GPUS>` with the number of GPUs available on the machine.
+
+**2. Point JupyterLab at it:**
+
+1. Open the **Settings** tab in JupyterLab.
+2. Go to **AI Settings** → click **Add Secret**.
+3. Set **Secret Name** to `HOSTED_VLLM_API_BASE` and **Value** to your vLLM server URL: `http://<MACHINE_IP>:8000/v1/`
+4. Update the **Chat Model** to `hosted_vllm/Qwen/Qwen2.5-7B-Instruct-1M`.
+
+The AI assistant is now ready to use inside notebooks.
+
 ---
 
 ## Adding a New Workload Type

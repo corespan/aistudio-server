@@ -125,6 +125,78 @@ docker compose exec api pytest tests/ -v --log-cli-level=INFO
 
 ---
 
+## Deployment Smoke Test
+
+Checklist to verify a fresh deployment is working end to end.
+
+**1. API health**
+```bash
+curl http://localhost:8002/health
+# Expected: {"status":"healthy","database":"ok"}
+```
+
+**2. Workload catalog seeded**
+```bash
+curl http://localhost:8002/api/v1/workload-types
+# Expected: JSON array with at least one entry
+```
+
+**3. Models endpoint populated**
+```bash
+curl http://localhost:8002/api/v1/models
+# Expected: ["tinyllama/tinyllama-1.1b-chat-v1.0","llama3-8b-instruct",...]
+```
+
+**4. SSH reaches the node**
+```bash
+ssh -i ~/.ssh/id_rsa drut@10.6.12.26 "echo OK"
+# Expected: OK   (no password prompt)
+```
+
+**5. Node validation passes**
+```bash
+curl -X POST http://localhost:8002/api/v1/benchmarks/start \
+  -H "Content-Type: application/json" \
+  -d '{"model_name":"tinyllama/tinyllama-1.1b-chat-v1.0","node_ips":["10.6.12.26"],"config":{}}'
+# Note the task_id, then:
+curl -N http://localhost:8002/api/v1/benchmarks/<task_id>/logs/stream
+# Expected in stream: "✓ Node 10.6.12.26 validated."
+```
+
+**6. Metrics ingest**
+```bash
+curl -X POST http://localhost:8002/api/v1/metrics \
+  -H "Content-Type: application/json" \
+  -d '{
+    "run_id": "test-run-001",
+    "model_name": "tinyllama/tinyllama-1.1b-chat-v1.0",
+    "node_ips": ["10.6.12.26"],
+    "gpu_type": "p40",
+    "gpu_count": 1,
+    "precision": "fp16",
+    "input_tokens": 512,
+    "output_tokens": 128,
+    "concurrency": 4,
+    "status": "success",
+    "total_token_throughput": 320.5,
+    "mean_ttft_ms": 45.2,
+    "mean_e2el_ms": 980.0
+  }'
+# Expected: {"status":"success","run_id":"test-run-001","message":"..."}
+
+curl http://localhost:8002/api/v1/benchmarks
+# Expected: test-run-001 appears in results
+```
+
+**7. Test suite**
+```bash
+make test
+# or: docker compose exec api pytest tests/ -v
+# Expected: 79 tests passed
+```
+
+---
+
 ## Code Style
 
 This project uses **ruff** for linting and formatting.

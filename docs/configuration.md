@@ -104,6 +104,47 @@ When enabled, the Nginx container proxies Jupyter instances via path-based routi
 | `NGINX_CONF_DIR` | `/etc/nginx/jupyter-locations` | Directory where the worker writes per-instance location configs. Shared via Docker volume with the nginx container. |
 | `NGINX_RELOAD_CMD` | `true` | Command to reload nginx after config changes. Defaults to `true` (no-op) because the nginx container uses `inotifywait` for auto-reload. |
 
+By default, `jupyter_url` in the launch response is a direct `http://<node-ip>:<port>/lab` link. Enabling the proxy routes all Jupyter sessions through a single public domain instead, so GPU node IPs are never exposed to users. URL format with the proxy enabled: `{PROXY_BASE_URL}/jupyter/<GPU_TYPE>/<task_id>/lab`.
+
+### One-time server setup (master node)
+
+Run these once on the machine that will run nginx:
+
+```bash
+# Install nginx if not present
+sudo apt install -y nginx
+
+# Create the directory for per-instance location files
+sudo mkdir -p /etc/nginx/jupyter-locations
+
+# Create the main server block (only needed once)
+sudo tee /etc/nginx/conf.d/aistudio-jupyter.conf > /dev/null << 'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name your-domain.example.com;
+    include /etc/nginx/jupyter-locations/*.conf;
+}
+EOF
+
+# Remove the default nginx site to avoid server_name conflicts
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test and reload
+sudo nginx -t && sudo nginx -s reload
+```
+
+Also update `docker-compose.yml` to bind-mount the nginx locations directory into the worker container:
+
+```yaml
+worker:
+  volumes:
+    - /etc/nginx/jupyter-locations:/etc/nginx/jupyter-locations
+    - ~/.ssh:/root/.ssh:ro
+```
+
+When `NGINX_ENABLED=true` the worker writes a location block to `NGINX_CONF_DIR/jupyter-<task_id>.conf` on the nginx host, passes `JUPYTER_BASE_URL=/jupyter/<GPU_TYPE>/<task_id>/` to the container so JupyterLab serves assets from the correct subpath, and reloads nginx via `NGINX_RELOAD_CMD`. Location files are deleted automatically when a session ends.
+
 ---
 
 ## Server
