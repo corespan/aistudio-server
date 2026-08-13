@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -28,6 +28,19 @@ async def start_benchmark(
     2. Dispatches a Celery task to begin the orchestration chain.
     3. Returns the task_id immediately so the UI can start polling.
     """
+    dataset_path = (request.config.get("dataset_path") or "").strip()
+    if not dataset_path:
+        # Previously this was only caught deep inside worker.py, after the
+        # Workload/Node rows were already committed and the Celery task
+        # dispatched — the run would sit as "running" for two steps before
+        # failing. Reject it here instead, at submit time.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="config.dataset_path is required: an absolute path to a "
+                   "ShareGPT-format JSON file that already exists on the "
+                   "target GPU node.",
+        )
+
     date_str = datetime.utcnow().strftime("%Y%m%d")
     short_uuid = str(uuid.uuid4())[:6]
     task_id = "wl-%s-%s" % (date_str, short_uuid)

@@ -32,22 +32,28 @@ def _build_model_configs(catalog: dict) -> dict:
     """
     Build the vLLM runtime config dict from catalog.json supported_models.
 
-    catalog.json uses gpu_count; the rest of the app uses tensor_parallel_size.
-    pipeline_parallel_size and batch_size are not in catalog.json — defaults used.
+    Only returns keys that ManifestBuilder.build_llm_benchmark_command() /
+    worker.py actually read when starting a run — precision, input_tokens,
+    output_tokens, batch_size, pipeline_parallel_size, and tensor_parallel_size
+    (a duplicate of gpu_count) were previously returned here but never
+    forwarded to the benchmark container, so they were dropped to avoid
+    the UI collecting/sending config the backend silently ignores.
+
+    dataset_path has no catalog-level default — it's a path on the target
+    GPU node's filesystem, supplied by the user per run — so it's always
+    returned as "" here; the UI must require the user to fill it in before
+    submitting, and /api/v1/benchmarks/start rejects a blank value.
     """
     configs = {}
     for model in catalog.get("supported_models", []):
         model_id = model["model_id"].lower()
         dc = model.get("default_config", {})
         configs[model_id] = {
-            "precision":            dc.get("precision", "fp16"),
+            "gpu_count":            dc.get("gpu_count", 1),
             "concurrency":          dc.get("concurrency", 4),
-            "input_tokens":         dc.get("input_tokens", 512),
-            "output_tokens":        dc.get("output_tokens", 256),
             "max_model_len":        dc.get("max_model_len", 4096),
-            "tensor_parallel_size": dc.get("gpu_count", 1),
-            "pipeline_parallel_size": 1,
-            "batch_size":           32,
+            "enable_optimizations": dc.get("enable_optimizations", False),
+            "dataset_path":         "",
         }
     return configs
 
@@ -78,13 +84,9 @@ _MODEL_CONFIGS: dict = _build_model_configs(_catalog)
 _MODEL_INFO:   dict  = _build_model_info(_catalog)
 
 _DEFAULT_CONFIG: dict = {
-    "precision":             "fp16",
+    "gpu_count":             1,
     "concurrency":           4,
-    "input_tokens":          512,
-    "output_tokens":         256,
     "max_model_len":         4096,
-    "tensor_parallel_size":  1,
-    "pipeline_parallel_size": 1,
-    "batch_size":            32,
+    "enable_optimizations":  False,
     "dataset_path":          "",
 }

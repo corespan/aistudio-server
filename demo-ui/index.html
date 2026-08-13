@@ -922,33 +922,8 @@
           <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
 
             <div class="form-field">
-              <label for="cfg-precision">Precision</label>
-              <select id="cfg-precision" class="form-select">
-                <option value="fp32">FP32</option>
-                <option value="fp16">FP16</option>
-                <option value="bf16">BF16</option>
-                <option value="fp8">FP8</option>
-              </select>
-            </div>
-
-            <div class="form-field">
               <label for="cfg-concurrency">Concurrency</label>
               <input id="cfg-concurrency" type="number" value="4" min="1" class="form-input">
-            </div>
-
-            <div class="form-field">
-              <label for="cfg-batch">Batch Size</label>
-              <input id="cfg-batch" type="number" value="32" min="1" class="form-input">
-            </div>
-
-            <div class="form-field">
-              <label for="cfg-isl">ISL (Input Tokens)</label>
-              <input id="cfg-isl" type="number" value="512" min="1" class="form-input">
-            </div>
-
-            <div class="form-field">
-              <label for="cfg-osl">OSL (Output Tokens)</label>
-              <input id="cfg-osl" type="number" value="128" min="1" class="form-input">
             </div>
 
             <div class="form-field">
@@ -957,15 +932,21 @@
             </div>
 
             <div class="form-field">
-              <label for="cfg-tp">Tensor Parallel (TP)</label>
+              <label for="cfg-tp">GPU Count / Tensor Parallel (TP)</label>
               <input id="cfg-tp" type="number" value="1" min="1" class="form-input">
             </div>
 
-            <div class="form-field">
-              <label for="cfg-pp">Pipeline Parallel (PP)</label>
-              <input id="cfg-pp" type="number" value="1" min="1" class="form-input">
-            </div>
+          </div>
 
+          <div class="form-grid" style="grid-template-columns:1fr;margin-top:8px;">
+            <div class="form-field">
+              <label for="cfg-dataset-path">Dataset Path <span style="color:var(--accent-red,#e5484d);">*</span></label>
+              <input id="cfg-dataset-path" type="text" class="form-input"
+                     placeholder="Absolute path to a ShareGPT-format JSON file on the GPU node, e.g. /home/drut/datasets/sharegpt.json">
+              <span style="font-size:11px;color:var(--text-secondary);">
+                Required. Must already exist on the target node — nothing is downloaded or bundled by the server.
+              </span>
+            </div>
           </div>
 
           <button onclick="startBenchmark()" class="btn-primary" style="margin-top:20px;">Start Benchmark</button>
@@ -1368,16 +1349,13 @@ async function loadModelConfig() {
     const r = await fetch(API + '/api/v1/models/config?model=' + encodeURIComponent(model));
     const cfg = await r.json();
     // Populate step 2 fields
-    const prec = document.getElementById('cfg-precision');
-    prec.value = cfg.precision || 'fp32';
-    if (!prec.value) prec.value = 'fp32';        // fallback if not in <select>
-    document.getElementById('cfg-concurrency').value = cfg.concurrency   || 4;
-    document.getElementById('cfg-batch').value       = cfg.batch_size    || 32;
-    document.getElementById('cfg-isl').value         = cfg.input_tokens  || 512;
-    document.getElementById('cfg-osl').value         = cfg.output_tokens || 128;
-    document.getElementById('cfg-maxlen').value      = cfg.max_model_len || 2048;
-    document.getElementById('cfg-tp').value          = cfg.tensor_parallel_size  || 1;
-    document.getElementById('cfg-pp').value          = cfg.pipeline_parallel_size || 1;
+    document.getElementById('cfg-concurrency').value  = cfg.concurrency   || 4;
+    document.getElementById('cfg-maxlen').value        = cfg.max_model_len || 2048;
+    document.getElementById('cfg-tp').value            = cfg.gpu_count    || 1;
+    // dataset_path has no catalog default (it's a path on the target GPU
+    // node, supplied per run) — leave it blank for the user to fill in,
+    // but carry over a previously-typed value if the user clicked Back.
+    document.getElementById('cfg-dataset-path').value = document.getElementById('cfg-dataset-path').value || cfg.dataset_path || '';
     // Show step 2
     document.getElementById('run-step1').style.display = 'none';
     document.getElementById('run-step2').style.display = 'block';
@@ -1420,19 +1398,22 @@ function formatLogLine(raw) {
 
 // ── Start Run — Step 2: submit ──
 async function startBenchmark() {
+  const datasetPath = document.getElementById('cfg-dataset-path').value.trim();
+  if (!datasetPath) {
+    document.getElementById('run-status').classList.add('visible');
+    document.getElementById('run-state').textContent =
+      'Error: Dataset Path is required — enter an absolute path to a ShareGPT-format JSON file that exists on the target node.';
+    return;
+  }
+
   const body = {
     model_name: document.getElementById('run-model').value.trim(),
     node_ips:   [document.getElementById('run-ip').value.trim()],
     config: {
-      precision:            document.getElementById('cfg-precision').value,
-      concurrency:          parseInt(document.getElementById('cfg-concurrency').value),
-      input_tokens:         parseInt(document.getElementById('cfg-isl').value),
-      output_tokens:        parseInt(document.getElementById('cfg-osl').value),
-      max_model_len:        parseInt(document.getElementById('cfg-maxlen').value),
-      batch_size:           parseInt(document.getElementById('cfg-batch').value),
-      gpu_count:            parseInt(document.getElementById('cfg-tp').value),
-      tensor_parallel_size: parseInt(document.getElementById('cfg-tp').value),
-      pipeline_parallel_size: parseInt(document.getElementById('cfg-pp').value),
+      concurrency:   parseInt(document.getElementById('cfg-concurrency').value),
+      max_model_len: parseInt(document.getElementById('cfg-maxlen').value),
+      gpu_count:     parseInt(document.getElementById('cfg-tp').value),
+      dataset_path:  datasetPath,
     },
   };
 
