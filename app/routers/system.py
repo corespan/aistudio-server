@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.catalog import _DEFAULT_CONFIG, _MODEL_CONFIGS, _MODEL_INFO
 from app.database import get_db
 from app.models.workload_type import WorkloadType
+from app.services.slack_notifier import notify_service_error
 
 router = APIRouter(tags=["System"])
 
@@ -21,7 +22,12 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         db_status = "ok"
     except Exception as e:
         db_status = f"unreachable: {str(e)}"
-        
+        # Service is down (or erroring while trying to come back up) --
+        # alert with just when + where; notify_service_error() rate-limits
+        # itself so a monitor polling /health every few seconds during a
+        # prolonged outage doesn't flood the channel with one post each poll.
+        await notify_service_error()
+
     return {
         "status": "healthy" if db_status == "ok" else "degraded",
         "database": db_status,

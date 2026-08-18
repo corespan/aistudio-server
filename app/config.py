@@ -77,6 +77,25 @@ class Settings(BaseSettings):
     # Override via environment variable JUPYTER_ASSISTANT_URL.
     JUPYTER_ASSISTANT_URL: str = ""
 
+    # ── Slack Error Alerts ────────────────────────────────────────────────
+    # Incoming Webhook URL for the #aistudio-alerts channel (Slack App ->
+    # "Incoming Webhooks" -> Add New Webhook to Workspace). Leave blank to
+    # disable alerting entirely (every call becomes a no-op) — useful for
+    # local dev where you don't want your own errors paging the channel.
+    SLACK_ALERT_WEBHOOK_URL: str = ""
+    # Explicit override for "where is this service running" in a service-level
+    # alert (main.py's generic exception handler / a degraded /health check).
+    # Leave blank to auto-detect via socket.gethostbyname(gethostname()) — note
+    # that inside an unmodified Docker bridge network this usually resolves to
+    # the CONTAINER's internal IP, not a reachable host IP, so set this
+    # explicitly in production (e.g. to the host's LAN IP or public hostname).
+    SERVICE_HOST_IP: str = ""
+    # Minimum seconds between two service-level alerts. Protects the channel
+    # from being flooded if something (e.g. Postgres) is down for a while and
+    # /health is being polled every few seconds by an external monitor.
+    # Per-process only — not shared across multiple uvicorn workers/replicas.
+    SLACK_SERVICE_ALERT_COOLDOWN_SECONDS: int = 300
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
