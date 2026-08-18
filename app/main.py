@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from app.routers import system, ingest, benchmarks, results, jupyter, gpu_specs
+from app.services.slack_notifier import notify_service_error
 
 # The app instance
 app = FastAPI(
@@ -52,6 +53,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
+    # Service-level error -- no workload is necessarily involved, so the
+    # alert reports only when/where, not what (see slack_notifier.py). This
+    # is also the ONLY place an unhandled API exception got logged/surfaced
+    # anywhere server-side before this change -- previously it only went
+    # back to the client in the JSON response.
+    await notify_service_error()
     return JSONResponse(
         status_code=500,
         content={

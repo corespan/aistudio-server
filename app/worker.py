@@ -21,6 +21,7 @@ from app.services.dependency_installer import DependencyInstaller
 from app.services.manifest_builder import ManifestBuilder
 from app.services.nginx_proxy import write_jupyter_config, proxy_url as nginx_proxy_url, jupyter_base_path
 from app.services.ssh_executor import SSHExecutor
+from app.services.slack_notifier import notify_workload_failure
 from app.services.state_machine import transition_workload_state
 
 logger = logging.getLogger(__name__)
@@ -89,30 +90,45 @@ def _fail_workload(workload_id, trigger, error):
     For benchmark workloads (not Jupyter) also writes a BenchmarkResult row with
     status='failed' so the run appears in the leaderboard API after a page refresh
     instead of disappearing when the in-memory stream store is cleared.
+
+    This is the single choke point every Celery task (validate_node /
+    install_dependencies / execute_benchmark / launch_jupyter) routes through
+    on any failure -- so it's also the one place we fire the Slack alert,
+    rather than instrumenting each task's except block individually.
     """
+    occurred_at = datetime.now(timezone.utc)
+    node_ip = None
     try:
         with SyncSessionLocal() as db:
             transition_workload_state(
                 db, workload_id, WorkloadState.FAILED,
                 trigger=trigger, message=error,
             )
+            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
+
+            # Node lookup -- always attempted (benchmark AND jupyter workloads)
+            # so the Slack alert can report where the workload was running.
+            # A workload can fail before any node was ever assigned (e.g. "No
+            # nodes available"), so node_ip may legitimately stay None.
+            if workload:
+                node = db.query(Node).filter(Node.workload_id == workload.id).first()
+                node_ip = node.machine_ip if node else None
+
             # Write a minimal BenchmarkResult so GET /api/v1/benchmarks returns
             # the failed run. Skip Jupyter workloads — they have no benchmark metrics.
-            workload = db.query(Workload).filter(Workload.workload_id == workload_id).first()
             if workload and (workload.workload_config or {}).get("workload_type") != "jupyter":
                 existing = db.query(BenchmarkResult).filter(
                     BenchmarkResult.run_id == workload_id
                 ).first()
                 now = datetime.now(timezone.utc)
                 if not existing:
-                    node = db.query(Node).filter(Node.workload_id == workload.id).first()
                     db.add(BenchmarkResult(
                         run_id=workload_id,
                         sub_run_index=0,
                         workload_type="llm",
                         model_name=(workload.model_name or "").lower(),
                         pipeline_version="vllm-openai:v0.14.1",
-                        node_ips=[node.machine_ip] if node else [],
+                        node_ips=[node_ip] if node_ip else [],
                         gpu_type="",
                         gpu_count=0,
                         gpu_model="",
@@ -145,6 +161,12 @@ def _fail_workload(workload_id, trigger, error):
             workload_id, trigger,
             exc_info=True,
         )
+        return  # DB write itself failed -- state is unreliable, don't alert on it
+
+    # Fired outside the try/except above: the FAILED state is durably written
+    # by this point, and notify_workload_failure() never raises (Slack being
+    # down must not affect this function's real job of failing the workload).
+    notify_workload_failure(workload_id, node_ip, occurred_at)
 
 
 def _fetch_workload_and_nodes(db, workload_id: str):
