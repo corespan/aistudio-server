@@ -124,8 +124,9 @@ services:
       MCP_ALLOWED_HOSTS: "aistudio-mcp,aistudio-mcp:8081"
       # The same key agentgateway checks; gateway/mint.py writes it.
       MCP_JWKS_FILE: "/gateway/jwks.json"
-      # start_workload / start_jupyter / stop_workload exist only when true. stop_workload: the
-      # task's creator (workloads.created_by, set from the JWT) or an admin.
+      # start_workload / start_jupyter / stop_jupyter / delete_run_results exist only when true.
+      # stop_jupyter and delete_run_results: the task's creator (workloads.created_by, set from the
+      # JWT) or an admin. That binds MCP users only: the REST API on 8002 has no authentication.
       MCP_WRITES_ENABLED: "${MCP_WRITES_ENABLED:-false}"
       AISTUDIO_API_URL: "http://api:8001"
       RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
@@ -187,7 +188,9 @@ services:
   # Read-only Docker API for the MCP's container tools, on a network only aistudio-mcp joins.
   aistudio-docker-proxy:
     profiles: ["mcp"]
-    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0
+    # GET on containers lets a caller read any container's env (/json) and files (/archive): only
+    # aistudio-mcp, on an internal network, reaches it, and its tools never print either.
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2
     environment:
       CONTAINERS: 1
       IMAGES: 1

@@ -20,11 +20,13 @@ def _readable_roots() -> list[str]:
     return [r.strip() for r in settings.readable_roots.split(",") if r.strip()]
 
 
-# Secret file name patterns (case-insensitive).
+# Secret file names (case-insensitive).
 _SECRET_NAMES = (".env", ".env.*", "*.env", ".envrc", "*.pem", "*.key", "*.p12", "*.pfx",
                  "*.kdbx", "*.tfvars", "id_rsa*", "id_ecdsa*", "id_ed25519*",
                  "*-keyfile.json", "gcr-key.json", "service-account*.json", "credentials*",
-                 ".git-credentials", ".netrc", ".pgpass")
+                 ".git-credentials", ".netrc", ".pgpass",
+                 # Login and sudo logs from the /var/log mount.
+                 "auth.log*", "secure*", "btmp*", "faillog")
 
 
 def _is_secret(path: str) -> bool:
@@ -32,10 +34,8 @@ def _is_secret(path: str) -> bool:
     return name != ".env.example" and any(fnmatch.fnmatch(name, p) for p in _SECRET_NAMES)
 
 
-# The same patterns as git pathspecs.
 _GIT_SECRET_EXCLUDES = tuple(f":(exclude,glob,icase)**/{p}" for p in _SECRET_NAMES)
 
-# A plain revision.
 _REF_RE = re.compile(r"^[0-9A-Za-z._/~^@{}-]{1,100}$")
 
 
@@ -109,9 +109,7 @@ async def grep_logs(pattern: str, path: str = "", max_matches: int = 50,
     if len(pattern) > 200:
         return "Refused: pattern is over 200 characters; search for a shorter string."
     logger.info("tool.fs.grep_logs", pattern=pattern, path=path)
-    # Plain text, never a regex: the pattern comes from the model, which log text it has just
-    # read can steer, and a pattern like (a+)+$ would stall every call on this event loop
-    # (a thread does not help: re holds the GIL). Escaped, matching stays linear.
+    # Escaped, never a regex: a model-chosen (a+)+$ would stall the event loop.
     rx = re.compile(re.escape(pattern), re.IGNORECASE if ignore_case else 0)
     roots = _readable_roots()
     target = path or (roots[0] if roots else "")
@@ -146,7 +144,6 @@ async def grep_logs(pattern: str, path: str = "", max_matches: int = 50,
         capped = " (capped — narrow the pattern/path for more)" if len(hits) >= max_matches else ""
         body = (f"{len(hits)} match(es){capped} for {pattern!r} under {target} "
                 f"({scanned} file(s) scanned):\n" + "\n".join(hits))
-        # Add the source-not-runtime note for repo hits.
         repo = os.path.realpath(settings.repo_path)
         in_repo = real == repo or real.startswith(repo + os.sep)
         return body + (_SOURCE_IS_NOT_RUNTIME if in_repo else "")
@@ -197,7 +194,6 @@ async def git_log(since_minutes: int = 120, max_commits: int = 20, repo: str = "
     if _resolve_within_roots(repo, _readable_roots()) is None:
         return f"Refused: repo {repo!r} is outside the allowed roots."
 
-    # git config overrides for this invocation.
     _safe = ("-c", "safe.directory=*", "-c", "core.fsmonitor=")
 
     rc, out, err = await run_command(
@@ -224,11 +220,9 @@ async def git_log(since_minutes: int = 120, max_commits: int = 20, repo: str = "
             "someone may have edited files on the host directly."
         )
     body = "\n".join(parts)
-    # Add the note only when commits exist.
     return body + (_SOURCE_IS_NOT_RUNTIME if out.strip() else "")
 
 
-# Note appended to source-derived output.
 _SOURCE_IS_NOT_RUNTIME = (
     "\n\nNote: the above is source, not runtime. It carries no "
     "information about whether the containers currently running include it — a "

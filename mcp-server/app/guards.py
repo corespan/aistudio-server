@@ -1,10 +1,6 @@
-"""Who may run a write tool, and dedup of retried writes.
-
-No write tool runs unless the site sets MCP_WRITES_ENABLED (mcp_server.build does not even register them).
-Which role reaches which write is the manifest's job (app/policy.py), enforced by agentgateway and again by
-the backstop in mcp_server. A retried write (same caller, client, tool and arguments) within
-MCP_WRITE_DEDUP_SECONDS returns the first result instead of running again.
-"""
+"""The write switch (MCP_WRITES_ENABLED) and dedup of retried writes."""
+import asyncio
+import contextlib
 import hashlib
 import json
 import threading
@@ -14,15 +10,31 @@ from typing import Any, Optional
 from app.config import settings
 from app.policy import TOOL_POLICY
 
-# ponytail: in-process store with one lock. Fine for one aistudio-mcp replica (compose runs one); with
-# several, a retry landing on another replica runs again -- move it to Redis then.
+# ponytail: in-process, so one replica only; move to Redis to run several.
 _lock = threading.Lock()
 _recent: dict = {}       # dedup key -> (expires, result, done_at)
+_inflight: dict = {}     # dedup key -> [lock, holders]
+
+
+@contextlib.asynccontextmanager
+async def serialized(key: Optional[tuple]):
+    """Run identical writes one at a time, so a retry waits and then replays the first result."""
+    if key is None:
+        yield
+        return
+    entry = _inflight.setdefault(key, [asyncio.Lock(), 0])
+    entry[1] += 1
+    try:
+        async with entry[0]:
+            yield
+    finally:
+        entry[1] -= 1
+        if not entry[1]:
+            _inflight.pop(key, None)
 
 
 class Refused(Exception):
-    """A write this caller may not make now. The message is for the model (and through it, the user);
-    `reason` is a short code for the audit line."""
+    """A refused write; `reason` is a short code for the audit line."""
 
     def __init__(self, reason: str, message: str):
         super().__init__(message)
@@ -42,12 +54,12 @@ def _sweep(now: float) -> None:
         del _recent[k]
 
 
-def check_write(ident, tool: str, args: dict) -> None:
+def check_write(tool: str) -> None:
     """Return if this write may run now; raise Refused otherwise."""
     row = TOOL_POLICY.get(tool)
     if row is None or row.read_only:
         return
-    if not settings.mcp_writes_enabled:   # backstop: with the switch off the tool is not even registered
+    if not settings.mcp_writes_enabled:   # backstop: off, the tool is not even registered
         raise Refused("writes_off", f"{tool} is turned off on this deployment (MCP_WRITES_ENABLED is off).")
 
 
@@ -70,8 +82,7 @@ def recall(key: Optional[tuple]) -> Optional[tuple]:
 
 
 def replay_note(tool: str, seconds_ago: int) -> str:
-    """Said before a replayed result, so neither the model nor the user takes it for a new action: a
-    deliberate repeat (the same run started twice) learns that nothing ran, and can retry after the window."""
+    """Prefix for a replayed result, so it is not taken for a new action."""
     return (f"ALREADY DONE: an identical {tool} call (same arguments) succeeded {seconds_ago} s ago, so nothing "
             f"ran this time. To do it again on purpose, retry after {settings.mcp_write_dedup_seconds} s. "
             "That call's result:\n")
@@ -81,7 +92,7 @@ def remember(key: Optional[tuple], result: Any) -> None:
     if key is not None:
         now = time.time()
         with _lock:
-            _sweep(now)   # ponytail: O(entries) per write; writes are rare, fine until they are not
+            _sweep(now)   # ponytail: O(entries) per write; fine while writes are rare
             _recent[key] = (now + settings.mcp_write_dedup_seconds, result, now)
 
 

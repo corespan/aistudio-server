@@ -6,7 +6,7 @@ import pytest
 
 from app.config import settings
 from app.mcp_server import _safe_error
-from app.tools.net_probes import _http, blocked_url
+from app.tools.net_probes import _http, _pinned, _tcp, blocked_url, check_tls_cert
 
 
 @pytest.mark.parametrize("url", [
@@ -15,6 +15,8 @@ from app.tools.net_probes import _http, blocked_url
     "http://127.0.0.1:8081/rca/actions",
     "http://[::1]/",
     "http://0.0.0.0/",
+    "http://[::ffff:127.0.0.1]/",
+    "http://[::ffff:169.254.169.254]/",
     "file:///etc/passwd",
     "gopher://10.0.0.1/",
 ])
@@ -41,3 +43,15 @@ def test_errors_reach_the_model_without_url_credentials():
     exc = OSError("connect failed: postgresql://amwadmin:s3cret@postgres:5432/aistudio")
     out = _safe_error(exc)
     assert "s3cret" not in out and "postgresql://***@postgres" in out, out
+
+
+def test_the_request_goes_to_the_checked_address_with_the_original_host():
+    url, headers, ext = _pinned("https://user:pw@grafana.internal:3443/d/x?a=1", "10.0.0.9")
+    assert url == "https://10.0.0.9:3443/d/x?a=1"
+    assert headers == {"Host": "grafana.internal:3443"} and ext == {"sni_hostname": "grafana.internal"}
+    assert _pinned("http://[fe80::1]/", "fd00::5")[0] == "http://[fd00::5]/"
+
+
+async def test_tcp_and_tls_probes_refuse_the_same_targets():
+    assert "[REFUSED]" in await _tcp("169.254.169.254", 80, 1.0)
+    assert "[REFUSED]" in await check_tls_cert.ainvoke({"host": "127.0.0.1", "port": 443})

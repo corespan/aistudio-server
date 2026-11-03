@@ -24,7 +24,7 @@ def test_there_is_no_tool_that_executes_anything_by_another_name():
 def test_the_write_tools_are_exactly_the_three_the_manifest_names():
     from app.policy import TOOL_POLICY
     assert {n for n, p in TOOL_POLICY.items() if not p.read_only} == \
-        {"start_workload", "start_jupyter", "stop_workload"}
+        {"start_workload", "start_jupyter", "stop_jupyter", "delete_run_results"}
 
 
 # ── the schema ──
@@ -75,13 +75,16 @@ async def test_planted_instructions_get_the_loud_fence(monkeypatch):
     assert text.startswith(INJECTION_WARNING), "planted instruction got the quiet fence"
 
 
-async def test_a_raising_tool_answers_instead_of_erroring(monkeypatch):
+async def test_a_raising_tool_is_a_tool_error_not_a_result(monkeypatch):
     async def boom():
-        raise RuntimeError("postgres is down")
+        raise RuntimeError("postgres://aistudio:s3cret@db is down")
 
     _summary(monkeypatch, "unused", on_fetch=boom)
-    text = await _call("summary", make_ctx(ident()))
-    assert "postgres is down" in text and "raised an error" in text
+    with pytest.raises(ToolError) as exc:
+        await _call("summary", make_ctx(ident()))
+    text = str(exc.value)
+    assert text.startswith(UNTRUSTED) and "is down" in text and "raised an error" in text
+    assert "s3cret" not in text
 
 
 async def test_no_caller_means_no_tool():
@@ -106,16 +109,16 @@ async def test_a_refusal_reaches_the_client_as_a_tool_error():
     from mcp.server.fastmcp import FastMCP
     server = FastMCP(name="t")
 
-    async def stop_workload(task_id: str) -> str:
+    async def stop_jupyter(task_id: str) -> str:
         return "deleted"
-    bridged = _bridge(types.SimpleNamespace(name="stop_workload", coroutine=stop_workload))
+    bridged = _bridge(types.SimpleNamespace(name="stop_jupyter", coroutine=stop_jupyter))
 
     async def as_called(task_id: str) -> str:              # FastMCP injects no Context here: bind the caller
         return await bridged(mcp_ctx=make_ctx(ident(role="viewer")), task_id=task_id)
-    server.add_tool(as_called, name="stop_workload")
+    server.add_tool(as_called, name="stop_jupyter")
     handler = server._mcp_server.request_handlers[CallToolRequest]
     reply = await handler(CallToolRequest(method="tools/call", params=CallToolRequestParams(
-        name="stop_workload", arguments={"task_id": "wl-1"})))
+        name="stop_jupyter", arguments={"task_id": "wl-1"})))
     assert reply.root.isError and "refused: it needs a higher aistudio role" in reply.root.content[0].text
 
 
@@ -132,10 +135,10 @@ async def test_each_call_is_audited_with_the_caller_and_client(monkeypatch):
 async def test_a_write_is_logged_with_its_target_before_and_after_it_runs():
     import structlog
 
-    async def stop_workload(task_id: str) -> str:
+    async def stop_jupyter(task_id: str) -> str:
         return "stopped"
 
-    tool = types.SimpleNamespace(name="stop_workload", coroutine=stop_workload)
+    tool = types.SimpleNamespace(name="stop_jupyter", coroutine=stop_jupyter)
     with structlog.testing.capture_logs() as logs:
         await _bridge(tool)(mcp_ctx=make_ctx(ident(sub="alice", role="admin")), task_id="wl-20260101-abc123")
     events = [e["event"] for e in logs]
@@ -151,3 +154,26 @@ async def test_a_read_is_not_logged_with_its_arguments(monkeypatch):
         await _call("summary", make_ctx(ident(sub="alice")), date="2026-01-01")
     assert not [e for e in logs if e["event"] == "mcp.tool.write"]
     assert "args" not in next(e for e in logs if e["event"] == "mcp.tool.call")
+
+
+@pytest.mark.parametrize("secret, kept", [
+    ("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----", "PRIVATE KEY"),
+    ("HF_TOKEN=hf_abcdefghijklmnopqrstuvwxyz0123456789", "HF_TOKEN="),
+    ("Authorization: Bearer abcdefghijklmnop.qrstuvwxyz", "Bearer"),
+    ("POSTGRES_PASSWORD=s3cretvalue", "POSTGRES_PASSWORD="),
+    ('{"api_key": "s3cretvalue"}', "api_key"),
+    ("amqp://aistudio:s3cretvalue@rabbitmq:5672//", "amqp://***@rabbitmq"),
+])
+async def test_credentials_are_masked_in_every_result(monkeypatch, secret, kept):
+    _summary(monkeypatch, f"line before\n{secret}\nline after")
+    text = await _call("summary", make_ctx(ident()))
+    assert kept in text and "line after" in text
+    for leaked in ("s3cretvalue", "hf_abcdefghij", "b3BlbnNzaC1rZXk", "qrstuvwxyz"):
+        assert leaked not in text, text
+
+
+def test_ordinary_text_is_not_masked():
+    from app.fence import redact
+
+    line = "the root cause is a token bucket limit; password reset flow ok; key=value"
+    assert redact(line) == line

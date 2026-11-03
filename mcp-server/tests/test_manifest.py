@@ -17,22 +17,22 @@ def test_committed_manifest_is_up_to_date():
 def test_every_registered_tool_has_a_row_and_no_row_is_orphaned():
     assert {t.name for t in ALL_TOOLS} == set(policy.TOOL_POLICY)
     names = [t["name"] for t in policy.manifest()["tools"]]
-    assert len(names) == len(set(names)) == len(ALL_TOOLS) == 34
+    assert len(names) == len(set(names)) == len(ALL_TOOLS) == 35
 
 
 def test_role_mapping():
     by = {t["name"]: t for t in policy.manifest()["tools"]}
     host = {n for n, p in policy.TOOL_POLICY.items() if p.tier == "host"}
     writes = {n for n, p in policy.TOOL_POLICY.items() if p.tier == "write"}
-    assert writes == {"start_workload", "start_jupyter", "stop_workload"}
+    assert writes == {"start_workload", "start_jupyter", "stop_jupyter", "delete_run_results"}
     for name in writes:
-        # stop_workload too: the creator rule, not the role, keeps an operator to their own tasks.
+        # stop_jupyter and delete_run_results too: the creator rule, not the role, keeps an operator to their own tasks.
         assert by[name]["minRole"] == "operator" and by[name]["readOnlyHint"] is False
     for name in host:
         assert by[name]["minRole"] == "admin" and by[name]["readOnlyHint"] is True
     for name in set(by) - host - writes:
         assert by[name]["minRole"] == "viewer" and by[name]["readOnlyHint"] is True
-    assert [n for n, t in by.items() if t["destructiveHint"]] == ["stop_workload"]
+    assert [n for n, t in by.items() if t["destructiveHint"]] == ["stop_jupyter", "delete_run_results"]
 
 
 def test_tools_for_role_is_cumulative():

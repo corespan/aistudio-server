@@ -27,6 +27,7 @@ def test_only_the_aistudio_role_counts(verifier, mint):
     dict(iss="someone-else"),                         # wrong issuer
     dict(kid="unknown-key"),                          # key not in the JWKS
     dict(jti=None),                                   # every token carries a jti
+    dict(ttl=86400 + 60),                             # longer than MCP_JWT_MAX_LIFETIME_SECONDS
 ])
 def test_refused(verifier, mint, bad):
     with pytest.raises(AuthError):
@@ -83,3 +84,14 @@ def test_the_mint_script_makes_tokens_both_checks_accept(tmp_path, monkeypatch):
     token = mint.token("operator", "bob", ttl=60)
     claims = JWTVerifier(None, "aistudio", "mcp:aistudio", jwks_file=str(tmp_path / "jwks.json")).verify(token)
     assert "agentgateway" in claims["aud"] and identity_from_claims(claims).role == "operator"
+
+
+def test_made_up_kids_do_not_reread_the_jwks_every_time(verifier, mint, monkeypatch):
+    loads = []
+    real = verifier._jwks._load
+    monkeypatch.setattr(verifier._jwks, "_load", lambda: loads.append(1) or real())
+    verifier._jwks._loaded_at = 0.0          # long ago: the first unknown kid may re-read
+    for i in range(5):
+        with pytest.raises(AuthError):
+            verifier.verify(mint(kid=f"made-up-{i}"))
+    assert len(loads) == 1

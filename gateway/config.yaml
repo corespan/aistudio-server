@@ -63,6 +63,6 @@ binds:
           rules:
           # BEGIN generated: python -m app.manifest <this file> (from aistudio mcp-server app/policy.py)
           - "jwt.roles.aistudio in ['viewer', 'operator', 'admin'] && mcp.tool.name in ['workload_history', 'throughput_compare', 'check_service_health', 'platform_catalog', 'list_benchmarks', 'get_benchmark', 'summary', 'model_config', 'get_task_status', 'get_task_logs']"
-          - "jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['start_workload', 'start_jupyter', 'stop_workload']"
+          - "jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['start_workload', 'start_jupyter', 'stop_jupyter', 'delete_run_results']"
           - "jwt.roles.aistudio in ['admin'] && mcp.tool.name in ['timeline', 'list_containers', 'docker_logs', 'inspect_container', 'container_diff', 'read_file', 'list_dir', 'grep_logs', 'git_log', 'git_show', 'network_check', 'list_listening_ports', 'tcpdump_capture', 'check_tls_cert', 'check_clock_skew', 'frontend_check', 'queue_status', 'check_ssh_connectivity', 'check_node_docker', 'node_docker_logs', 'node_exec']"
           # END generated

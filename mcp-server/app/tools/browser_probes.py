@@ -10,7 +10,6 @@ from app.tools.net_probes import blocked_url
 
 logger = structlog.get_logger()
 
-# Max findings shown per category.
 _MAX_ITEMS = 10
 
 
@@ -84,6 +83,17 @@ async def frontend_check(url: str, wait_seconds: int = 3) -> str:
             browser = await pw.chromium.connect_over_cdp(cdp, timeout=15000)
             try:
                 context = await browser.new_context(ignore_https_errors=True)
+
+                # ponytail: every request is checked, but the browser resolves DNS itself (rebinding).
+                async def _guard(route):
+                    why = await blocked_url(route.request.url)
+                    if why:
+                        failed.append((route.request.method, route.request.url, f"refused: {why}"))
+                        await route.abort("blockedbyclient")
+                    else:
+                        await route.continue_()
+
+                await context.route("**/*", _guard)
                 page = await context.new_page()
 
                 page.on("console", lambda m: console.append((m.type, m.text)))

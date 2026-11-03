@@ -1,11 +1,7 @@
-"""Caller authentication: verify the JWT on every /mcp request.
-
-agentgateway verifies the same token and makes the role-to-tool decision (CEL generated from
-tool-manifest.json); this server verifies it again and keeps a role backstop in mcp_server, so a
-caller that reaches it without the gateway gets nothing.
-"""
+"""Verify the caller's JWT on every /mcp request, again after agentgateway did."""
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -26,12 +22,12 @@ class AuthError(Exception):
 class Identity:
     sub: str
     role: Optional[str] = None          # roles.aistudio
-    client_id: Optional[str] = None     # which MCP client the token was minted for, if any
+    client_id: Optional[str] = None
     claims: dict = field(default_factory=dict, compare=False, repr=False)
 
 
 def _clean(value, limit: int = 128) -> Optional[str]:
-    """An identifier that is safe to log, or None. A bad one is dropped, not repaired."""
+    """An identifier that is safe to log, or None."""
     if value is None:
         return None
     value = str(value).strip()
@@ -41,7 +37,7 @@ def _clean(value, limit: int = 128) -> Optional[str]:
 
 
 def _aistudio_role(claims: dict) -> Optional[str]:
-    # roles.aistudio, nested or flat; a list takes its first entry.
+    # Nested or flat; a list takes its first entry.
     roles = claims.get("roles")
     value = roles.get("aistudio") if isinstance(roles, dict) else claims.get("roles.aistudio")
     if isinstance(value, list):
@@ -57,9 +53,13 @@ def identity_from_claims(claims: dict) -> Identity:
 class _FileJWKS:
     """Keys from a local JWKS file. Re-read on an unknown kid, so a rotated key needs no restart."""
 
+    # Throttled: made-up kids must not cost a file read per request.
+    RELOAD_EVERY = 30.0
+
     def __init__(self, path: str):
         self.path = path
         self._keys = self._load()
+        self._loaded_at = time.monotonic()
 
     def _load(self) -> dict:
         with open(self.path, encoding="utf-8") as fh:
@@ -67,7 +67,8 @@ class _FileJWKS:
 
     def get_signing_key_from_jwt(self, token: str):
         kid = jwt.get_unverified_header(token).get("kid")
-        if kid not in self._keys:
+        if kid not in self._keys and time.monotonic() - self._loaded_at >= self.RELOAD_EVERY:
+            self._loaded_at = time.monotonic()
             self._keys = self._load()
         if kid not in self._keys:
             raise jwt.PyJWKClientError(f"no key with kid {kid!r} in {self.path}")
@@ -79,13 +80,14 @@ class JWTVerifier:
 
     def __init__(self, jwks_url: Optional[str], issuer: str, audience: str,
                  leeway_seconds: int = 30, jwks_cache_seconds: int = 300,
-                 jwks_file: Optional[str] = None):
+                 jwks_file: Optional[str] = None, max_lifetime_seconds: int = 86400):
         if not (jwks_url or jwks_file) or not issuer or not audience:
             raise ValueError("JWT verification needs MCP_JWKS_URL (or MCP_JWKS_FILE), "
                              "MCP_JWT_ISSUER and MCP_JWT_AUDIENCE")
         self.issuer = issuer
         self.audience = audience
         self.leeway = leeway_seconds
+        self.max_lifetime = max_lifetime_seconds
         self._jwks = (_FileJWKS(jwks_file) if jwks_file else
                       PyJWKClient(jwks_url, cache_keys=True, lifespan=jwks_cache_seconds))
 
@@ -94,11 +96,14 @@ class JWTVerifier:
             key = self._jwks.get_signing_key_from_jwt(token).key
             claims = jwt.decode(
                 token, key, algorithms=["ES256"], audience=self.audience, issuer=self.issuer,
-                leeway=self.leeway, options={"require": ["exp", "sub", "iss", "aud", "jti"]})
+                leeway=self.leeway, options={"require": ["exp", "iat", "sub", "iss", "aud", "jti"]})
         except jwt.PyJWKClientError as exc:
             raise AuthError(f"signing key unavailable: {exc}") from exc
         except jwt.InvalidTokenError as exc:
             raise AuthError(f"invalid token: {exc}") from exc
+        # No revocation list, so lifetimes stay short.
+        if self.max_lifetime > 0 and claims["exp"] - claims["iat"] > self.max_lifetime:
+            raise AuthError(f"invalid token: lifetime over {self.max_lifetime} s (MCP_JWT_MAX_LIFETIME_SECONDS)")
         if _clean(claims["sub"], 256) != claims["sub"]:
             raise AuthError("invalid token: sub is empty, too long or has a control character")
         return claims
@@ -124,17 +129,17 @@ class JWTAuthMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("path") in self.open_paths:
-            await self.app(scope, receive, send)          # lifespan, health
+            await self.app(scope, receive, send)
             return
         token = bearer_token(scope.get("headers") or [])
         if token is None:
             await _unauthorized(send, "missing bearer token")
             return
         try:
-            # Verify off the event loop (a JWKS URL fetch blocks).
+            # Off the event loop: a JWKS URL fetch blocks.
             claims = await anyio.to_thread.run_sync(self.verifier.verify, token)
         except AuthError as exc:
-            # The reason is for the log; the caller only learns that the token was refused.
+            # The reason goes to the log only.
             log.info("rejected /mcp call: %s", exc)
             await _unauthorized(send, "invalid or expired token")
             return

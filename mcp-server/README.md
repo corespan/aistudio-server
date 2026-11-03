@@ -1,8 +1,8 @@
 # AI Studio MCP tool server
 
-34 tools for an AI Studio deployment: benchmark results, tasks and Jupyter from the REST API,
+35 tools for an AI Studio deployment: benchmark results, tasks and Jupyter from the REST API,
 container logs and inspection, GPU-node probes over SSH, and network and TLS checks. 31 only
-read; `start_workload`, `start_jupyter` and `stop_workload` act, and exist only with
+read; `start_workload`, `start_jupyter`, `stop_jupyter` and `delete_run_results` act, and exist only with
 `MCP_WRITES_ENABLED=true`.
 
 Tools only: no model, no reasoning loop; the MCP client supplies those. It is reached **only

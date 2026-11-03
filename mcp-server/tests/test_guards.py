@@ -21,7 +21,7 @@ def fresh(monkeypatch):
 
 def _tool(name, calls, result="ok"):
     """A stand-in for a real write tool, with its real parameter (the bridge builds a schema from it)."""
-    async def stop_workload(task_id: str) -> str:
+    async def stop_jupyter(task_id: str) -> str:
         calls.append({"task_id": task_id})
         return result
 
@@ -29,7 +29,7 @@ def _tool(name, calls, result="ok"):
         calls.append({"node_ip": node_ip})
         return result
 
-    fn = {"stop_workload": stop_workload, "start_jupyter": start_jupyter}[name]
+    fn = {"stop_jupyter": stop_jupyter, "start_jupyter": start_jupyter}[name]
     return _bridge(types.SimpleNamespace(name=name, coroutine=fn))
 
 
@@ -47,24 +47,24 @@ async def test_writes_off_hides_the_write_tools_and_refuses_a_call_anyway(monkey
     monkeypatch.setattr("app.config.settings.mcp_writes_enabled", False)
     server = build()
     names = {t.name for t in await server.list_tools()}
-    assert not names & {"start_workload", "start_jupyter", "stop_workload"} and len(names) == 31
+    assert not names & {"start_workload", "start_jupyter", "stop_jupyter", "delete_run_results"} and len(names) == 31
     assert WRITES_NOTE.strip() not in server.instructions
     calls = []
-    text = await refusal(_tool("stop_workload", calls)(mcp_ctx=make_ctx(ident(role="admin")), task_id="wl-1"))
+    text = await refusal(_tool("stop_jupyter", calls)(mcp_ctx=make_ctx(ident(role="admin")), task_id="wl-1"))
     assert "MCP_WRITES_ENABLED" in text and not calls
 
 
 async def test_writes_on_lists_them():
     from app.mcp_server import build
-    assert {"start_workload", "start_jupyter", "stop_workload"} <= {t.name for t in await build().list_tools()}
+    assert {"start_workload", "start_jupyter", "stop_jupyter", "delete_run_results"} <= {t.name for t in await build().list_tools()}
 
 
 async def test_the_destructive_write_needs_at_least_operator():
-    # The role gate only; the creator rule inside stop_workload is tested in test_actions.
+    # The role gate only; the creator rule inside stop_jupyter is tested in test_actions.
     calls = []
     assert "higher aistudio role" in await refusal(
-        _tool("stop_workload", calls)(mcp_ctx=make_ctx(ident(role="viewer")), task_id="wl-1"))
-    await _tool("stop_workload", calls)(mcp_ctx=make_ctx(ident(role="operator")), task_id="wl-1")
+        _tool("stop_jupyter", calls)(mcp_ctx=make_ctx(ident(role="viewer")), task_id="wl-1"))
+    await _tool("stop_jupyter", calls)(mcp_ctx=make_ctx(ident(role="operator")), task_id="wl-1")
     assert calls == [{"task_id": "wl-1"}]
 
 
@@ -109,3 +109,24 @@ async def test_dedup_is_per_caller_and_can_be_off(monkeypatch):
 
 async def test_reads_are_never_deduplicated():
     assert guards.write_key(ident(), "list_benchmarks", {}) is None
+
+
+async def test_identical_writes_in_flight_run_once():
+    import asyncio
+
+    calls, release = [], asyncio.Event()
+
+    async def start_jupyter(node_ip: str = "") -> str:
+        calls.append(node_ip)
+        await release.wait()
+        return Done("launching")
+
+    start = _bridge(types.SimpleNamespace(name="start_jupyter", coroutine=start_jupyter))
+    who = ident(role="operator")
+    first = asyncio.ensure_future(start(mcp_ctx=make_ctx(who), node_ip="gpu-a"))
+    retry = asyncio.ensure_future(start(mcp_ctx=make_ctx(who), node_ip="gpu-a"))
+    await asyncio.sleep(0.05)
+    release.set()
+    results = await asyncio.gather(first, retry)
+    assert calls == ["gpu-a"] and results[1].startswith("ALREADY DONE")
+    assert not guards._inflight

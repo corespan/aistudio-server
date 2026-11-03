@@ -54,7 +54,6 @@ def _fmt_exit(code: int | None) -> str:
     return f"{code} ({hint})" if hint else str(code)
 
 
-# blocking SDK helpers
 def _events_raw(since: datetime, until: datetime) -> list[dict]:
     return list(
         _docker().events(
@@ -89,7 +88,6 @@ def _inspect_raw(name: str) -> dict:
 
 def _logs_raw(name: str, since: datetime, tail: int) -> str:
     c = _resolve_container(name)
-    # Apply the since window to running containers only.
     kwargs = {"timestamps": True, "tail": tail}
     if c.status == "running":
         kwargs["since"] = since
@@ -109,9 +107,14 @@ def _extract_one_file(raw: bytes, cap: int = 1_000_000) -> tuple[str, str]:
 
 
 def _container_read_raw(name: str, path: str, cap: int = 1_000_000) -> tuple[str, str]:
-    """Read one file out of a container via GET /containers/{id}/archive."""
+    """("file", text), ("dir", ""), ("link", target) unfollowed, or ("big", size) over `cap`."""
     c = _resolve_container(name)
-    bits, _stat = c.get_archive(path)
+    bits, stat = c.get_archive(path)
+    early = (("link", stat["linkTarget"]) if stat.get("linkTarget") else
+             ("big", str(stat.get("size"))) if (stat.get("size") or 0) > cap else None)
+    if early:
+        bits.close()
+        return early
     buf = io.BytesIO()
     for chunk in bits:
         buf.write(chunk)
@@ -143,7 +146,6 @@ def _ev_time(ev: dict) -> datetime:
     return datetime.fromtimestamp(ev.get("time", 0), tz=timezone.utc)
 
 
-# tools
 @tool
 async def list_containers(include_stopped: bool = True) -> str:
     """List containers with status, health, exit code and ports; `include_stopped` adds exited ones."""
@@ -161,8 +163,7 @@ async def list_containers(include_stopped: bool = True) -> str:
                 line += f" exit={_fmt_exit(state.get('ExitCode'))}"
                 if state.get("FinishedAt", "").startswith("2"):
                     line += f" finished={state['FinishedAt']}"
-            # The name the container was created from. c.image asks the daemon for the image
-            # itself, which 404s (and fails the whole listing) once the tag has moved on.
+            # Not c.image: it 404s once the tag has moved on.
             line += f"  image={c.attrs.get('Config', {}).get('Image') or '<none>'}"
             pub = sorted(f"{b['HostPort']}->{port}"
                          for port, binds in (c.ports or {}).items() for b in binds or [])
@@ -277,8 +278,15 @@ async def container_diff(container: str, path: str, repo_path: str = "", max_lin
     except docker.errors.DockerException as exc:
         return (f"Cannot read {path!r} from {container!r}: {exc} "
                 "(if the socket proxy blocks the archive GET, this tool is unavailable).")
+    except tarfile.TarError as exc:
+        return f"Cannot read {path!r} from {container!r}: the archive was unreadable ({exc})."
     if kind == "dir":
         return f"{path!r} in {container!r} is a directory (or empty) — pass a single file path."
+    if kind == "link":
+        return (f"Refused: {path!r} in {container!r} is a symlink (to {text!r}); pass the "
+                "file it points to, if that is inside the container roots.")
+    if kind == "big":
+        return f"{path!r} in {container!r} is {text} bytes, over the 1 MB this tool compares."
 
     roots = _readable_roots()
     real = _resolve_within_roots(repo_path, roots)
@@ -311,6 +319,7 @@ async def container_diff(container: str, path: str, repo_path: str = "", max_lin
 @tool
 async def timeline(since_minutes: int = 60) -> str:
     """Find the most recent container failure in the last `since_minutes` minutes and show its inspection and logs."""
+    since_minutes = max(1, min(int(since_minutes), 60 * 24 * 7))
     logger.info("tool.docker.timeline", since_minutes=since_minutes)
     now = datetime.now(timezone.utc)
     since = now - timedelta(minutes=since_minutes)
@@ -347,7 +356,6 @@ async def timeline(since_minutes: int = 60) -> str:
         f"   ({len(failures)} failure event(s) total in the last {since_minutes} min)",
     ]
 
-    # Inspect and logs around the failure.
     try:
         a = await asyncio.to_thread(_inspect_raw, name)
         out.append("\n" + _format_inspect(name, a))

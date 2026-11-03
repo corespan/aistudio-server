@@ -37,7 +37,7 @@ at start, and every token minted with the old key stops working.
 
 ## Connect a client
 
-Mint a token for the role the client should have (default lifetime one hour):
+Mint a token for the role the client should have (default lifetime one hour, at most one day):
 
 ```bash
 make -s mcp-token ROLE=operator SUB=alice TTL=86400
@@ -51,8 +51,13 @@ claude mcp add --transport http aistudio http://localhost:8050/mcp/aistudio \
 ```
 
 Any client that speaks streamable HTTP takes the same URL and `Authorization` header. A token is a
-bearer credential for its role until it expires: keep lifetimes short and `gateway/dev-key.pem` on
-this host. Whoever holds that key can mint `admin`.
+bearer credential for its role until it expires, and there is no revocation list: aistudio-mcp
+refuses a token whose `exp - iat` is over `MCP_JWT_MAX_LIFETIME_SECONDS` (one day), and
+`mint.py init` plus a gateway restart invalidates every outstanding token at once. Keep
+`gateway/dev-key.pem` on this host: whoever holds it can mint `admin`.
+
+The gateway serves plain HTTP on port 8050, so a token crosses the network in clear text. Keep
+the port on a trusted network, or put TLS in front of it.
 
 Browser clients on another origin work too: the gateway answers CORS for any origin (no cookies,
 so a page needs the token itself) and exposes `mcp-session-id`. It drops the `Origin` header before
@@ -68,21 +73,26 @@ The role is the JWT's `roles.aistudio` claim. Each tool has a minimum role
 | Role | Tools |
 |---|---|
 | `viewer` | `workload_history`, `throughput_compare`, `check_service_health`, `platform_catalog`, `list_benchmarks`, `get_benchmark`, `summary`, `model_config`, `get_task_status`, `get_task_logs` |
-| `operator` | viewer + `start_workload`, `start_jupyter`, and `stop_workload` for tasks they started (when writes are on) |
-| `admin` | operator + `stop_workload` for any task, and the host probes: containers (`list_containers`, `docker_logs`, `inspect_container`, `container_diff`, `timeline`), files and git (`read_file`, `list_dir`, `grep_logs`, `git_log`, `git_show`), network (`network_check`, `list_listening_ports`, `tcpdump_capture`, `check_tls_cert`, `check_clock_skew`), `frontend_check`, `queue_status`, and GPU-node probes over SSH (`check_ssh_connectivity`, `check_node_docker`, `node_docker_logs`, `node_exec`) |
+| `operator` | viewer + `start_workload`, `start_jupyter`, and `stop_jupyter` / `delete_run_results` for tasks they started (when writes are on) |
+| `admin` | operator + `stop_jupyter` / `delete_run_results` for any task, and the host probes: containers (`list_containers`, `docker_logs`, `inspect_container`, `container_diff`, `timeline`), files and git (`read_file`, `list_dir`, `grep_logs`, `git_log`, `git_show`), network (`network_check`, `list_listening_ports`, `tcpdump_capture`, `check_tls_cert`, `check_clock_skew`), `frontend_check`, `queue_status`, and GPU-node probes over SSH (`check_ssh_connectivity`, `check_node_docker`, `node_docker_logs`, `node_exec`) |
 
 ## Writes
 
-`start_workload`, `start_jupyter` and `stop_workload` exist only with `MCP_WRITES_ENABLED=true` in
-`.env`; otherwise they are not registered at all, so they are not in `tools/list`. They act as soon
-as they are called. `stop_workload` stops and removes a Jupyter notebook (`jup-…`) or permanently
-deletes a benchmark run's results (`wl-…`). An identical write repeated within
-`MCP_WRITE_DEDUP_SECONDS` (default 600) returns the first result instead of running again.
+`start_workload`, `start_jupyter`, `stop_jupyter` and `delete_run_results` exist only with
+`MCP_WRITES_ENABLED=true` in `.env`; otherwise they are not registered at all, so they are not in
+`tools/list`. They act as soon as they are called. `stop_jupyter` stops and removes a Jupyter
+notebook (`jup-…` ids only); `delete_run_results` permanently deletes a benchmark run's recorded
+results (`wl-…` ids only) and cancels nothing. An identical write retried within
+`MCP_WRITE_DEDUP_SECONDS` (default 60) returns the first result instead of running again, and a
+retry that arrives while the first call is still running waits for it. A refusal or an API error
+comes back as a tool error (`isError`), never as a result.
 
 **Who may stop a task.** Only the user who started it, or an admin. `start_workload` and
 `start_jupyter` send the token's `sub` as `created_by`, which aistudio-server stores on the
-workload (`workloads.created_by`) and returns from the task's status route; `stop_workload` reads
-it back from there. A task with no creator on record (started before this column existed, or
+workload (`workloads.created_by`) and returns from the task's status route; `stop_jupyter` and
+`delete_run_results` read it back from there. The same rule covers a notebook's URL: only its
+creator or an admin sees it in `get_task_status`, `workload_history` and `get_task_logs`, since the
+URL is a way onto the GPU node. A task with no creator on record (started before this column existed, or
 through the UI or REST API without one) can be stopped through MCP only by an admin. The rule binds
 MCP callers only: the REST API has no authentication, so a direct caller can write any
 `created_by` and delete anything on port 8002.
@@ -94,7 +104,7 @@ Compose sets the MCP server's environment in `docker-compose.yml`; these come fr
 | Setting | Default | What it decides |
 |---|---|---|
 | `AGW_PORT` | `8050` | The host port of the gateway |
-| `MCP_WRITES_ENABLED` | `false` | Whether the three write tools exist |
+| `MCP_WRITES_ENABLED` | `false` | Whether the four write tools exist |
 | `NODE_ALLOWED_CIDRS` | empty | GPU-node subnets the SSH probes may reach. Empty = node probes off |
 | `SSH_KEY_PATH`, `SSH_DEFAULT_USER` | as for the worker | How the node probes log in |
 | `SSH_HOST_KEY_POLICY` | `tofu` | `tofu` records a node's key on first contact; `strict` refuses unknown nodes |
@@ -115,15 +125,21 @@ docker compose --profile mcp logs -f aistudio-mcp agentgateway
 The gateway guards the MCP door only. The REST API on port 8002 has no authentication of its own,
 so keep that port off untrusted networks whether or not the MCP server runs.
 
+Every result, and every error, has credentials masked before the model sees it (`app/fence.py`:
+private keys, URL passwords, bearer tokens and JWTs, HF/GitHub/AWS/Slack tokens, `*_PASSWORD=` style
+values). That catches what a probe reads by accident; it is not a reason to point one at secrets.
+The prompt-injection warning in the same file is a heuristic, not a control.
+
 ## The read-only boundary
 
-Every tool except the three writes reads. "Read-only" is not a property a binary or a path has on its own,
+Every tool except the four writes reads. "Read-only" is not a property a binary or a path has on its own,
 so four gates enforce it — each closing a hole a coarser check leaves open.
 
-### 1. Node commands — per command, not per binary
+### 1. Node commands — per option, not per binary
 
-A binary allowlist is **not** sufficient: several read-only-looking binaries carry a write
-or exec mode, with no shell metacharacter involved for a metacharacter check to catch.
+A binary allowlist is **not** sufficient, and neither is a list of write flags: several
+read-only-looking binaries carry a write or exec mode, with no shell metacharacter involved for
+a metacharacter check to catch, and the flag nobody listed is the one that gets used.
 
 | Binary | The form that is not read-only |
 |---|---|
@@ -134,13 +150,17 @@ or exec mode, with no shell metacharacter involved for a metacharacter check to 
 | `nvidia-smi` | `-pl` sets power limits, `-r` resets a GPU, `-e` toggles ECC |
 | `dcgmi` | `config --set` changes node state |
 | `sensors` | `-s` applies a config file |
+| `nvcc` | `-ccbin PROG` / `--run` execute programs, `-o` writes files |
+| `lstopo-no-graphics` | a plain argument is an output file it writes |
 | `cat` | unrestricted, reads the node's private keys and cloud credentials |
 
-So `app/tools/ssh_probes.py` works in two tiers: `_SAFE_ANY_ARGS` for binaries with no
-write or exec mode (`lscpu`, `nproc`, `free`, `df`, `lspci`, …), and `_SAFE_PREFIXES` for
-those that have one, allowed only as explicit read-only prefixes (`nvidia-smi topo`,
-`ip -s link show`, `numactl --hardware`, …). A prefix still refuses a write flag appended
-after it (`ss -tn -K`, `nvidia-smi -q -r`): `_WRITE_FLAGS` lists them per binary.
+So `app/tools/ssh_probes.py` allowlists **options**: `_SPECS` maps each command form (binary,
+or binary + subcommand such as `nvidia-smi topo`) to the options it may take, every one of
+which only prints, and to what its other arguments may look like (GPU ids, device names, field
+lists: never a `/`, so never a file name). Anything else is refused, so an option nobody thought
+of fails closed. `ip` takes an object and nothing but a show verb (`ip -s link show eth0`). A
+binary is matched by its bare name, so `/tmp/x/lscpu` never runs, and `nvcc` takes only
+`--version`.
 
 `cat` is confined to `/sys` and `/proc`, with the path normalised first so
 `/sys/../root/.ssh/id_rsa` does not slip through, and with `root`, `cwd`, `fd`, `environ`,
@@ -151,8 +171,8 @@ Shell chaining, globs and escapes are rejected before any of it, and the node's 
 handed `shlex.join(tokens)`, so it runs exactly what the gate checked, quoted. A refusal
 names the forms that binary allows.
 
-**To extend:** add a prefix to the table. Do not grow a CLI grammar, and do not add a
-binary to `_SAFE_ANY_ARGS` without checking its manpage for a write or exec mode.
+**To extend:** add an option to that form's `_SPECS` entry, after checking the manpage that it
+neither writes, executes nor takes a file name. Never add an argument pattern that allows `/`.
 
 ### 2. Container reads
 
@@ -160,7 +180,9 @@ binary to `_SAFE_ANY_ARGS` without checking its manpage for a write or exec mode
 not cover. `CONTAINER_READABLE_ROOTS` bounds where it looks, and `repo_path` is
 **required** and must name the same file. Roots alone are not enough — `/app` is a root
 and so is `/app/.env`; requiring the pair is what stops a diff being used as a general
-file reader.
+file reader. The roots are where each service's code runs from (`/app` and `/repo` in aistudio-mcp,
+`/usr/share/nginx/html` in demo-ui, `/AIStudio/app` and `/AIStudio/alembic` in the api and
+worker, whose `/AIStudio` is the whole checkout, `.env` included), and a symlink is not followed.
 
 ### 3. Host reads
 
@@ -175,10 +197,14 @@ its `.env`.
 
 ### 5. Fetched bodies
 
-`network_check(url=…)` returns the start of the response body, and `frontend_check` loads
-the page. Both refuse link-local and loopback targets (the cloud metadata service lives
-at `169.254.169.254`) and the Docker API host, whose responses carry every container's
-env. Private ranges stay reachable: internal services are what these tools diagnose.
+`network_check` (DNS, TCP, ping and `url=`) and `check_tls_cert` refuse link-local and
+loopback targets (the cloud metadata service lives at `169.254.169.254`) and the Docker API
+host, whose responses carry every container's env. Each resolves the name once, checks every
+address, and connects to the checked address, so a DNS answer that changes in between
+(rebinding) cannot reach a refused one. `frontend_check` applies the same check to every request
+the page makes, redirects and subresources included (its browser resolves names itself, so it
+does not get the pinning). Private ranges stay reachable: internal services are what these
+tools diagnose.
 
 ### 4. Argv splicing
 

@@ -167,7 +167,7 @@ are trademarks of Corespan Systems, Inc.
 ### Everything else
 
 The Apache-2.0 grant covers CoreSpan's own source. It does not extend to the
-software and weights this tool pulls in at run time. Three separate inventories
+software and weights this tool pulls in at run time. Separate inventories
 cover those:
 
 | What | Where | Covers |
@@ -175,6 +175,8 @@ cover those:
 | Python dependencies | [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) | Every package in `requirements.txt`, with the three reciprocal licences called out |
 | Models and datasets | [MODEL-LICENSES.md](./MODEL-LICENSES.md) | Per-model terms, which models are gated, how to obtain access |
 | Workload images | `sbom/` — run `make sbom` | Contents of the distributed containers, including the CUDA EULA question |
+| MCP server dependencies (optional, profile `mcp`) | [mcp-server/THIRD-PARTY-NOTICES.md](./mcp-server/THIRD-PARTY-NOTICES.md) | Every package in `mcp-server/requirements.txt`, with its reciprocal licences called out |
+| MCP profile images | `sbom/` — run `make sbom-mcp` | aistudio-mcp (built on your host), plus the upstream agentgateway and docker-socket-proxy images it runs with |
 | Frontend assets | [demo-ui/vendor/NOTICE](./demo-ui/vendor/NOTICE) | Self-hosted fonts (OFL-1.1) and Chart.js (MIT) |
 
 **If you plan to run gated models** — all the Meta Llama entries in
@@ -192,6 +194,7 @@ python3 scripts/check_model_access.py
 ```bash
 make compliance        # licence files, pinned deps, inventory freshness, no CDN refs
 make sbom              # workload image inventory (needs syft + registry access)
+make sbom-mcp          # MCP profile image inventory (needs only docker)
 make check-models      # gate status and licence for every model referenced
 ```
 
