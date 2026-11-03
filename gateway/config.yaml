@@ -44,6 +44,7 @@ binds:
         jwtAuth:
           mode: strict
           jwtValidationOptions:
+            # Enforced here: exp, sub, iss, aud. iat (listed, ignored here), jti and the 1-day lifetime: aistudio-mcp.
             requiredClaims:
             - exp
             - iat

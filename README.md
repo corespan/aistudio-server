@@ -112,13 +112,17 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | Container | Internal | External | Purpose |
 |-----------|----------|----------|---------|
 | `api` | 8001 | **8002** | FastAPI REST + SSE |
-| `postgres` | 5432 | **5433** | PostgreSQL |
-| `rabbitmq` (AMQP) | 5672 | **5672** | Celery broker |
-| `rabbitmq` (UI) | 15672 | **15672** | RabbitMQ admin |
-| `pgadmin` | 80 | **5050** | DB admin |
+| `postgres` | 5432 | **127.0.0.1:5433** | PostgreSQL |
+| `rabbitmq` (AMQP) | 5672 | **127.0.0.1:5672** | Celery broker |
+| `rabbitmq` (UI) | 15672 | **127.0.0.1:15672** | RabbitMQ admin |
+| `pgadmin` | 80 | **127.0.0.1:5050** | DB admin |
 | `worker` | — | — | No port; connects outbound only |
 | `agentgateway` (profile `mcp`) | 8050 | **8050** | MCP front door: JWT check, role → tool rules |
 | `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
+
+Postgres, RabbitMQ and pgAdmin run with default passwords, so they listen on the host's loopback
+only. From another machine, tunnel in: `ssh -L 5050:localhost:5050 <host>`, then open
+http://localhost:5050.
 
 Architecture, component responsibilities, and the workload lifecycle are covered in [docs/architecture.md](./docs/architecture.md).
 
