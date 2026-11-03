@@ -1,6 +1,6 @@
 .PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark \
         compliance deps-lock third-party sbom check-models check-node-env \
-        mcp-init mcp-up mcp-token mcp-check mcp-test sbom-mcp
+        mcp-init mcp-up mcp-tls mcp-token mcp-check mcp-test sbom-mcp
 
 up:
 	docker compose up --build -d
@@ -76,15 +76,30 @@ shell:
 # As the host user: the service drops every capability, so root in it cannot write gateway/, and
 # the key should belong to whoever runs make anyway.
 MCP_MINT = docker compose --profile mcp run --rm --no-deps --user "$(shell id -u):$(shell id -g)" \
-	-v "$(CURDIR)/gateway:/gateway-rw" aistudio-mcp python /gateway-rw/mint.py
+	-e MCP_TLS_HOSTS="$(MCP_TLS_HOSTS)" -v "$(CURDIR)/gateway:/gateway-rw" aistudio-mcp python /gateway-rw/mint.py
+
+# Names and IPs clients use for the gateway's TLS cert: MCP_TLS_HOSTS from the environment or .env,
+# else this host's name and addresses, detected at run time.
+MCP_TLS_HOSTS ?= $(shell sed -n 's/^MCP_TLS_HOSTS=//p' .env 2>/dev/null)
+ifeq ($(strip $(MCP_TLS_HOSTS)),)
+MCP_TLS_HOSTS := $(shell hostname) $(shell hostname -I 2>/dev/null) localhost 127.0.0.1
+endif
 
 mcp-init:
 	docker compose --profile mcp build aistudio-mcp
 	$(MCP_MINT) init
+	$(MCP_MINT) tls
 
 mcp-up:
 	@test -f gateway/jwks.json || $(MAKE) mcp-init
+	$(MCP_MINT) tls --if-needed
 	docker compose --profile mcp up --build -d
+	docker compose --profile mcp restart agentgateway
+
+mcp-tls:
+	@# Reissue for exactly MCP_TLS_HOSTS with the same CA, so clients keep trusting it.
+	$(MCP_MINT) tls
+	-docker compose --profile mcp restart agentgateway
 
 mcp-token:
 	@$(MCP_MINT) $(or $(ROLE),viewer) $(or $(SUB),local-$(or $(ROLE),viewer)) --ttl $(or $(TTL),3600)

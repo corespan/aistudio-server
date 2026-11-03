@@ -93,7 +93,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: admin
 
   # ── MCP (profile: mcp): docker compose --profile mcp up, after `make mcp-init` ──
-  # MCP clients reach the tools at http://<host>:8050/mcp/aistudio, through agentgateway only.
+  # MCP clients reach the tools at https://<host>:8050/mcp/aistudio, through agentgateway only.
   # See docs/mcp-server.md.
   agentgateway:
     profiles: ["mcp"]
@@ -102,7 +102,7 @@ services:
     ports:
       - "${AGW_PORT:-8050}:8050"
     volumes:
-      - ./gateway:/config:ro               # config.yaml + jwks.json (from make mcp-init)
+      - ./gateway:/config:ro               # config.yaml, jwks.json, tls/ (from make mcp-init)
     depends_on:
       - aistudio-mcp
     restart: unless-stopped

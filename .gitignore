@@ -20,3 +20,5 @@ node_modules/
 # MCP door: per-install signing key and its public half (gateway/mint.py init)
 gateway/dev-key.pem
 gateway/jwks.json
+# Local CA and the gateway's TLS cert (gateway/mint.py tls); clients get tls/ca.pem only.
+gateway/tls/

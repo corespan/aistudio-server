@@ -117,7 +117,7 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | `rabbitmq` (UI) | 15672 | **127.0.0.1:15672** | RabbitMQ admin |
 | `pgadmin` | 80 | **127.0.0.1:5050** | DB admin |
 | `worker` | — | — | No port; connects outbound only |
-| `agentgateway` (profile `mcp`) | 8050 | **8050** | MCP front door: JWT check, role → tool rules |
+| `agentgateway` (profile `mcp`) | 8050 | **8050** (HTTPS) | MCP front door: TLS, JWT check, role → tool rules |
 | `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
 
 Postgres, RabbitMQ and pgAdmin run with default passwords, so they listen on the host's loopback

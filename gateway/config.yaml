@@ -6,7 +6,12 @@ config:
 binds:
 - port: 8050
   listeners:
-  - routes:
+  # HTTPS only; mint.py tls issues the cert from the local CA in tls/ (make mcp-init / mcp-up).
+  - protocol: HTTPS
+    tls:
+      cert: /config/tls/cert.pem
+      key: /config/tls/key.pem
+    routes:
     - matches:
       - path:
           pathPrefix: /mcp/aistudio

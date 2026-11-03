@@ -8,7 +8,7 @@ It runs in Docker Compose under the `mcp` profile and is reached **only through
 [agentgateway](https://agentgateway.dev)**:
 
 ```
-MCP client ──Bearer JWT──▶ agentgateway :8050 /mcp/aistudio ──same JWT──▶ aistudio-mcp :8081 /mcp ──▶ api :8001
+MCP client ──HTTPS + JWT──▶ agentgateway :8050 /mcp/aistudio ──same JWT──▶ aistudio-mcp :8081 /mcp ──▶ api :8001
                            verify JWT (gateway/jwks.json)        verify JWT again                    (internal network)
                            role → tool rules (CEL)               role backstop, write switch,
                                                                  result fence, audit log
@@ -20,14 +20,29 @@ against the same key (`gateway/jwks.json`), so a caller that bypasses the gatewa
 ## Set up
 
 ```bash
-make mcp-init        # build the image, make gateway/dev-key.pem + gateway/jwks.json (gitignored)
-make mcp-up          # docker compose --profile mcp up --build -d  (api, worker, … plus the three MCP services)
-make mcp-check       # per role: initialize, tools/list, two tool calls through the gateway
+make mcp-init        # build the image; signing key + jwks.json; local CA + gateway TLS cert (all gitignored)
+make mcp-up          # renew the TLS cert if needed, then docker compose --profile mcp up --build -d
+make mcp-check       # per role over HTTPS: initialize, tools/list, two tool calls through the gateway
 ```
 
 `make mcp-init` writes a fresh signing key each time it runs. After re-running it, restart the
 gateway (`docker compose --profile mcp restart agentgateway`): agentgateway reads `jwks.json` only
 at start, and every token minted with the old key stops working.
+
+### TLS
+
+The gateway serves HTTPS only. `make mcp-init` creates a small local CA in `gateway/tls/`
+(`ca.pem`, `ca.key`, valid 10 years) and uses it to sign the gateway's certificate (`cert.pem`,
+`key.pem`, valid 1 year) for every name in `MCP_TLS_HOSTS`. Nothing in it is tied to one machine:
+
+- `MCP_TLS_HOSTS` (in `.env` or the environment, space separated) lists the names and IPs clients
+  use, e.g. `MCP_TLS_HOSTS="mcp.example.com 10.0.0.5"`. Left blank, `make` detects this host's name
+  and addresses (`hostname`, `hostname -I`) at run time, plus `localhost`.
+- `make mcp-up` reissues the certificate when it is missing, expires within 30 days, or lacks one of
+  those names (a new IP, say), keeping the names it already had. `make mcp-tls` reissues it for
+  exactly `MCP_TLS_HOSTS`. Both keep the same CA, so clients need no change.
+- Clients trust `gateway/tls/ca.pem` once; copy it to each client machine. Never copy `ca.key`:
+  whoever holds it can issue certificates those clients trust.
 
 | Service | Port | Purpose |
 |---|---|---|
@@ -46,18 +61,19 @@ make -s mcp-token ROLE=operator SUB=alice TTL=86400
 Claude Code:
 
 ```bash
-claude mcp add --transport http aistudio http://localhost:8050/mcp/aistudio \
+export NODE_EXTRA_CA_CERTS=/path/to/aistudio-ca.pem   # gateway/tls/ca.pem, copied from the server
+claude mcp add --transport http aistudio https://<host>:8050/mcp/aistudio \
   --header "Authorization: Bearer $(make -s mcp-token ROLE=viewer TTL=86400)"
 ```
 
-Any client that speaks streamable HTTP takes the same URL and `Authorization` header. A token is a
+`<host>` must be one of the names in the certificate (`MCP_TLS_HOSTS`). Any client that speaks
+streamable HTTP takes the same URL and `Authorization` header, once it trusts the CA: `curl
+--cacert ca.pem` (Windows' curl also needs `--ssl-no-revoke`: a local CA publishes no revocation list), or the machine's trust store (Windows: Trusted Root Certification Authorities;
+Ubuntu: copy to `/usr/local/share/ca-certificates/aistudio-ca.crt`, then `sudo update-ca-certificates`). A token is a
 bearer credential for its role until it expires, and there is no revocation list: aistudio-mcp
 refuses a token whose `exp - iat` is over `MCP_JWT_MAX_LIFETIME_SECONDS` (one day), and
 `mint.py init` plus a gateway restart invalidates every outstanding token at once. Keep
 `gateway/dev-key.pem` on this host: whoever holds it can mint `admin`.
-
-The gateway serves plain HTTP on port 8050, so a token crosses the network in clear text. Keep
-the port on a trusted network, or put TLS in front of it.
 
 Browser clients on another origin work too: the gateway answers CORS for any origin (no cookies,
 so a page needs the token itself) and exposes `mcp-session-id`. It drops the `Origin` header before
@@ -103,7 +119,8 @@ Compose sets the MCP server's environment in `docker-compose.yml`; these come fr
 
 | Setting | Default | What it decides |
 |---|---|---|
-| `AGW_PORT` | `8050` | The host port of the gateway |
+| `AGW_PORT` | `8050` | The host port of the gateway (HTTPS) |
+| `MCP_TLS_HOSTS` | this host's name and IPs | Names and IPs in the gateway's TLS certificate |
 | `MCP_WRITES_ENABLED` | `false` | Whether the four write tools exist |
 | `NODE_ALLOWED_CIDRS` | empty | GPU-node subnets the SSH probes may reach. Empty = node probes off |
 | `SSH_KEY_PATH`, `SSH_DEFAULT_USER` | as for the worker | How the node probes log in |

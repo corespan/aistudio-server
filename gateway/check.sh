@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # End-to-end through agentgateway, per role: initialize, tools/list, then two tools/call.
-#   gateway/check.sh [base-url]     default http://localhost:8050/mcp/aistudio
+#   gateway/check.sh [base-url]     default https://localhost:8050/mcp/aistudio, trusting tls/ca.pem (CA=...)
 # `make mcp-check` runs it with MINT pointed at the aistudio-mcp image (no host Python packages needed).
-URL=${1:-http://localhost:8050/mcp/aistudio}
+URL=${1:-https://localhost:8050/mcp/aistudio}
+CA=${CA:-$(dirname "$0")/tls/ca.pem}
 MINT=${MINT:-python3 "$(dirname "$0")/mint.py"}
-H=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream')
+H=(--cacert "$CA" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream')
 rpc() { curl -s -m20 "${H[@]}" "${AUTH[@]}" ${SID:+-H "Mcp-Session-Id: $SID"} "$URL" -d "$1"; }
 # one-line verdict of a tools/call response (SSE or JSON)
 verdict() { python3 -c "
