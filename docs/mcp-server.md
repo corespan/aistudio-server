@@ -181,8 +181,8 @@ not cover. `CONTAINER_READABLE_ROOTS` bounds where it looks, and `repo_path` is
 **required** and must name the same file. Roots alone are not enough — `/app` is a root
 and so is `/app/.env`; requiring the pair is what stops a diff being used as a general
 file reader. The roots are where each service's code runs from (`/app` and `/repo` in aistudio-mcp,
-`/usr/share/nginx/html` in demo-ui, `/AIStudio/app` and `/AIStudio/alembic` in the api and
-worker, whose `/AIStudio` is the whole checkout, `.env` included), and a symlink is not followed.
+`/AIStudio/app` and `/AIStudio/alembic` in the api and worker, whose `/AIStudio` is the whole
+checkout, `.env` included), and a symlink is not followed.
 
 ### 3. Host reads
 

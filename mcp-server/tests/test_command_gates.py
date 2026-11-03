@@ -181,8 +181,7 @@ async def test_secrets_are_never_diffed(path, repo_path):
 
 @pytest.mark.parametrize("path", [
     "/app/main.py",
-    "/app/demo-ui/index.html",
-    "/usr/share/nginx/html/index.html",
+    "/AIStudio/app/main.py",
     "/repo/app/tools/registry.py",
 ])
 def test_deployed_code_is_still_readable(path):

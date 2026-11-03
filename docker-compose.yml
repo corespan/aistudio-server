@@ -91,13 +91,6 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
 
-  demo-ui:
-    image: nginx:alpine
-    ports:
-      - "3000:80"
-    volumes:
-      - ./demo-ui:/usr/share/nginx/html:ro
-
   # ── MCP (profile: mcp): docker compose --profile mcp up, after `make mcp-init` ──
   # MCP clients reach the tools at http://<host>:8050/mcp/aistudio, through agentgateway only.
   # See docs/mcp-server.md.

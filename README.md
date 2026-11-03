@@ -53,15 +53,15 @@ cp .env.example .env
 make setup
 ```
 
-`make setup` vendors the demo-ui frontend assets, builds containers, runs DB
-migrations, and seeds the workload catalog in one shot.
+`make setup` builds containers, runs DB migrations, and seeds the workload
+catalog in one shot.
 
 ```bash
 curl http://localhost:8002/health
 # → {"status":"healthy","database":"ok"}
 ```
 
-Interactive API docs: **http://localhost:8002/docs**. Demo UI: **http://localhost:3000**.
+Interactive API docs: **http://localhost:8002/docs**. The UI lives in the separate aistudio app repository.
 
 For the full walkthrough — including running without `make`, preparing a GPU
 node, and starting your first benchmark — see
@@ -97,10 +97,9 @@ make mcp-test                 # Run the MCP server's tests
 Licence compliance — see [Licensing](#licensing):
 
 ```bash
-make compliance     # Run every check CI runs: licence files, pins, inventory, CDN refs
+make compliance     # Run every check CI runs: licence files, pins, inventory
 make deps-lock      # Re-pin requirements.txt from requirements.in (after editing .in)
 make third-party    # Regenerate THIRD-PARTY-NOTICES.md from the pinned set
-make vendor-assets  # Re-vendor demo-ui fonts and Chart.js from npm
 make sbom           # Inventory the workload images (needs syft + registry access)
 make check-models   # Report gate status and licence for every model referenced
 make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
@@ -117,7 +116,6 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | `rabbitmq` (AMQP) | 5672 | **5672** | Celery broker |
 | `rabbitmq` (UI) | 15672 | **15672** | RabbitMQ admin |
 | `pgadmin` | 80 | **5050** | DB admin |
-| `demo-ui` | 80 | **3000** | Benchmark dashboard |
 | `worker` | — | — | No port; connects outbound only |
 | `agentgateway` (profile `mcp`) | 8050 | **8050** | MCP front door: JWT check, role → tool rules |
 | `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
@@ -177,7 +175,6 @@ cover those:
 | Workload images | `sbom/` — run `make sbom` | Contents of the distributed containers, including the CUDA EULA question |
 | MCP server dependencies (optional, profile `mcp`) | [mcp-server/THIRD-PARTY-NOTICES.md](./mcp-server/THIRD-PARTY-NOTICES.md) | Every package in `mcp-server/requirements.txt`, with its reciprocal licences called out |
 | MCP profile images | `sbom/` — run `make sbom-mcp` | aistudio-mcp (built on your host), plus the upstream agentgateway and docker-socket-proxy images it runs with |
-| Frontend assets | [demo-ui/vendor/NOTICE](./demo-ui/vendor/NOTICE) | Self-hosted fonts (OFL-1.1) and Chart.js (MIT) |
 
 **If you plan to run gated models** — all the Meta Llama entries in
 `catalog.json` — read [MODEL-LICENSES.md](./MODEL-LICENSES.md) first. You must
@@ -192,7 +189,7 @@ python3 scripts/check_model_access.py
 ### Verifying compliance yourself
 
 ```bash
-make compliance        # licence files, pinned deps, inventory freshness, no CDN refs
+make compliance        # licence files, pinned deps, inventory freshness
 make sbom              # workload image inventory (needs syft + registry access)
 make sbom-mcp          # MCP profile image inventory (needs only docker)
 make check-models      # gate status and licence for every model referenced

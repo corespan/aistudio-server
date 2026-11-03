@@ -1,5 +1,5 @@
 .PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark \
-        compliance deps-lock third-party vendor-assets sbom check-models check-node-env \
+        compliance deps-lock third-party sbom check-models check-node-env \
         mcp-init mcp-up mcp-token mcp-check mcp-test sbom-mcp
 
 up:
@@ -26,7 +26,7 @@ wait-api:
 	done; \
 	echo "ERROR: API did not become ready after 90s." && exit 1
 
-setup: vendor-assets up
+setup: up
 	@echo "Waiting for services to start..."
 	@sleep 5
 	$(MAKE) migrate
@@ -38,7 +38,6 @@ setup: vendor-assets up
 	@echo "  API:         http://localhost:8002"
 	@echo "  Swagger:     http://localhost:8002/docs"
 	@echo "  RabbitMQ:    http://localhost:15672"
-	@echo "  Demo UI:     http://localhost:3000"
 
 seed-real:
 	docker compose exec api python scripts/seed_rtx5090_results.py
@@ -115,21 +114,6 @@ deps-lock:
 third-party:
 	python3 scripts/generate_third_party_notices.py
 
-vendor-assets:
-	@# `make setup` depends on this. The .woff2 and chart.umd.js binaries are
-	@# gitignored, so a fresh clone has the CSS and the licence notices but not
-	@# the files themselves. --if-missing makes repeat setups a no-op.
-	@#
-	@# Non-fatal: demo-ui is a demo. A node without npm, or an air-gapped one,
-	@# should still get a working API and worker.
-	@./scripts/vendor_frontend_assets.sh --if-missing || { \
-		echo ""; \
-		echo "WARNING: could not vendor demo-ui assets — the dashboard will render"; \
-		echo "         with system fonts and no charts. Everything else is unaffected."; \
-		echo "         Fix with: make vendor-assets"; \
-		echo ""; \
-	}
-
 sbom:
 	@# Needs syft and pull access to the workload registry:
 	@#   gcloud auth configure-docker us-docker.pkg.dev
@@ -173,7 +157,7 @@ compliance:
 	@grep -qF "3. Grant of Patent License" LICENSE || (echo "FAIL: LICENSE missing section 3" && exit 1)
 	@echo "  ok — $$(wc -c < LICENSE) bytes, all sections present"
 	@echo "── Required files ──────────────────────────────────────────────────"
-	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do \
+	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md; do \
 		test -f $$f && echo "  ok — $$f" || (echo "  FAIL — missing $$f" && exit 1); \
 	done
 	@echo "── Pinned dependencies ─────────────────────────────────────────────"
@@ -193,10 +177,6 @@ compliance:
 	done
 	@echo "── Third-party inventory ───────────────────────────────────────────"
 	@python3 scripts/generate_third_party_notices.py --check
-	@echo "── Frontend assets ─────────────────────────────────────────────────"
-	@! grep -rqE 'https?://(fonts|cdn)\.' demo-ui/ --include='*.html' --include='*.js' --include='*.css' \
-		|| (echo "  FAIL — demo-ui references a third-party origin" && exit 1)
-	@echo "  ok — no third-party asset references"
 	@echo ""
 	@echo "Compliance checks passed."
 	@echo "Not covered here (require credentials or docker): 'make sbom', 'make sbom-mcp', 'make check-models'."

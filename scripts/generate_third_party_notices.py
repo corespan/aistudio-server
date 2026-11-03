@@ -44,8 +44,7 @@ TARGETS = {
         "- the optional MCP server (`mcp-server/`) — see\n"
         "  `mcp-server/THIRD-PARTY-NOTICES.md`, and `sbom/` for its image and the\n"
         "  agentgateway and docker-socket-proxy images it runs with;\n"
-        "- model weights and datasets — see `MODEL-LICENSES.md`;\n"
-        "- frontend assets in `demo-ui/` — see `demo-ui/vendor/NOTICE`.\n",
+        "- model weights and datasets — see `MODEL-LICENSES.md`.\n",
     ),
     "mcp-server": (
         ROOT / "mcp-server" / "requirements.txt",

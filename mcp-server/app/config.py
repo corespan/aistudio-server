@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     repo_path: str = "/repo"
     readable_roots: str = "/repo,/var/log"
     # Where each service's code lives; not all of /AIStudio, which holds .env too.
-    container_readable_roots: str = "/app,/repo,/usr/share/nginx/html,/AIStudio/app,/AIStudio/alembic"
+    container_readable_roots: str = "/app,/repo,/AIStudio/app,/AIStudio/alembic"
 
     net_probe_timeout: int = 5  # seconds
 

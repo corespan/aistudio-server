@@ -15,8 +15,7 @@ This file covers the **server application** dependency tree only. It does
 - the optional MCP server (`mcp-server/`) — see
   `mcp-server/THIRD-PARTY-NOTICES.md`, and `sbom/` for its image and the
   agentgateway and docker-socket-proxy images it runs with;
-- model weights and datasets — see `MODEL-LICENSES.md`;
-- frontend assets in `demo-ui/` — see `demo-ui/vendor/NOTICE`.
+- model weights and datasets — see `MODEL-LICENSES.md`.
 
 ## Redistribution obligations
 The packages below carry notice or source-availability obligations that

@@ -104,22 +104,6 @@ if (-not (Test-Path ".env")) {
     Write-Host ""
 }
 
-# ── Frontend assets ────────────────────────────────────────────────────────────
-# The demo-ui fonts and Chart.js are gitignored binaries, fetched here rather
-# than loaded from a CDN at page load. Non-fatal: the dashboard degrades to
-# system fonts with no charts, and the API and worker are unaffected.
-if (Get-Command bash -ErrorAction SilentlyContinue) {
-    Write-Host "Vendoring demo-ui assets..."
-    bash ./scripts/vendor_frontend_assets.sh --if-missing
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "WARNING: could not vendor demo-ui assets. Dashboard charts will be unavailable."
-        Write-Host "         Fix later with: make vendor-assets"
-    }
-} else {
-    Write-Host "NOTE: bash not found — skipping demo-ui asset vendoring."
-    Write-Host "      Run 'make vendor-assets' from WSL if you want the dashboard."
-}
-
 # ── Start services ─────────────────────────────────────────────────────────────
 Write-Host "Starting services..."
 docker compose up --build -d
