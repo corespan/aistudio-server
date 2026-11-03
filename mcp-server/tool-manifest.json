@@ -1,0 +1,283 @@
+{
+  "server": "aistudio",
+  "version": 1,
+  "roles": [
+    "viewer",
+    "operator",
+    "admin"
+  ],
+  "tools": [
+    {
+      "name": "workload_history",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "throughput_compare",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "check_service_health",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "platform_catalog",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "list_benchmarks",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "get_benchmark",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "summary",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "model_config",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "get_task_status",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "get_task_logs",
+      "minRole": "viewer",
+      "tier": "read",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true
+    },
+    {
+      "name": "start_workload",
+      "minRole": "operator",
+      "tier": "write",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "start_jupyter",
+      "minRole": "operator",
+      "tier": "write",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "stop_workload",
+      "minRole": "operator",
+      "tier": "write",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true
+    },
+    {
+      "name": "timeline",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "list_containers",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "docker_logs",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "inspect_container",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "container_diff",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "read_file",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "list_dir",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "grep_logs",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "git_log",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "git_show",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "network_check",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "list_listening_ports",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "tcpdump_capture",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "check_tls_cert",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "check_clock_skew",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "frontend_check",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "queue_status",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "check_ssh_connectivity",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "check_node_docker",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "node_docker_logs",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    },
+    {
+      "name": "node_exec",
+      "minRole": "admin",
+      "tier": "host",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": false
+    }
+  ]
+}

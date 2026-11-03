@@ -44,6 +44,12 @@ services:
     volumes:
       - .:/AIStudio
       - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+    healthcheck:
+      # 503 while PostgreSQL is unreachable (app/routers/system.py).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +98,114 @@ services:
     volumes:
       - ./demo-ui:/usr/share/nginx/html:ro
 
+  # ── MCP (profile: mcp): docker compose --profile mcp up, after `make mcp-init` ──
+  # MCP clients reach the tools at http://<host>:8050/mcp/aistudio, through agentgateway only.
+  # See docs/mcp-server.md.
+  agentgateway:
+    profiles: ["mcp"]
+    image: cr.agentgateway.dev/agentgateway:v1.6.0@sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c
+    command: ["-f", "/config/config.yaml"]
+    ports:
+      - "${AGW_PORT:-8050}:8050"
+    volumes:
+      - ./gateway:/config:ro               # config.yaml + jwks.json (from make mcp-init)
+    depends_on:
+      - aistudio-mcp
+    restart: unless-stopped
+
+  aistudio-mcp:
+    profiles: ["mcp"]
+    build: ./mcp-server
+    # No published port: agentgateway reaches it at http://aistudio-mcp:8081/mcp (gateway/config.yaml).
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8081"
+      # agentgateway sends Host: aistudio-mcp with no port, so list both spellings.
+      MCP_ALLOWED_HOSTS: "aistudio-mcp,aistudio-mcp:8081"
+      # The same key agentgateway checks; gateway/mint.py writes it.
+      MCP_JWKS_FILE: "/gateway/jwks.json"
+      # start_workload / start_jupyter / stop_workload exist only when true. stop_workload: the
+      # task's creator (workloads.created_by, set from the JWT) or an admin.
+      MCP_WRITES_ENABLED: "${MCP_WRITES_ENABLED:-false}"
+      AISTUDIO_API_URL: "http://api:8001"
+      RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
+      RABBITMQ_USER: "${RABBITMQ_USERNAME:-aistudio}"
+      RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD:-aistudio}"
+      DOCKER_HOST: "tcp://aistudio-docker-proxy:2375"
+      SSH_KEY_PATH: "/root/.ssh/id_rsa"
+      SSH_DEFAULT_USER: "${SSH_DEFAULT_USER:-ubuntu}"
+      # SSH known_hosts on the aistudio-mcp-data volume.
+      SSH_KNOWN_HOSTS: "/data/ssh/known_hosts"
+      SSH_HOST_KEY_POLICY: "${SSH_HOST_KEY_POLICY:-tofu}"
+      # The GPU node subnets the node probes may reach. Empty = node probes off.
+      NODE_ALLOWED_CIDRS: "${NODE_ALLOWED_CIDRS:-}"
+      REPO_PATH: "/repo"
+      READABLE_ROOTS: "/repo,/var/log"
+    # Tracked source read-only (never .env), the SSH key, and the gateway's public key.
+    volumes:
+      - aistudio-mcp-data:/data
+      - ./gateway:/gateway:ro
+      - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+      - ./.git:/repo/.git:ro
+      - ./app:/repo/app:ro
+      - ./alembic:/repo/alembic:ro
+      - ./alembic.ini:/repo/alembic.ini:ro
+      - ./docs:/repo/docs:ro
+      - ./scripts:/repo/scripts:ro
+      - ./tests:/repo/tests:ro
+      - ./catalog.json:/repo/catalog.json:ro
+      - ./Dockerfile:/repo/Dockerfile:ro
+      - ./docker-compose.yml:/repo/docker-compose.yml:ro
+      - ./requirements.txt:/repo/requirements.txt:ro
+      - ./README.md:/repo/README.md:ro
+      - /var/log:/var/log:ro
+    # Least privilege: only what the probes need. NET_RAW is for tcpdump; DAC_READ_SEARCH lets root
+    # read the mounted SSH key and /var/log, which belong to the host user.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - DAC_READ_SEARCH
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - default
+      - mcp-docker
+    depends_on:
+      - api
+      - aistudio-docker-proxy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Read-only Docker API for the MCP's container tools, on a network only aistudio-mcp joins.
+  aistudio-docker-proxy:
+    profiles: ["mcp"]
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-docker
+    restart: unless-stopped
+
+networks:
+  mcp-docker:
+    internal: true
+
 volumes:
   pgdata:
   jupyter-locations:
+  aistudio-mcp-data:

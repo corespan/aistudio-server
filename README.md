@@ -24,6 +24,7 @@ require you to request access from their publisher — see
 | [docs/workloads.md](./docs/workloads.md) | LLM inference & Jupyter workload internals, AI-assistant setup, adding new workload types |
 | [docs/models.md](./docs/models.md) | `catalog.json`, adding models, gated vs. ungated, licence obligations |
 | [docs/development.md](./docs/development.md) | Local dev setup, running tests, linting, contribution workflow |
+| [docs/mcp-server.md](./docs/mcp-server.md) | The MCP tool server behind agentgateway: setup, roles, connecting Claude Code and other MCP clients |
 
 ---
 
@@ -83,6 +84,16 @@ make shell     # Python shell inside the API container
 make spec      # Export OpenAPI spec to openapi.json
 ```
 
+MCP server, behind agentgateway — see [docs/mcp-server.md](./docs/mcp-server.md):
+
+```bash
+make mcp-init                 # Make the gateway's signing key (once)
+make mcp-up                   # Start everything plus agentgateway + the MCP server
+make mcp-token ROLE=operator  # Print a JWT for an MCP client (viewer | operator | admin)
+make mcp-check                # Smoke-test every role through the gateway
+make mcp-test                 # Run the MCP server's tests
+```
+
 Licence compliance — see [Licensing](#licensing):
 
 ```bash
@@ -108,6 +119,8 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | `pgadmin` | 80 | **5050** | DB admin |
 | `demo-ui` | 80 | **3000** | Benchmark dashboard |
 | `worker` | — | — | No port; connects outbound only |
+| `agentgateway` (profile `mcp`) | 8050 | **8050** | MCP front door: JWT check, role → tool rules |
+| `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
 
 Architecture, component responsibilities, and the workload lifecycle are covered in [docs/architecture.md](./docs/architecture.md).
 

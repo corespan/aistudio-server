@@ -1,5 +1,6 @@
 .PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark \
-        compliance deps-lock third-party vendor-assets sbom check-models check-node-env
+        compliance deps-lock third-party vendor-assets sbom check-models check-node-env \
+        mcp-init mcp-up mcp-token mcp-check mcp-test sbom-mcp
 
 up:
 	docker compose up --build -d
@@ -71,6 +72,30 @@ spec:
 shell:
 	docker compose exec api python
 
+# ── MCP server (behind agentgateway) — see docs/mcp-server.md ─────────────────
+# mint.py runs in the aistudio-mcp image, so the host needs no Python packages.
+# As the host user: the service drops every capability, so root in it cannot write gateway/, and
+# the key should belong to whoever runs make anyway.
+MCP_MINT = docker compose --profile mcp run --rm --no-deps --user "$(shell id -u):$(shell id -g)" \
+	-v "$(CURDIR)/gateway:/gateway-rw" aistudio-mcp python /gateway-rw/mint.py
+
+mcp-init:
+	docker compose --profile mcp build aistudio-mcp
+	$(MCP_MINT) init
+
+mcp-up:
+	@test -f gateway/jwks.json || $(MAKE) mcp-init
+	docker compose --profile mcp up --build -d
+
+mcp-token:
+	@$(MCP_MINT) $(or $(ROLE),viewer) $(or $(SUB),local-$(or $(ROLE),viewer)) --ttl $(or $(TTL),3600)
+
+mcp-check:
+	MINT='$(MCP_MINT)' bash gateway/check.sh
+
+mcp-test:
+	cd mcp-server && python -m pytest -q
+
 # ── Licence compliance ────────────────────────────────────────────────────────
 # These targets mirror .github/workflows/compliance.yml. Run `make compliance`
 # before cutting a release — see RELEASE.md.
@@ -82,6 +107,9 @@ deps-lock:
 	@# make benchmark numbers non-reproducible.
 	uv pip compile requirements.in --python-version 3.11 -o requirements.txt
 	uv pip compile requirements.in --python-version 3.11 --generate-hashes -o requirements.lock.txt
+	@# --python-platform linux: the image is Linux; compiled on Windows, docker would pin pywin32.
+	cd mcp-server && uv pip compile requirements.in --python-version 3.11 --python-platform linux -o requirements.txt
+	cd mcp-server && uv pip compile requirements.in --python-version 3.11 --python-platform linux --generate-hashes -o requirements.lock.txt
 	@echo "Now run 'make third-party' — the inventory must match the new pins."
 
 third-party:
@@ -106,6 +134,10 @@ sbom:
 	@# Needs syft and pull access to the workload registry:
 	@#   gcloud auth configure-docker us-docker.pkg.dev
 	./scripts/generate_sbom.sh
+
+sbom-mcp:
+	@# Needs only docker: builds aistudio-mcp, pulls agentgateway + docker-socket-proxy.
+	./scripts/generate_sbom.sh mcp
 
 check-models:
 	python3 scripts/check_model_access.py
@@ -141,7 +173,7 @@ compliance:
 	@grep -qF "3. Grant of Patent License" LICENSE || (echo "FAIL: LICENSE missing section 3" && exit 1)
 	@echo "  ok — $$(wc -c < LICENSE) bytes, all sections present"
 	@echo "── Required files ──────────────────────────────────────────────────"
-	@for f in NOTICE THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do \
+	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do \
 		test -f $$f && echo "  ok — $$f" || (echo "  FAIL — missing $$f" && exit 1); \
 	done
 	@echo "── Pinned dependencies ─────────────────────────────────────────────"
@@ -151,12 +183,14 @@ compliance:
 	@# extras like `uvicorn[standard]>=0.30.0` are exactly what requirements.in
 	@# contains and are the most likely thing to be pasted in here by mistake,
 	@# and bracket-inside-bracket-expression is easy to get subtly wrong.
-	@! grep -qE '^[^#[:space:]].*(>=|<=|~=|!=|<|>)' requirements.txt \
-		|| (echo "  FAIL — unpinned requirement; run 'make deps-lock'" && \
-		    grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>)' requirements.txt && exit 1)
-	@grep -qE '^[^#[:space:]].*==' requirements.txt \
-		|| (echo "  FAIL — requirements.txt has no pinned entries at all" && exit 1)
-	@echo "  ok — all requirements pinned ($$(grep -cE '^[^#[:space:]]+==' requirements.txt) packages)"
+	@for r in requirements.txt mcp-server/requirements.txt; do \
+		! grep -qE '^[^#[:space:]].*(>=|<=|~=|!=|<|>)' $$r \
+			|| (echo "  FAIL — unpinned requirement in $$r; run 'make deps-lock'" && \
+			    grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>)' $$r && exit 1) || exit 1; \
+		grep -qE '^[^#[:space:]].*==' $$r \
+			|| (echo "  FAIL — $$r has no pinned entries at all" && exit 1) || exit 1; \
+		echo "  ok — $$r pinned ($$(grep -cE '^[^#[:space:]]+==' $$r) packages)"; \
+	done
 	@echo "── Third-party inventory ───────────────────────────────────────────"
 	@python3 scripts/generate_third_party_notices.py --check
 	@echo "── Frontend assets ─────────────────────────────────────────────────"
@@ -165,7 +199,7 @@ compliance:
 	@echo "  ok — no third-party asset references"
 	@echo ""
 	@echo "Compliance checks passed."
-	@echo "Not covered here (require credentials): 'make sbom', 'make check-models'."
+	@echo "Not covered here (require credentials or docker): 'make sbom', 'make sbom-mcp', 'make check-models'."
 
 benchmark:
 	@echo "Starting a benchmark (edit the curl below with your model and node IP):"

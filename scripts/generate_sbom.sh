@@ -34,10 +34,17 @@
 # Usage:
 #   ./scripts/generate_sbom.sh                 # all images from catalog.json
 #   ./scripts/generate_sbom.sh llminference    # one image
+#   ./scripts/generate_sbom.sh mcp             # the images the compose "mcp" profile runs
 #
-# Requires: syft (https://github.com/anchore/syft), docker, and registry
-# credentials with pull access:
+# Requires: docker, syft (https://github.com/anchore/syft) or, without it, the
+# pinned anchore/syft image, and for the workload images registry credentials
+# with pull access:
 #   gcloud auth configure-docker us-docker.pkg.dev
+#
+# The mcp mode builds aistudio-mcp from mcp-server/ and pulls agentgateway and
+# docker-socket-proxy from their upstream registries; it needs no credentials.
+# CoreSpan does not convey those two, but they run with the product, so their
+# inventories sit beside the rest.
 #
 # Output: sbom/<image>-<tag>.spdx.json  (full machine-readable inventory)
 #         sbom/<image>-<tag>.txt        (human-readable licence summary)
@@ -50,27 +57,61 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/sbom"
 CATALOG="$ROOT/catalog.json"
 
-if ! command -v syft >/dev/null 2>&1; then
-  cat >&2 <<'EOF'
-ERROR: syft is not installed.
-
-  curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-    | sh -s -- -b /usr/local/bin
-
-Or use the container form, which needs no install:
-  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-    anchore/syft:latest <image> -o spdx-json
-EOF
-  exit 1
-fi
-
 mkdir -p "$OUT"
+
+# scan <image> <basename>: SPDX + table into $OUT, with syft if installed, else
+# with the pinned syft image (which needs only docker).
+SYFT_IMAGE="anchore/syft:v1.33.0"
+if command -v syft >/dev/null 2>&1; then
+  scan() {
+    syft "$1" -o "spdx-json=$OUT/$2.spdx.json" -o "table=$OUT/$2.txt" --quiet
+  }
+else
+  echo "syft not installed — using $SYFT_IMAGE" >&2
+  out_mount="$OUT"
+  # Git Bash on Windows: hand docker a Windows path, and stop MSYS rewriting /out.
+  command -v cygpath >/dev/null 2>&1 && out_mount="$(cygpath -w "$OUT")"
+  scan() {
+    MSYS_NO_PATHCONV=1 docker run --rm \
+      -v /var/run/docker.sock:/var/run/docker.sock -v "$out_mount:/out" \
+      "$SYFT_IMAGE" "$1" -o "spdx-json=/out/$2.spdx.json" -o "table=/out/$2.txt" --quiet
+  }
+fi
 
 # Licence identifiers that must not pass unreviewed. Strong copyleft in a
 # distributed image is a genuine question; proprietary EULAs are a genuine
 # question. Everything else is noise.
 FLAG_PATTERN='GPL-2|GPL-3|AGPL|SSPL|BUSL|CC-BY-NC|Commons-Clause|NVIDIA|Proprietary|UNKNOWN|NOASSERTION'
 
+if [ "${1:-}" = "mcp" ]; then
+  # Read the profile's images from docker-compose.yml so this can never describe a
+  # different set than `docker compose --profile mcp up` runs. aistudio-mcp is
+  # built here; its tag is a hash of what decides its contents.
+  docker build -q -t aistudio-mcp:local "$ROOT/mcp-server" >/dev/null
+  mcp_tag="$(cat "$ROOT/mcp-server/Dockerfile" "$ROOT/mcp-server/requirements.txt" | sha256sum | cut -c1-12)"
+  docker tag aistudio-mcp:local "aistudio-mcp:$mcp_tag"
+  mapfile -t IMAGES < <(python3 - "$ROOT/docker-compose.yml" "$mcp_tag" <<'PY'
+import re, sys
+
+compose, mcp_tag = open(sys.argv[1], encoding="utf-8").read(), sys.argv[2]
+rows = [f"aistudio-mcp\taistudio-mcp\t{mcp_tag}"]
+# One block per top-level service; keep those in the mcp profile that pull an image.
+for block in re.split(r"\n(?=  [a-z][\w-]*:\s*\n)", compose):
+    if not re.search(r'profiles:\s*\[\s*"mcp"\s*\]', block) or "build:" in block:
+        continue
+    m = re.search(r"^\s+image:\s*(\S+)", block, re.M)
+    if not m:
+        continue
+    ref, _, pinned = m.group(1).partition("@")   # a pinned digest is scanned as pinned
+    repo, tag = ref.rsplit(":", 1)
+    rows.append(f"{repo.rsplit('/', 1)[-1]}\t{repo}\t{tag}\t{pinned}")
+if len(rows) < 3:
+    sys.exit("ERROR: expected agentgateway and docker-socket-proxy in the mcp profile")
+print("\n".join(rows))
+PY
+  ) || exit 1
+  shift
+else
 # Read image list and tags from catalog.json so this can never describe a
 # different set of images than the server actually launches.
 mapfile -t IMAGES < <(python3 - "$CATALOG" <<'PY'
@@ -110,6 +151,7 @@ if missing:
 print("\n".join(rows))
 PY
 ) || exit 1
+fi
 
 if [ "$#" -gt 0 ]; then
   FILTER="$1"
@@ -119,7 +161,7 @@ fi
 
 SCANNED=0
 for row in "${IMAGES[@]}"; do
-  IFS=$'\t' read -r short ref tag <<< "$row"
+  IFS=$'\t' read -r short ref tag pinned <<< "${row%$'\r'}"   # CRLF from python on Windows
   [ -n "$FILTER" ] && [ "$short" != "$FILTER" ] && continue
 
   image="${ref}:${tag}"
@@ -127,7 +169,16 @@ for row in "${IMAGES[@]}"; do
 
   # Resolve the digest. An SBOM against a mutable tag describes whatever
   # happened to be there at scan time, which is not evidence of anything.
-  if digest=$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}' 2>/dev/null); then
+  if [ "$short" = "aistudio-mcp" ]; then
+    # Built here, never pushed: its identity is the local image id.
+    digest=$(docker image inspect "$image" --format '{{.Id}}')
+    echo "    image id: $digest"
+    target="$image"
+  elif [ -n "${pinned:-}" ]; then
+    digest="$pinned"
+    echo "    digest (pinned in docker-compose.yml): $digest"
+    target="${ref}@${digest}"
+  elif digest=$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}' 2>/dev/null); then
     echo "    digest: $digest"
     target="${ref}@${digest}"
   else
@@ -136,9 +187,7 @@ for row in "${IMAGES[@]}"; do
     target="$image"
   fi
 
-  syft "$target" -o "spdx-json=$OUT/${short}-${tag}.spdx.json" \
-                 -o "table=$OUT/${short}-${tag}.txt" \
-                 --quiet
+  scan "$target" "${short}-${tag}"
 
   echo "$digest" > "$OUT/${short}-${tag}.digest"
   SCANNED=$((SCANNED + 1))
@@ -163,11 +212,15 @@ lines = [
     "# Workload Image SBOM Report\n\n",
     f"Generated: {date.today().isoformat()}\n\n",
     "Machine-readable SPDX documents sit alongside this file. Regenerate with\n"
-    "`make sbom`.\n\n",
+    "`make sbom` (workload images) and `make sbom-mcp` (MCP profile images).\n\n",
     "## Why this report exists\n\n",
-    "CoreSpan distributes these images to node operators. Third-party notice and\n"
+    "CoreSpan distributes the workload images to node operators. Third-party notice and\n"
     "redistribution obligations attach at the point of distribution, so they\n"
     "attach to us. This is the inventory of what we are handing over.\n\n",
+    "The `aistudio-mcp`, `agentgateway` and `docker-socket-proxy` sections are the\n"
+    "images the optional MCP profile runs. aistudio-mcp is built from `mcp-server/`\n"
+    "on the operator's host; the other two are pulled from their upstream\n"
+    "registries unmodified. They are listed so the whole running set is inventoried.\n\n",
 ]
 
 any_flagged = False

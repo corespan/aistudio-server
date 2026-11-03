@@ -47,7 +47,7 @@ jobs:
       - name: Required compliance files exist
         run: |
           missing=0
-          for f in NOTICE THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do
+          for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do
             [ -f "$f" ] || { echo "::error::missing $f"; missing=1; }
           done
           exit $missing
@@ -143,7 +143,23 @@ jobs:
           fi
           echo "requirements.txt satisfies requirements.in."
 
-      - name: THIRD-PARTY-NOTICES.md matches the pinned set
+      - name: mcp-server requirements are pinned and a valid resolution
+        working-directory: mcp-server
+        run: |
+          # The same two checks as above, for the MCP server's own dependency set.
+          if grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>|\*)' requirements.txt; then
+            echo "::error file=mcp-server/requirements.txt::unpinned requirement found. Edit requirements.in and run 'make deps-lock'."
+            exit 1
+          fi
+          cp requirements.txt /tmp/mcp-recompiled.txt
+          uv pip compile requirements.in --python-version 3.11 --python-platform linux -o /tmp/mcp-recompiled.txt --quiet
+          if ! diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/mcp-recompiled.txt); then
+            echo "::error file=mcp-server/requirements.txt::not a valid resolution of requirements.in. Run 'make deps-lock' and commit."
+            exit 1
+          fi
+          echo "mcp-server/requirements.txt satisfies requirements.in."
+
+      - name: THIRD-PARTY-NOTICES.md files match the pinned sets
         run: python3 scripts/generate_third_party_notices.py --check
 
   frontend-assets:

@@ -79,3 +79,27 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v
+
+  mcp-test:
+    name: MCP server pytest
+    runs-on: ubuntu-latest
+    # Offline: no database, network or Docker (a throwaway key signs the test JWTs).
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Gateway rules match the tool manifest
+        run: python -m app.manifest --check ../gateway/config.yaml
+
+      - name: Run tests
+        run: pytest -q
+

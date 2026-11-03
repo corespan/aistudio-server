@@ -1,0 +1,8 @@
+NAME                     VERSION       TYPE  
+ca-certificates-bundle   20260909-r2   apk   
+glibc-2.44               2.44-r7       apk   
+glibc-2.44-locale-posix  2.44-r7       apk   
+ld-linux-2.44            2.44-r7       apk   
+libgcc                   16.2.0-r1     apk   
+libstdc++                16.2.0-r1     apk   
+wolfi-baselayout         20230201-r30  apk   

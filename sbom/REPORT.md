@@ -1,15 +1,318 @@
 # Workload Image SBOM Report
 
-Generated: 2026-08-05
+Generated: 2026-10-28
 
 Machine-readable SPDX documents sit alongside this file. Regenerate with
-`make sbom`.
+`make sbom` (workload images) and `make sbom-mcp` (MCP profile images).
 
 ## Why this report exists
 
-CoreSpan distributes these images to node operators. Third-party notice and
+CoreSpan distributes the workload images to node operators. Third-party notice and
 redistribution obligations attach at the point of distribution, so they
 attach to us. This is the inventory of what we are handing over.
+
+The `aistudio-mcp`, `agentgateway` and `docker-socket-proxy` sections are the
+images the optional MCP profile runs. aistudio-mcp is built from `mcp-server/`
+on the operator's host; the other two are pulled from their upstream
+registries unmodified. They are listed so the whole running set is inventoried.
+
+## agentgateway-v1.6.0
+
+- Digest: `sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c`
+- Packages: 8
+- Distinct licence strings: 1
+
+### Requires review (8)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `ca-certificates-bundle` | 20260909-r2 | NOASSERTION |
+| `cr.agentgateway.dev/agentgateway` | sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c | NOASSERTION |
+| `glibc-2.44` | 2.44-r7 | NOASSERTION |
+| `glibc-2.44-locale-posix` | 2.44-r7 | NOASSERTION |
+| `ld-linux-2.44` | 2.44-r7 | NOASSERTION |
+| `libgcc` | 16.2.0-r1 | NOASSERTION |
+| `libstdc++` | 16.2.0-r1 | NOASSERTION |
+| `wolfi-baselayout` | 20230201-r30 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 8 |
+
+</details>
+
+## aistudio-mcp-895b6cb6ca0c
+
+- Digest: `sha256:0acbe32c25fa855e8cf2990e9769eac9df3706aa4987d559b52a2d63469356f9`
+- Packages: 232
+- Distinct licence strings: 14
+
+### Requires review (205)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `Simple Launcher` | 1.1.0.14 | NOASSERTION |
+| `adduser` | 3.152 | NOASSERTION |
+| `aistudio-mcp` | 895b6cb6ca0c | NOASSERTION |
+| `annotated-types` | 0.8.0 | NOASSERTION |
+| `anyio` | 4.15.1 | NOASSERTION |
+| `apt` | 3.0.3 | NOASSERTION |
+| `asyncssh` | 2.24.0 | NOASSERTION |
+| `attrs` | 26.1.0 | NOASSERTION |
+| `autocommand` | 2.2.2 | NOASSERTION |
+| `base-files` | 13.8+deb13u7 | NOASSERTION |
+| `base-passwd` | 3.6.7 | NOASSERTION |
+| `bash` | 5.2.37-2+b10 | NOASSERTION |
+| `bcrypt` | 5.0.0 | NOASSERTION |
+| `bsdutils` | 1:2.41.5-0+deb13u1 | NOASSERTION |
+| `ca-certificates` | 20250419 | NOASSERTION |
+| `certifi` | 2026.10.23 | NOASSERTION |
+| `cffi` | 2.1.1 | NOASSERTION |
+| `charset-normalizer` | 3.5.2 | NOASSERTION |
+| `cli` | UNKNOWN | NOASSERTION |
+| `cli-32` | UNKNOWN | NOASSERTION |
+| `cli-64` | UNKNOWN | NOASSERTION |
+| `cli-arm64` | UNKNOWN | NOASSERTION |
+| `click` | 8.5.0 | NOASSERTION |
+| `coreutils` | 9.7-3 | NOASSERTION |
+| `cryptography` | 50.0.1 | NOASSERTION |
+| `dash` | 0.5.12-12 | NOASSERTION |
+| `debconf` | 1.5.91 | NOASSERTION |
+| `debianutils` | 5.23.2 | NOASSERTION |
+| `diffutils` | 1:3.10-4 | NOASSERTION |
+| `distro` | 1.9.0 | NOASSERTION |
+| `docker` | 7.2.0 | NOASSERTION |
+| `dpkg` | 1.22.22 | NOASSERTION |
+| `findutils` | 4.10.0-3 | NOASSERTION |
+| `git` | 1:2.47.3-0+deb13u1 | NOASSERTION |
+| `git-man` | 1:2.47.3-0+deb13u1 | NOASSERTION |
+| `greenlet` | 3.5.6 | NOASSERTION |
+| `grep` | 3.11-4 | NOASSERTION |
+| `gui` | UNKNOWN | NOASSERTION |
+| `gui-32` | UNKNOWN | NOASSERTION |
+| `gui-64` | UNKNOWN | NOASSERTION |
+| `gui-arm64` | UNKNOWN | NOASSERTION |
+| `gzip` | 1.13-1+deb13u1 | NOASSERTION |
+| `h11` | 0.16.0 | NOASSERTION |
+| `hostname` | 3.25 | NOASSERTION |
+| `httpcore` | 1.0.9 | NOASSERTION |
+| `httpcore2` | 2.16.0 | NOASSERTION |
+| `httpx` | 0.28.1 | NOASSERTION |
+| `httpx-sse` | 0.4.3 | NOASSERTION |
+| `httpx2` | 2.16.0 | NOASSERTION |
+| `idna` | 3.20 | NOASSERTION |
+| `init-system-helpers` | 1.69~deb13u1 | NOASSERTION |
+| `invoke` | 3.0.3 | NOASSERTION |
+| `iproute2` | 6.15.0-1 | NOASSERTION |
+| `iputils-ping` | 3:20240905-3 | NOASSERTION |
+| `jsonpatch` | 1.38 | NOASSERTION |
+| `jsonpointer` | 3.6 | NOASSERTION |
+| `jsonschema` | 4.26.0 | NOASSERTION |
+| `jsonschema-specifications` | 2025.9.1 | NOASSERTION |
+| `langchain-core` | 1.6.2 | NOASSERTION |
+| `langchain-protocol` | 0.0.20 | NOASSERTION |
+| `langsmith` | 0.14.14 | NOASSERTION |
+| `libacl1` | 2.3.2-2+b1 | NOASSERTION |
+| `libapt-pkg7.0` | 3.0.3 | NOASSERTION |
+| `libattr1` | 1:2.5.2-3 | NOASSERTION |
+| `libaudit-common` | 1:4.0.2-2+deb13u1 | NOASSERTION |
+| `libaudit1` | 1:4.0.2-2+deb13u1 | NOASSERTION |
+| `libblkid1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libbpf1` | 1:1.5.0-3 | NOASSERTION |
+| `libbrotli1` | 1.1.0-2+deb13u1 | NOASSERTION |
+| `libbsd0` | 0.12.2-2 | NOASSERTION |
+| `libbz2-1.0` | 1.0.8-6 | NOASSERTION |
+| `libc-bin` | 2.41-12+deb13u4 | NOASSERTION |
+| `libc6` | 2.41-12+deb13u4 | NOASSERTION |
+| `libcap-ng0` | 0.8.5-4+b1 | NOASSERTION |
+| `libcap2` | 1:2.75-10+deb13u1+b3 | NOASSERTION |
+| `libcap2-bin` | 1:2.75-10+deb13u1+b3 | NOASSERTION |
+| `libcbor0.10` | 0.10.2-2 | NOASSERTION |
+| `libcom-err2` | 1.47.2-3+b12 | NOASSERTION |
+| `libcurl3t64-gnutls` | 8.14.1-2+deb13u7 | NOASSERTION |
+| `libdb5.3t64` | 5.3.28+dfsg2-9 | NOASSERTION |
+| `libdbus-1-3` | 1.16.2-2 | NOASSERTION |
+| `libdebconfclient0` | 0.280 | NOASSERTION |
+| `libedit2` | 3.1-20250104-1 | NOASSERTION |
+| `libelf1t64` | 0.192-4 | NOASSERTION |
+| `liberror-perl` | 0.17030-1 | NOASSERTION |
+| `libexpat1` | 2.9.0-1~deb13u1 | NOASSERTION |
+| `libffi8` | 3.4.8-2 | NOASSERTION |
+| `libfido2-1` | 1.15.0-1+b1 | NOASSERTION |
+| `libgdbm-compat4t64` | 1.24-2 | NOASSERTION |
+| `libgdbm6t64` | 1.24-2 | NOASSERTION |
+| `libgmp10` | 2:6.3.0+dfsg-3 | NOASSERTION |
+| `libhogweed6t64` | 3.10.1-1 | NOASSERTION |
+| `libidn2-0` | 2.3.8-2 | NOASSERTION |
+| `libkeyutils1` | 1.6.3-6 | NOASSERTION |
+| `liblastlog2-2` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libldap2` | 2.6.10+dfsg-1 | NOASSERTION |
+| `liblz4-1` | 1.10.0-4 | NOASSERTION |
+| `liblzma5` | 5.8.1-1+deb13u1 | NOASSERTION |
+| `libmd0` | 1.1.0-2+b1 | NOASSERTION |
+| `libmnl0` | 1.0.5-3 | NOASSERTION |
+| `libmount1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libncursesw6` | 6.5+20250216-2 | NOASSERTION |
+| `libnettle8t64` | 3.10.1-1 | NOASSERTION |
+| `libnghttp2-14` | 1.64.0-1.1+deb13u1 | NOASSERTION |
+| `libnghttp3-9` | 1.8.0-1 | NOASSERTION |
+| `libngtcp2-16` | 1.11.0-1+deb13u1 | NOASSERTION |
+| `libngtcp2-crypto-gnutls8` | 1.11.0-1+deb13u1 | NOASSERTION |
+| `libp11-kit0` | 0.25.5-3 | NOASSERTION |
+| `libpam-modules` | 1.7.0-5 | NOASSERTION |
+| `libpam-modules-bin` | 1.7.0-5 | NOASSERTION |
+| `libpam-runtime` | 1.7.0-5 | NOASSERTION |
+| `libpam0g` | 1.7.0-5 | NOASSERTION |
+| `libpcre2-8-0` | 10.46-1~deb13u3 | NOASSERTION |
+| `libperl5.40` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `libpsl5t64` | 0.21.2-1.1+b1 | NOASSERTION |
+| `libreadline8t64` | 8.2-6 | NOASSERTION |
+| `libsasl2-2` | 2.1.28+dfsg1-9 | NOASSERTION |
+| `libsasl2-modules-db` | 2.1.28+dfsg1-9 | NOASSERTION |
+| `libseccomp2` | 2.6.0-2 | NOASSERTION |
+| `libselinux1` | 3.8.1-1 | NOASSERTION |
+| `libsemanage-common` | 3.8.1-1 | NOASSERTION |
+| `libsemanage2` | 3.8.1-1 | NOASSERTION |
+| `libsepol2` | 3.8.1-1 | NOASSERTION |
+| `libsmartcols1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libsqlite3-0` | 3.46.1-7+deb13u2 | NOASSERTION |
+| `libssh2-1t64` | 1.11.1-1+deb13u2 | NOASSERTION |
+| `libssl3t64` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `libsystemd0` | 257.13-1~deb13u1 | NOASSERTION |
+| `libtinfo6` | 6.5+20250216-2 | NOASSERTION |
+| `libtirpc-common` | 1.3.6+ds-1 | NOASSERTION |
+| `libtirpc3t64` | 1.3.6+ds-1 | NOASSERTION |
+| `libudev1` | 257.13-1~deb13u1 | NOASSERTION |
+| `libunistring5` | 1.3-2 | NOASSERTION |
+| `libuuid1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libxtables12` | 1.8.11-2 | NOASSERTION |
+| `libxxhash0` | 0.8.3-2 | NOASSERTION |
+| `libzstd1` | 1.5.7+dfsg-1 | NOASSERTION |
+| `login` | 1:4.16.0-2+really2.41.5-0+deb13u1 | NOASSERTION |
+| `login.defs` | 1:4.17.4-2 | NOASSERTION |
+| `mawk` | 1.3.4.20250131-1 | NOASSERTION |
+| `mcp` | 1.30.0 | NOASSERTION |
+| `mount` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `ncurses-base` | 6.5+20250216-2 | NOASSERTION |
+| `ncurses-bin` | 6.5+20250216-2 | NOASSERTION |
+| `netbase` | 6.5 | NOASSERTION |
+| `node` | 24.18.1 | NOASSERTION |
+| `openssh-client` | 1:10.0p1-7+deb13u4 | NOASSERTION |
+| `openssl` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `openssl-provider-legacy` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `orjson` | 3.13.0 | NOASSERTION |
+| `packaging` | 26.3 | NOASSERTION |
+| `paramiko` | 5.1.0 | NOASSERTION |
+| `passwd` | 1:4.17.4-2 | NOASSERTION |
+| `perl` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `perl-base` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `perl-modules-5.40` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `pip` | 24.0 | NOASSERTION |
+| `platformdirs` | 4.2.2 | NOASSERTION |
+| `playwright` | 1.62.0 | NOASSERTION |
+| `playwright-core` | 1.62.0 | NOASSERTION |
+| `pycparser` | 3.12 | NOASSERTION |
+| `pydantic` | 2.14.1 | NOASSERTION |
+| `pydantic-core` | 2.50.1 | NOASSERTION |
+| `pydantic-settings` | 2.15.0 | NOASSERTION |
+| `pyee` | 13.0.1 | NOASSERTION |
+| `pyjwt` | 2.12.1 | NOASSERTION |
+| `pynacl` | 1.6.2 | NOASSERTION |
+| `python` | 3.11.17 | NOASSERTION |
+| `python-dotenv` | 1.2.4 | NOASSERTION |
+| `python-multipart` | 0.0.32 | NOASSERTION |
+| `pyyaml` | 6.0.3 | NOASSERTION |
+| `readline-common` | 8.2-6 | NOASSERTION |
+| `referencing` | 0.37.0 | NOASSERTION |
+| `requests` | 2.34.2 | NOASSERTION |
+| `requests-toolbelt` | 1.0.0 | NOASSERTION |
+| `rpds-py` | 2026.9.1 | NOASSERTION |
+| `sed` | 4.9-2+deb13u1 | NOASSERTION |
+| `setuptools` | 79.0.1 | NOASSERTION |
+| `sniffio` | 1.3.1 | NOASSERTION |
+| `sqv` | 1.3.0-3+b2 | NOASSERTION |
+| `sse-starlette` | 3.6.0 | NOASSERTION |
+| `starlette` | 1.10.0 | NOASSERTION |
+| `structlog` | 26.1.0 | NOASSERTION |
+| `sysvinit-utils` | 3.14-4 | NOASSERTION |
+| `tar` | 1.35+dfsg-3.1 | NOASSERTION |
+| `tenacity` | 9.2.1 | NOASSERTION |
+| `truststore` | 0.10.5 | NOASSERTION |
+| `typeguard` | 4.3.0 | NOASSERTION |
+| `typing-extensions` | 4.16.0 | NOASSERTION |
+| `typing-inspection` | 0.4.4 | NOASSERTION |
+| `tzdata` | 2026c-0+deb13u1 | NOASSERTION |
+| `urllib3` | 2.8.0 | NOASSERTION |
+| `util-linux` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `uuid-utils` | 0.19.0 | NOASSERTION |
+| `uvicorn` | 0.54.0 | NOASSERTION |
+| `websockets` | 17.3 | NOASSERTION |
+| `wheel` | 0.46.3 | NOASSERTION |
+| `xxhash` | 4.0.2 | NOASSERTION |
+| `zlib1g` | 1:1.3.dfsg+really1.3.1-1+b1 | NOASSERTION |
+| `zstandard` | 0.25.0 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 205 |
+| MIT | 10 |
+| LicenseRef-936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816 | 4 |
+| LicenseRef-20390f8a6f3b1e4d7cb45dd8652dabb259bbef688cbad839bcdb0b9ba7252f79 | 3 |
+| LicenseRef-8f918c0bebd1454a084698a95c09d9a03cec8453dad1fc6eab9e6427da9d33a9 | 1 |
+| Apache-2.0 | 1 |
+| LicenseRef-5a5e7ca0e9f3f9679977e3a3e9ede45ad92885a3297ea78e766979f9866c5a16 | 1 |
+| LicenseRef-a07e99815cf1998f1dabbc21fe199460bfa09b85ead0d56b49a32cac3d1791b5 | 1 |
+| LicenseRef-6b0e609cf98f7abd39d3b81100fdb2bed24dcaee6656b500fcecb392db70dc60 | 1 |
+| LicenseRef-4302abcc1ea1b6cbe8d19c79b892acf78878030220210707c19006828866207c | 1 |
+| LicenseRef-5f9f7b538d221104bdb561ae80fd794ec5f813eb8fd04650293bddcc0f856e7d | 1 |
+| Apache-2.0 AND BSD-2-Clause AND LicenseRef-cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48 | 1 |
+| LicenseRef-3e640f444358d031690de4c8fb040fb866386460dd9c51f3ffb875bbfb2342e2 | 1 |
+| LicenseRef-3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf | 1 |
+
+</details>
+
+## docker-socket-proxy-0.3.0
+
+- Digest: `sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2`
+- Packages: 20
+- Distinct licence strings: 1
+
+### Requires review (20)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `.haproxy-rundeps` | 20240408.215935 | NOASSERTION |
+| `alpine-baselayout` | 3.2.0-r23 | NOASSERTION |
+| `alpine-baselayout-data` | 3.2.0-r23 | NOASSERTION |
+| `alpine-keys` | 2.4-r1 | NOASSERTION |
+| `apk-tools` | 2.12.9-r3 | NOASSERTION |
+| `busybox` | 1.35.0-r17 | NOASSERTION |
+| `ca-certificates` | 20240226-r0 | NOASSERTION |
+| `ca-certificates-bundle` | 20230506-r0 | NOASSERTION |
+| `ghcr.io/tecnativa/docker-socket-proxy` | sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2 | NOASSERTION |
+| `haproxy` | 2.2.33 | NOASSERTION |
+| `libc-utils` | 0.7.2-r3 | NOASSERTION |
+| `libcrypto1.1` | 1.1.1w-r1 | NOASSERTION |
+| `libssl1.1` | 1.1.1w-r1 | NOASSERTION |
+| `lua5.3-libs` | 5.3.6-r3 | NOASSERTION |
+| `musl` | 1.2.3-r3 | NOASSERTION |
+| `musl-utils` | 1.2.3-r3 | NOASSERTION |
+| `pcre2` | 10.42-r0 | NOASSERTION |
+| `scanelf` | 1.3.4-r0 | NOASSERTION |
+| `ssl_client` | 1.35.0-r17 | NOASSERTION |
+| `zlib` | 1.2.12-r3 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 20 |
+
+</details>
 
 ## jupyternotebook-1.0.0-nvidia
 

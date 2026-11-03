@@ -1,0 +1,20 @@
+# The MCP server's direct dependencies. requirements.txt is the pinned resolution that gets
+# installed; regenerate both it and THIRD-PARTY-NOTICES.md with `make deps-lock third-party`
+# from the repository root.
+langchain-core==1.6.2
+pydantic-settings==2.15.0
+structlog==26.1.0
+
+# FastMCP 1.x.
+mcp==1.30.0
+httpx==0.28.1
+uvicorn==0.54.0
+
+# JWT verification (ES256 + JWKS) - app/auth.py
+pyjwt[crypto]==2.15.1  # 2.12.x: critical auth-bypass CVEs in token verification
+asyncssh==2.24.0
+cryptography==50.0.1
+# [ssh] is paramiko, required even for DOCKER_HOST=ssh:// with use_ssh_client=True.
+docker[ssh]==7.2.0
+# frontend_check only; imported lazily, so the other tools work without it.
+playwright==1.62.0

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,11 +10,33 @@ from app.services.slack_notifier import notify_service_error
 router = APIRouter(tags=["System"])
 
 
+# Health contract:
+#   /health/live   liveness: checks nothing, so a database outage never gets a healthy API restarted.
+#   /health/ready  readiness: 503 while PostgreSQL is unreachable (compose's api healthcheck uses it).
+#   /health        the overview for humans and the UI: always 200, the body says healthy or degraded.
+
+@router.get("/health/live")
+async def liveness_check():
+    """Liveness probe: the process is up and serving requests."""
+    return {"status": "alive"}
+
+
+@router.get("/health/ready")
+async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)):
+    """Readiness probe: 200 when PostgreSQL answers, else 503."""
+    try:
+        await db.execute(select(1))
+        return {"status": "ready", "database": "ok"}
+    except Exception:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "not_ready", "database": "unreachable"}
+
+
 @router.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """
-    Kubernetes readiness/liveness probe endpoint.
-    Verifies that the API is running and PostgreSQL is reachable.
+    Service overview: whether the API is running and PostgreSQL is reachable.
+    Always 200; probes use /health/live and /health/ready instead.
     """
     try:
         # Simple ping to PostgreSQL

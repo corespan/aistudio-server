@@ -86,6 +86,29 @@ class TestHealthCheck:
         assert "status" in body
         assert "database" in body
 
+    @pytest.mark.asyncio
+    async def test_live_and_ready_when_db_is_up(self, http_client):
+        assert (await http_client.get("/health/live")).json() == {"status": "alive"}
+        r = await http_client.get("/health/ready")
+        assert r.status_code == 200 and r.json() == {"status": "ready", "database": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_ready_is_503_and_live_200_when_db_is_down(self, http_client):
+        from app.database import get_db
+        from app.main import app
+
+        class _Down:
+            async def execute(self, *a, **kw):
+                raise ConnectionError("db down")
+
+        async def _down():
+            yield _Down()
+
+        app.dependency_overrides[get_db] = _down
+        r = await http_client.get("/health/ready")
+        assert r.status_code == 503 and r.json()["status"] == "not_ready"
+        assert (await http_client.get("/health/live")).status_code == 200
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Workload Types
@@ -452,6 +475,40 @@ class TestBenchmarkStartAndStatus:
     async def test_status_404_for_unknown_workload(self, http_client):
         r = await http_client.get("/api/v1/benchmarks/wl-19990101-ffffff/status")
         assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("created_by", ["alice", None])
+    async def test_created_by_is_stored_and_returned_by_status(self, http_client, created_by):
+        # The MCP server sends the JWT sub here and reads it back to let only
+        # the creator (or an admin) stop the run. Omitted, it stays null.
+        body = {"model_name": "tinyllama", "node_ips": ["10.0.0.1"],
+                "config": {"dataset_path": "/home/drut/datasets/sharegpt.json"}}
+        if created_by:
+            body["created_by"] = created_by
+        with patch("app.worker.start_benchmark_chain") as mock_chain:
+            mock_chain.delay.return_value = None
+            task_id = (await http_client.post("/api/v1/benchmarks/start", json=body)).json()["task_id"]
+        r = await http_client.get(f"/api/v1/benchmarks/{task_id}/status")
+        assert r.json()["created_by"] == created_by
+
+    @pytest.mark.asyncio
+    async def test_created_by_over_256_chars_is_rejected(self, http_client):
+        r = await http_client.post("/api/v1/benchmarks/start", json={
+            "model_name": "tinyllama", "node_ips": ["10.0.0.1"],
+            "config": {"dataset_path": "/home/drut/datasets/sharegpt.json"},
+            "created_by": "x" * 257,
+        })
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_jupyter_launch_stores_created_by(self, http_client):
+        with patch("app.worker.start_jupyter_chain") as mock_chain:
+            mock_chain.delay.return_value = None
+            r = await http_client.post("/api/v1/jupyter/launch",
+                                       json={"node_ip": "10.0.0.1", "created_by": "bob"})
+        task_id = r.json()["task_id"]
+        r = await http_client.get(f"/api/v1/jupyter/instances/{task_id}/status")
+        assert r.status_code == 200 and r.json()["created_by"] == "bob"
 
     @pytest.mark.asyncio
     async def test_start_dispatches_celery_task(self, http_client):
