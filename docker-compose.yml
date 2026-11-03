@@ -160,12 +160,14 @@ services:
       - ./requirements.txt:/repo/requirements.txt:ro
       - ./README.md:/repo/README.md:ro
       - /var/log:/var/log:ro
-    # Least privilege: only what the probes need. NET_RAW is for tcpdump; DAC_READ_SEARCH lets root
-    # read the mounted SSH key and /var/log, which belong to the host user.
+    # tcpdump: NET_RAW, SETUID/SETGID to drop to its user, KILL to stop it; DAC_READ_SEARCH: key, /var/log.
     cap_drop:
       - ALL
     cap_add:
       - NET_RAW
+      - SETUID
+      - SETGID
+      - KILL
       - DAC_READ_SEARCH
     security_opt:
       - no-new-privileges:true

@@ -1,6 +1,6 @@
 # Workload Image SBOM Report
 
-Generated: 2026-10-28
+Generated: 2026-11-03
 
 Machine-readable SPDX documents sit alongside this file. Regenerate with
 `make sbom` (workload images) and `make sbom-mcp` (MCP profile images).
@@ -43,19 +43,19 @@ registries unmodified. They are listed so the whole running set is inventoried.
 
 </details>
 
-## aistudio-mcp-895b6cb6ca0c
+## aistudio-mcp-af5beb3f3dba
 
-- Digest: `sha256:0acbe32c25fa855e8cf2990e9769eac9df3706aa4987d559b52a2d63469356f9`
+- Digest: `sha256:1f17c7c32e4b887b7ec78188e58150e0d6a3b034deee6a48a61a12a033f4335a`
 - Packages: 232
-- Distinct licence strings: 14
+- Distinct licence strings: 8
 
-### Requires review (205)
+### Requires review (216)
 
 | Package | Version | Licence |
 | --- | --- | --- |
 | `Simple Launcher` | 1.1.0.14 | NOASSERTION |
 | `adduser` | 3.152 | NOASSERTION |
-| `aistudio-mcp` | 895b6cb6ca0c | NOASSERTION |
+| `aistudio-mcp` | af5beb3f3dba | NOASSERTION |
 | `annotated-types` | 0.8.0 | NOASSERTION |
 | `anyio` | 4.15.1 | NOASSERTION |
 | `apt` | 3.0.3 | NOASSERTION |
@@ -67,7 +67,7 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `bash` | 5.2.37-2+b10 | NOASSERTION |
 | `bcrypt` | 5.0.0 | NOASSERTION |
 | `bsdutils` | 1:2.41.5-0+deb13u1 | NOASSERTION |
-| `ca-certificates` | 20250419 | NOASSERTION |
+| `ca-certificates` | 20250419+deb13u1 | NOASSERTION |
 | `certifi` | 2026.10.23 | NOASSERTION |
 | `cffi` | 2.1.1 | NOASSERTION |
 | `charset-normalizer` | 3.5.2 | NOASSERTION |
@@ -80,12 +80,14 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `cryptography` | 50.0.1 | NOASSERTION |
 | `dash` | 0.5.12-12 | NOASSERTION |
 | `debconf` | 1.5.91 | NOASSERTION |
+| `debian-archive-keyring` | 2025.1 | NOASSERTION |
 | `debianutils` | 5.23.2 | NOASSERTION |
 | `diffutils` | 1:3.10-4 | NOASSERTION |
 | `distro` | 1.9.0 | NOASSERTION |
 | `docker` | 7.2.0 | NOASSERTION |
 | `dpkg` | 1.22.22 | NOASSERTION |
 | `findutils` | 4.10.0-3 | NOASSERTION |
+| `gcc-14-base` | 14.2.0-19 | NOASSERTION |
 | `git` | 1:2.47.3-0+deb13u1 | NOASSERTION |
 | `git-man` | 1:2.47.3-0+deb13u1 | NOASSERTION |
 | `greenlet` | 3.5.6 | NOASSERTION |
@@ -141,16 +143,22 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `libexpat1` | 2.9.0-1~deb13u1 | NOASSERTION |
 | `libffi8` | 3.4.8-2 | NOASSERTION |
 | `libfido2-1` | 1.15.0-1+b1 | NOASSERTION |
+| `libgcc-s1` | 14.2.0-19 | NOASSERTION |
 | `libgdbm-compat4t64` | 1.24-2 | NOASSERTION |
 | `libgdbm6t64` | 1.24-2 | NOASSERTION |
 | `libgmp10` | 2:6.3.0+dfsg-3 | NOASSERTION |
+| `libgnutls30t64` | 3.8.9-3+deb13u4 | NOASSERTION |
+| `libgssapi-krb5-2` | 1.21.3-5+deb13u1 | NOASSERTION |
 | `libhogweed6t64` | 3.10.1-1 | NOASSERTION |
 | `libidn2-0` | 2.3.8-2 | NOASSERTION |
+| `libk5crypto3` | 1.21.3-5+deb13u1 | NOASSERTION |
 | `libkeyutils1` | 1.6.3-6 | NOASSERTION |
+| `libkrb5-3` | 1.21.3-5+deb13u1 | NOASSERTION |
+| `libkrb5support0` | 1.21.3-5+deb13u1 | NOASSERTION |
 | `liblastlog2-2` | 2.41.5-0+deb13u1 | NOASSERTION |
 | `libldap2` | 2.6.10+dfsg-1 | NOASSERTION |
 | `liblz4-1` | 1.10.0-4 | NOASSERTION |
-| `liblzma5` | 5.8.1-1+deb13u1 | NOASSERTION |
+| `liblzma5` | 5.8.1-1+deb13u2 | NOASSERTION |
 | `libmd0` | 1.1.0-2+b1 | NOASSERTION |
 | `libmnl0` | 1.0.5-3 | NOASSERTION |
 | `libmount1` | 2.41.5-0+deb13u1 | NOASSERTION |
@@ -169,6 +177,7 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `libperl5.40` | 5.40.1-6+deb13u1 | NOASSERTION |
 | `libpsl5t64` | 0.21.2-1.1+b1 | NOASSERTION |
 | `libreadline8t64` | 8.2-6 | NOASSERTION |
+| `librtmp1` | 2.4+20151223.gitfa8646d.1-2+b5 | NOASSERTION |
 | `libsasl2-2` | 2.1.28+dfsg1-9 | NOASSERTION |
 | `libsasl2-modules-db` | 2.1.28+dfsg1-9 | NOASSERTION |
 | `libseccomp2` | 2.6.0-2 | NOASSERTION |
@@ -180,7 +189,9 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `libsqlite3-0` | 3.46.1-7+deb13u2 | NOASSERTION |
 | `libssh2-1t64` | 1.11.1-1+deb13u2 | NOASSERTION |
 | `libssl3t64` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `libstdc++6` | 14.2.0-19 | NOASSERTION |
 | `libsystemd0` | 257.13-1~deb13u1 | NOASSERTION |
+| `libtasn1-6` | 4.20.0-2+deb13u1 | NOASSERTION |
 | `libtinfo6` | 6.5+20250216-2 | NOASSERTION |
 | `libtirpc-common` | 1.3.6+ds-1 | NOASSERTION |
 | `libtirpc3t64` | 1.3.6+ds-1 | NOASSERTION |
@@ -218,9 +229,9 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `pydantic-core` | 2.50.1 | NOASSERTION |
 | `pydantic-settings` | 2.15.0 | NOASSERTION |
 | `pyee` | 13.0.1 | NOASSERTION |
-| `pyjwt` | 2.12.1 | NOASSERTION |
+| `pyjwt` | 2.15.1 | NOASSERTION |
 | `pynacl` | 1.6.2 | NOASSERTION |
-| `python` | 3.11.17 | NOASSERTION |
+| `python` | 3.11.18 | NOASSERTION |
 | `python-dotenv` | 1.2.4 | NOASSERTION |
 | `python-multipart` | 0.0.32 | NOASSERTION |
 | `pyyaml` | 6.0.3 | NOASSERTION |
@@ -243,7 +254,7 @@ registries unmodified. They are listed so the whole running set is inventoried.
 | `typeguard` | 4.3.0 | NOASSERTION |
 | `typing-extensions` | 4.16.0 | NOASSERTION |
 | `typing-inspection` | 0.4.4 | NOASSERTION |
-| `tzdata` | 2026c-0+deb13u1 | NOASSERTION |
+| `tzdata` | 2026e-0+deb13u1 | NOASSERTION |
 | `urllib3` | 2.8.0 | NOASSERTION |
 | `util-linux` | 2.41.5-0+deb13u1 | NOASSERTION |
 | `uuid-utils` | 0.19.0 | NOASSERTION |
@@ -258,18 +269,12 @@ registries unmodified. They are listed so the whole running set is inventoried.
 
 | Licence | Count |
 | --- | --- |
-| NOASSERTION | 205 |
+| NOASSERTION | 216 |
 | MIT | 10 |
-| LicenseRef-936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816 | 4 |
-| LicenseRef-20390f8a6f3b1e4d7cb45dd8652dabb259bbef688cbad839bcdb0b9ba7252f79 | 3 |
-| LicenseRef-8f918c0bebd1454a084698a95c09d9a03cec8453dad1fc6eab9e6427da9d33a9 | 1 |
 | Apache-2.0 | 1 |
 | LicenseRef-5a5e7ca0e9f3f9679977e3a3e9ede45ad92885a3297ea78e766979f9866c5a16 | 1 |
-| LicenseRef-a07e99815cf1998f1dabbc21fe199460bfa09b85ead0d56b49a32cac3d1791b5 | 1 |
 | LicenseRef-6b0e609cf98f7abd39d3b81100fdb2bed24dcaee6656b500fcecb392db70dc60 | 1 |
-| LicenseRef-4302abcc1ea1b6cbe8d19c79b892acf78878030220210707c19006828866207c | 1 |
-| LicenseRef-5f9f7b538d221104bdb561ae80fd794ec5f813eb8fd04650293bddcc0f856e7d | 1 |
-| Apache-2.0 AND BSD-2-Clause AND LicenseRef-cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48 | 1 |
+| LicenseRef-cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48 | 1 |
 | LicenseRef-3e640f444358d031690de4c8fb040fb866386460dd9c51f3ffb875bbfb2342e2 | 1 |
 | LicenseRef-3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf | 1 |
 

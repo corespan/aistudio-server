@@ -123,13 +123,13 @@ def test_a_viewer_cannot_run_a_host_probe(served, mint):
     assert "refused" in text and "higher aistudio role" in text and not seen
 
 
-def test_an_operator_can_write_but_not_probe_hosts(served, mint):
+def test_an_operator_can_write_but_not_probe_hosts(served, mint, monkeypatch):
     client, _ = served
     s = _Session(client, mint(role="operator")).open()
     assert "higher aistudio role" in s.call("queue_status")
     assert "higher aistudio role" not in s.call("start_jupyter", node_ip="")
-    # stop_jupyter reaches the tool (no role refusal), which then refuses: here no aistudio-server
-    # answers, so it cannot read the creator and fails closed.
+    # No aistudio-server answers (closed port), so stop_jupyter cannot read the creator and fails closed.
+    monkeypatch.setattr("app.config.settings.aistudio_api_url", "http://127.0.0.1:9")
     out = s.call("stop_jupyter", task_id="jup-20260101-abc123")
     assert "higher aistudio role" not in out and "Refused:" in out and "only an admin" in out
 
