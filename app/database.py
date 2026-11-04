@@ -1,3 +1,9 @@
+"""
+app/database.py — SQLAlchemy engines, session factories and declarative Base.
+Provides the async engine/session and get_db() FastAPI dependency, plus a sync
+engine/session (SyncSessionLocal) for Celery workers.
+"""
+
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
