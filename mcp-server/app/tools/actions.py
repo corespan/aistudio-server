@@ -1,4 +1,4 @@
-"""The write tools: start a benchmark run, launch Jupyter, delete a run's results or stop a notebook."""
+"""The write tools: start a benchmark run, launch Jupyter, stop a notebook or delete a run's results."""
 from __future__ import annotations
 
 import re
@@ -7,6 +7,7 @@ from urllib.parse import quote
 import httpx
 import structlog
 from langchain_core.tools import tool
+from mcp.server.fastmcp.exceptions import ToolError
 
 from app.config import settings
 from app.services import platform_api, request_ctx
@@ -15,13 +16,12 @@ logger = structlog.get_logger()
 
 
 class Done(str):
-    """A write that reached aistudio and succeeded. Only these are deduplicated (app/guards.py):
-    every other answer (a refusal, a missing argument, an API error) lets a retry run again."""
+    """A write that succeeded; only these are deduplicated (app/guards.py)."""
 
 
-# What GET /api/v1/models/config adds about the model that is not run config.
+# Model info in GET /api/v1/models/config that is not run config.
 _MODEL_INFO_KEYS = ("gated", "license", "license_url", "hf_repo")
-# Run config this tool takes a value for (the keys the worker and manifest builder read).
+# Run config this tool takes a value for.
 _FILLABLE = ("gpu_count", "concurrency", "max_model_len", "dataset_path")
 
 
@@ -99,7 +99,8 @@ async def start_workload(
         cfg_full = r.json()
     except Exception as exc:
         logger.warning("start_workload.config_fetch_failed", model=model, error=str(exc))
-        return f"Couldn't fetch default config for {model!r} from aistudio ({exc}). Not starting a run."
+        raise ToolError(f"Couldn't fetch default config for {model!r} from aistudio ({exc}). "
+                        "Not starting a run.") from exc
 
     config, unsupported = _resolve_config(
         cfg_full, gpu_count=gpu_count, concurrency=concurrency,
@@ -111,7 +112,6 @@ async def start_workload(
             "Drop that override (or name one of the fields above) and I'll start the run."
         )
 
-    # Refuse while any config field is blank.
     if _blank_fields(config):
         return _needs_value(model, node_ip, config)
 
@@ -119,7 +119,8 @@ async def start_workload(
     r = await _call("POST", "/api/v1/benchmarks/start", json_body=payload)
     if r.status_code >= 400:
         logger.warning("start_workload.refused", status=r.status_code, model=model, node_ip=node_ip)
-        return f"aistudio refused to start `{model}` on {node_ip} ({r.status_code}): {_detail_of(r)}"
+        raise ToolError(f"aistudio refused to start `{model}` on {node_ip} ({r.status_code}): "
+                        f"{_detail_of(r)}")
     task_id = r.json().get("task_id")
     logger.info("start_workload.started", task_id=task_id, model=model, node_ip=node_ip)
     return Done(_workload_started(task_id, model, node_ip, config, gated=bool(cfg_full.get("gated"))))
@@ -134,46 +135,52 @@ async def start_jupyter(node_ip: str = "") -> str:
                     json_body={"node_ip": node_ip, "created_by": _caller_sub()})
     if r.status_code >= 400:
         logger.warning("start_jupyter.refused", status=r.status_code, node_ip=node_ip)
-        return f"aistudio refused to launch Jupyter on {node_ip} ({r.status_code}): {_detail_of(r)}"
+        raise ToolError(f"aistudio refused to launch Jupyter on {node_ip} ({r.status_code}): "
+                        f"{_detail_of(r)}")
     task_id = r.json().get("task_id")
     logger.info("start_jupyter.started", task_id=task_id, node_ip=node_ip)
     return Done(f"Jupyter Lab is launching on {node_ip}.\n  task_id: {task_id}\n"
                 "Check progress with get_task_status; the notebook URL appears once it is READY.")
 
 
-async def _creator_refusal(task_id: str) -> str | None:
-    """None if the caller may stop `task_id` (its creator, or an admin); else the refusal.
-
-    The creator is the workload's created_by in aistudio-server's database, which this server set
-    from the verified JWT when it started the task."""
+async def _require_creator(task_id: str) -> None:
+    """Raise ToolError unless the caller started `task_id` (workloads.created_by) or is an admin."""
     who = request_ctx.caller.get()
     if who is None:
-        return "Refused: no verified caller."
+        raise ToolError("Refused: no verified caller.")
     if who.role == "admin":
-        return None
+        return
     try:
         workload = await platform_api.workload(task_id)
     except Exception as exc:   # API error or unreachable: fail closed
-        return (f"Refused: could not read who started {task_id} ({type(exc).__name__}: {exc}), "
-                "so only an admin can stop it now.")
+        raise ToolError(f"Refused: could not read who started {task_id} ({type(exc).__name__}: {exc}), "
+                        "so only an admin can act on it now.") from exc
     creator = (workload or {}).get("created_by")
     if creator and creator == who.sub:
-        return None
+        return
     whose = (f"it was started by {creator}" if creator else
              "aistudio has no creator on record for it (started before creators were recorded, "
              "or through the UI or REST API without one)")
-    return (f"Refused: only the user who started {task_id} or an aistudio admin can stop or delete it, "
-            f"and {whose}. Ask an admin to do it.")
+    logger.warning("write.not_creator", task_id=task_id)
+    raise ToolError(f"Refused: only the user who started {task_id} or an aistudio admin can stop or "
+                    f"delete it, and {whose}. Ask an admin to do it.")
 
-
-# formatters
 
 def _cfg_lines(config: dict) -> str:
     return "\n".join(f"    {k}: {v}" for k, v in config.items())
 
 
-# Valid task id characters.
-_TASK_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# The prefix keeps an id from naming another route (/benchmarks/all, /bulk, /filter).
+_JUPYTER_ID_RE = re.compile(r"^jup-[A-Za-z0-9._-]{1,124}$")
+_RUN_ID_RE = re.compile(r"^wl-[A-Za-z0-9._-]{1,125}$")
+
+
+def _checked_id(value: str, pattern: re.Pattern, shape: str) -> str:
+    value = value.strip()
+    if not pattern.fullmatch(value):
+        raise ToolError(f"{value!r} is not an id of the form {shape}. Ask the user for the exact id; "
+                        "do not guess one.")
+    return value
 
 
 def _workload_started(task_id: str | None, model: str, node_ip: str, config: dict,
@@ -213,33 +220,28 @@ def _needs_value(model: str, node_ip: str, config: dict) -> str:
 
 
 @tool
-async def stop_workload(task_id: str) -> str:
-    """For a jup-... id, stop that Jupyter notebook and remove it; for a benchmark run id (wl-YYYYMMDD-xxxxxx), permanently delete its recorded results (a run in flight is not cancelled). Only its creator or an admin may; only for an id the user approved."""
-    task_id = task_id.strip()
-    if not task_id:
-        return ("I need the exact id: wl-YYYYMMDD-xxxxxx for a benchmark run or jup-YYYYMMDD-xxxxxx "
-                "for a notebook. Ask the user which one; do not guess one.")
-    if not _TASK_ID_RE.fullmatch(task_id):
-        return (f"{task_id!r} is not a task id (letters, digits, '.', '_' and '-' only). "
-                "Ask the user for the exact id.")
-    refusal = await _creator_refusal(task_id)
-    if refusal:
-        logger.warning("stop_workload.not_creator", task_id=task_id)
-        return refusal
-
-    if task_id.startswith("jup-"):
-        r = await _call("DELETE", f"/api/v1/jupyter/instances/{quote(task_id, safe='')}")
-        if r.status_code >= 400:
-            logger.warning("stop_workload.refused", status=r.status_code, task_id=task_id)
-            return f"aistudio refused to stop notebook {task_id} ({r.status_code}): {_detail_of(r)}"
-        logger.info("stop_workload.stopped_jupyter", task_id=task_id)
-        return Done(f"Stopped Jupyter notebook {task_id} and removed its record.")
-
-    r = await _call("DELETE", f"/api/v1/benchmarks/{quote(task_id, safe='')}")
+async def stop_jupyter(task_id: str) -> str:
+    """Stop Jupyter notebook `task_id` (jup-YYYYMMDD-xxxxxx) and remove its record. Only its creator or an admin may; only for an id the user approved."""
+    task_id = _checked_id(task_id, _JUPYTER_ID_RE, "jup-YYYYMMDD-xxxxxx")
+    await _require_creator(task_id)
+    r = await _call("DELETE", f"/api/v1/jupyter/instances/{quote(task_id, safe='')}")
     if r.status_code >= 400:
-        logger.warning("stop_workload.refused", status=r.status_code, task_id=task_id)
-        return f"aistudio refused to delete run {task_id} ({r.status_code}): {_detail_of(r)}"
-    logger.info("stop_workload.deleted", task_id=task_id)
-    return Done(f"Deleted run {task_id}'s recorded results ({r.json().get('rows_deleted', '?')} row(s)). "
+        logger.warning("stop_jupyter.refused", status=r.status_code, task_id=task_id)
+        raise ToolError(f"aistudio refused to stop notebook {task_id} ({r.status_code}): {_detail_of(r)}")
+    logger.info("stop_jupyter.stopped", task_id=task_id)
+    return Done(f"Stopped Jupyter notebook {task_id} and removed its record.")
+
+
+@tool
+async def delete_run_results(run_id: str) -> str:
+    """Permanently delete the recorded results of benchmark run `run_id` (wl-YYYYMMDD-xxxxxx). It cancels nothing: a run in flight keeps going. Only its creator or an admin may; only for an id the user approved."""
+    run_id = _checked_id(run_id, _RUN_ID_RE, "wl-YYYYMMDD-xxxxxx")
+    await _require_creator(run_id)
+    r = await _call("DELETE", f"/api/v1/benchmarks/{quote(run_id, safe='')}")
+    if r.status_code >= 400:
+        logger.warning("delete_run_results.refused", status=r.status_code, run_id=run_id)
+        raise ToolError(f"aistudio refused to delete run {run_id} ({r.status_code}): {_detail_of(r)}")
+    logger.info("delete_run_results.deleted", run_id=run_id)
+    return Done(f"Deleted run {run_id}'s recorded results ({r.json().get('rows_deleted', '?')} row(s)). "
                 "This cannot be undone. Any throughput_compare baseline that relied on this "
                 "run is lost with it, and nothing was cancelled: a run still in flight keeps going.")

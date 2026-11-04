@@ -33,7 +33,11 @@ async def _get(path: str, params: dict | None = None) -> httpx.Response:
 
 def _seg(value: str) -> str:
     """One id escaped for a URL path segment."""
-    return quote(str(value), safe="")
+    value = str(value)
+    # httpx resolves dot segments: an id of ".." would name the parent route (/api/v1/status).
+    if value.strip() in ("", ".", ".."):
+        raise PlatformApiError(f"{value!r} is not a task or run id")
+    return quote(value, safe="")
 
 
 def _rows(r: httpx.Response, what: str) -> list | dict:
@@ -69,7 +73,7 @@ async def workload(workload_id: str) -> dict | None:
 
 
 def _bench(row: dict) -> dict:
-    """A result row in the shape the formatters read (the open-source API already uses these names)."""
+    """A result row in the shape the formatters read."""
     return {**row, "started_at": _ts(row.get("started_at")), "node_ips": row.get("node_ips") or []}
 
 
@@ -82,10 +86,16 @@ async def benchmark_results(run_id: str) -> list[dict]:
     return [_bench(x) for x in body.get("sub_runs", [])]
 
 
+# Max rows GET /api/v1/benchmarks returns (no offset to page further).
+ROW_CAP = 1000
+
+
 async def _result_rows(**filters) -> list[dict]:
+    """The newest ROW_CAP result rows matching `filters`, each with a run_id."""
     params = {k: v for k, v in filters.items() if v not in (None, "")}
-    params["limit"] = 1000
-    return _rows(await _get("/api/v1/benchmarks", params), "/api/v1/benchmarks")
+    params["limit"] = ROW_CAP
+    rows = _rows(await _get("/api/v1/benchmarks", params), "/api/v1/benchmarks")
+    return [r for r in rows if r.get("run_id")]
 
 
 async def recent_runs(only_failed: bool, limit: int) -> list[dict]:

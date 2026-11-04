@@ -39,15 +39,13 @@ Everything else works with defaults for local development. See [configuration.md
 make setup
 ```
 
-`make setup` does four things in one shot:
-1. Vendors the demo-UI frontend assets (fonts + Chart.js, served locally — no CDN calls)
-2. Builds and starts all Docker containers (API, Celery worker, PostgreSQL, RabbitMQ, Nginx)
-3. Runs database migrations (`alembic upgrade head`)
-4. Seeds the workload catalog (`python -m app.services.catalog_seeder`)
+`make setup` does three things in one shot:
+1. Builds and starts all Docker containers (API, Celery worker, PostgreSQL, RabbitMQ, Nginx)
+2. Runs database migrations (`alembic upgrade head`)
+3. Seeds the workload catalog (`python -m app.services.catalog_seeder`)
 
 **Without `make` (Linux/WSL):**
 ```bash
-./scripts/vendor_frontend_assets.sh --if-missing
 docker compose up --build -d
 docker compose exec api alembic upgrade head
 docker compose exec api python -m app.services.catalog_seeder
@@ -148,12 +146,6 @@ View results in the leaderboard:
 ```bash
 curl http://localhost:8002/api/v1/benchmarks
 ```
-
----
-
-## 5. Open the demo UI
-
-The demo UI is served at **http://localhost:3000** and connects to the local API automatically. It provides a benchmark wizard, live log streaming, and the results leaderboard.
 
 ---
 

@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     allowed_hosts: str = "sandbox-mcp,sandbox-mcp:8082"
 
     # Caller JWT: the keys agentgateway checks (gateway/mint.py), audience mcp:sandbox.
-    jwks_file: str = "/gateway/jwks.json"
+    # Keycloak's (realm aistudio): compose sets the URL and the issuer. A JWKS file is for tests.
+    jwks_url: str = ""
+    jwks_file: str = ""
+    jwks_cache_seconds: int = 300
     jwt_issuer: str = "aistudio"
     jwt_audience: str = "mcp:sandbox"
     jwt_leeway_seconds: int = 30

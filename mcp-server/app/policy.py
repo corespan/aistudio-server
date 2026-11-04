@@ -43,8 +43,10 @@ TOOL_POLICY: dict = {
     # --- writes ---
     "start_workload":          ToolPolicy("write", "operator", read_only=False),
     "start_jupyter":           ToolPolicy("write", "operator", read_only=False),
-    # Operators reach it, but only for tasks they started (app/tools/actions.py); admins for any.
-    "stop_workload":           ToolPolicy("write", "operator", read_only=False,
+    # Operators only for tasks they started (actions.py); admins for any.
+    "stop_jupyter":            ToolPolicy("write", "operator", read_only=False,
+                                          destructive=True, idempotent=True),
+    "delete_run_results":      ToolPolicy("write", "operator", read_only=False,
                                           destructive=True, idempotent=True),
     # --- host probes: admin only ---
     "timeline":                _host(),

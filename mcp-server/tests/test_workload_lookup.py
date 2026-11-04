@@ -85,3 +85,26 @@ def test_a_failed_task_points_to_its_logs_without_guessing_a_cause():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+@pytest.mark.parametrize("sub, role, shown", [
+    ("bob", "viewer", True), ("carol", "operator", False), ("root", "admin", True), (None, None, False)])
+async def test_a_notebook_url_is_shown_to_its_creator_or_an_admin(monkeypatch, sub, role, shown):
+    import httpx
+
+    from app.services import request_ctx
+    from app.tools import aistudio as T
+    from conftest import ident
+
+    async def get(path, **kw):
+        return httpx.Response(200, json={"state": "READY", "created_by": "bob",
+                                         "jupyter_url": "http://10.0.0.6:8888/lab"},
+                              request=httpx.Request("GET", "http://api" + path))
+
+    monkeypatch.setattr(T._client, "get", get)
+    token = request_ctx.caller.set(ident(sub=sub, role=role) if sub else None)
+    try:
+        out = await T.get_task_status.ainvoke({"task_id": "jup-20260101-abc123"})
+    finally:
+        request_ctx.caller.reset(token)
+    assert ("10.0.0.6:8888" in out) is shown, out

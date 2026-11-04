@@ -39,10 +39,14 @@ Compounding it, the install chain had no integrity verification at any step:
 ```bash
 make compliance          # licence files, pinned deps, third-party inventory
 make sbom                # workload image inventory — needs registry credentials
+make sbom-mcp            # MCP profile images (aistudio-mcp, agentgateway, docker-socket-proxy)
 python3 scripts/check_model_access.py
 ```
 
-All three must be clean. `make sbom` output goes into `sbom/` and is committed
+All four must be clean. Rerun `make sbom-mcp` whenever `mcp-server/Dockerfile` or
+`mcp-server/requirements.txt` changes: the aistudio-mcp SBOM is named after a hash of
+both, so a stale one is left behind under its old name — delete it. `make sbom` and
+`make sbom-mcp` output goes into `sbom/` and is committed
 with the release, so there is a record of what the images contained at that
 version.
 

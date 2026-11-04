@@ -1,6 +1,5 @@
 [
-  "agentgateway",
+  "aistudio-mcp",
   "agent-runner",
-  "mcp:aistudio",
   "mcp:sandbox"
 ]

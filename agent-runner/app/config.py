@@ -11,12 +11,13 @@ class Settings(BaseSettings):
 
     # agentgateway. Each connector in the registry is its route /mcp/<name>; every call carries the
     # caller's own JWT (gateway/config.yaml).
-    gateway_url: str = "http://agentgateway:8050"
+    # agentgateway's inside listener (:8052, never published); :8050 is HTTPS for MCP clients outside.
+    gateway_url: str = "http://agentgateway:8052"
 
     # OpenAI-compatible endpoint: agentgateway's LLM route in front of the site's vLLM. The caller's
     # JWT is the API key, so the gateway checks it on every LLM call too. The runner asks for logical
     # models; the route maps them to the served one.
-    llm_base_url: str = "http://agentgateway:8050/llm/v1"
+    llm_base_url: str = "http://agentgateway:8052/llm/v1"
     model_planner: str = "planner"
     model_worker: str = "worker"
     model_summarizer: str = "summarizer"
@@ -28,8 +29,11 @@ class Settings(BaseSettings):
     # Output cap per call: a model that loops can't run until its context is full.
     llm_max_tokens: int = 2048
 
-    # Caller JWT: the keys agentgateway checks (gateway/mint.py), audience agent-runner.
-    jwks_file: str = "/gateway/jwks.json"
+    # Caller JWT: Keycloak's (realm aistudio), audience agent-runner. Compose sets the URL and the
+    # issuer (https://<MCP_PUBLIC_HOST>:8050/realms/aistudio); a JWKS file is for tests.
+    jwks_url: str = ""
+    jwks_file: str = ""
+    jwks_cache_seconds: int = 300
     jwt_issuer: str = "aistudio"
     jwt_audience: str = "agent-runner"
     jwt_leeway_seconds: int = 30

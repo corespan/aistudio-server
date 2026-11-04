@@ -1,5 +1,9 @@
 """run_command answers instead of raising when a binary cannot be started."""
 import asyncio
+import sys
+import time
+
+import pytest
 
 from app.tools import _shell
 
@@ -10,3 +14,27 @@ def test_a_binary_the_kernel_refuses_is_an_answer(monkeypatch):
     monkeypatch.setattr(_shell.asyncio, "create_subprocess_exec", refused)
     code, out, err = asyncio.run(_shell.run_command("tcpdump", "-c", "1"))
     assert (code, out) == (126, "") and "permission denied" in err
+
+
+def test_a_timed_out_command_keeps_its_output():
+    import sys
+
+    script = "import sys, time; print('pkt 1', flush=True); time.sleep(30)"
+    code, out, err = asyncio.run(_shell.run_command(sys.executable, "-c", script, timeout=2))
+    assert code == 124 and "pkt 1" in out and "timed out" in err
+
+
+def test_output_is_capped(monkeypatch):
+    import sys
+
+    monkeypatch.setattr(_shell, "_MAX_BYTES", 1000)
+    code, out, _ = asyncio.run(_shell.run_command(sys.executable, "-c", "print('x' * 100000)"))
+    assert code == 0 and len(out) < 1100 and out.endswith("(output truncated)")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups (killpg) are POSIX-only")
+def test_a_grandchild_holding_stdout_does_not_hang_the_timeout():
+    start = time.monotonic()
+    code, out, err = asyncio.run(_shell.run_command(
+        "sh", "-c", "sleep 30 & echo hi; sleep 30", timeout=1))
+    assert code == 124 and "hi" in out and time.monotonic() - start < 6, (code, out, err)

@@ -32,9 +32,10 @@ class NotAllowed(Exception):
     """The caller isn't one of the model file's users: it is someone else's subscription."""
 
 
-def allowed(h: Harness, sub: str) -> bool:
+def allowed(h: Harness, user: str) -> bool:
+    """``user``: the username (a model's users are usernames)."""
     model = registry.load().models.get(h.model)
-    return model is not None and sub in model.users
+    return model is not None and user in model.users
 
 
 async def cap(h: Harness, sub: str, spent_in_run: float) -> tuple[str, int]:
@@ -131,7 +132,7 @@ async def step(box, h: Harness, rt, run_id: str, task_id: str, emit: Callable, p
     """One Claude Code step in an open workspace, to its answer. ``tools``: narrower than the
     agent's own, for a mode (plan is read-only). LimitHit when a usage limit refused or stopped it."""
     model = registry.load().models[h.model]
-    if rt.sub not in model.users:
+    if rt.user not in model.users:
         raise NotAllowed(f"{h.name} runs on a subscription that isn't yours")
     row = {"sub": rt.sub, "run_id": run_id, "task": task_id, "agent": h.name, "model": model.model}
     limit, step_cap = await capped(h, rt, run_id, task_id)
@@ -189,7 +190,7 @@ def show_diff(diff: dict) -> str:
 async def run(h: Harness, rt, run_id: str, task_id: str, emit: Callable, task: str,
               inputs: dict[str, str]) -> str:
     """A claude-code agent started by name: one step on a fresh checkout, then its diff."""
-    if not allowed(h, rt.sub):
+    if not allowed(h, rt.user):
         raise NotAllowed(f"{h.name} runs on a subscription that isn't yours")
     await capped(h, rt, run_id, task_id)        # before a clone that would go unused
     prompt = task + "".join(f"\n\n{data(f'task {tid}', out)}" for tid, out in inputs.items())

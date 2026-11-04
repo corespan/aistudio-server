@@ -1,8 +1,11 @@
 """Caller authentication: the JWT on every request, verified against the gateway's keys.
 
-There is no proxy in this install, so the panel sends the token gateway/mint.py made (audience
+The panel's user logs in to Keycloak (realm aistudio) and sends that token (audience
 agent-runner). The runner forwards the same token to agentgateway for every agent in the run, so
 the gateway and the MCP server enforce the caller's role on every tool call.
+
+``sub`` is Keycloak's user id: it owns runs, conversations and usage. ``user`` is the username,
+which allow-lists name (a model's or workflow's ``users``); users can't change it.
 """
 from __future__ import annotations
 
@@ -23,6 +26,12 @@ class Identity:
     sub: str
     role: str | None
     token: str = field(repr=False)
+    name: str = ""
+
+    @property
+    def user(self) -> str:
+        """The username, for allow-lists (the sub when a token has none)."""
+        return self.name or self.sub
 
 
 class _FileJWKS:
@@ -42,7 +51,17 @@ class _FileJWKS:
         return self._keys[kid].key
 
 
-_jwks = _FileJWKS(settings.jwks_file)
+class _URLJWKS:
+    """Keycloak's keys, fetched and cached (PyJWKClient, as aistudio-mcp does)."""
+
+    def __init__(self, url: str):
+        self._client = jwt.PyJWKClient(url, cache_keys=True, lifespan=settings.jwks_cache_seconds)
+
+    def key(self, token: str):
+        return self._client.get_signing_key_from_jwt(token).key
+
+
+_jwks = _URLJWKS(settings.jwks_url) if settings.jwks_url else _FileJWKS(settings.jwks_file)
 
 
 def _role(claims: dict) -> str | None:
@@ -59,15 +78,18 @@ def verify(token: str) -> Identity:
         claims = jwt.decode(
             token, _jwks.key(token), algorithms=["ES256"], audience=settings.jwt_audience,
             issuer=settings.jwt_issuer, leeway=settings.jwt_leeway_seconds,
-            options={"require": ["exp", "sub", "iss", "aud", "jti"]})
-    except (jwt.InvalidTokenError, OSError, ValueError) as exc:
+            options={"require": ["exp", "iat", "sub", "iss", "aud", "jti"]})
+    except (jwt.PyJWTError, OSError, ValueError) as exc:
         log.info("auth.rejected", reason=str(exc))
         raise HTTPException(401, "invalid or expired token",
                             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'}) from None
     sub = str(claims["sub"])
     if not sub.strip() or not sub.isprintable() or len(sub) > 256:
         raise HTTPException(401, "invalid or expired token")
-    return Identity(sub=sub, role=_role(claims), token=token)
+    name = str(claims.get("preferred_username") or "")
+    if len(name) > 256 or not name.isprintable():
+        raise HTTPException(401, "invalid or expired token")
+    return Identity(sub=sub, role=_role(claims), token=token, name=name)
 
 
 def caller(authorization: str = Header(default="")) -> Identity:

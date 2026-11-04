@@ -47,7 +47,7 @@ jobs:
       - name: Required compliance files exist
         run: |
           missing=0
-          for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md agent-runner/THIRD-PARTY-NOTICES.md sandbox-mcp/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do
+          for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md agent-runner/THIRD-PARTY-NOTICES.md sandbox-mcp/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md; do
             [ -f "$f" ] || { echo "::error::missing $f"; missing=1; }
           done
           exit $missing
@@ -191,58 +191,6 @@ jobs:
 
       - name: THIRD-PARTY-NOTICES.md files match the pinned sets
         run: python3 scripts/generate_third_party_notices.py --check
-
-  frontend-assets:
-    name: demo-ui makes no third-party requests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: No CDN or Google Fonts references
-        run: |
-          # Two failure modes this prevents: GDPR exposure from disclosing
-          # visitor IPs to Google (LG München I, 3 O 17493/20), and a broken
-          # dashboard in air-gapped clusters, which is the target deployment.
-          if grep -rnE 'src=["'"'"']https?://|href=["'"'"']https?://(fonts|cdn)\.' demo-ui/ --include='*.html' --include='*.js' --include='*.css'; then
-            echo "::error::demo-ui references a third-party origin. Vendor the asset with scripts/vendor_frontend_assets.sh."
-            exit 1
-          fi
-          echo "No third-party asset references."
-
-      - name: Committed licence texts match a clean regeneration
-        run: |
-          # The binaries (.woff2, chart.umd.js) are gitignored and fetched at
-          # setup time, so they are not in the checkout to compare. What must
-          # match are the compliance artifacts that ARE committed: the generated
-          # CSS, the NOTICE, and the upstream licence texts. If those drift from
-          # what the declared versions actually produce, the notices no longer
-          # describe the fonts users receive.
-          VENDOR_DEST=/tmp/vendor-check ./scripts/vendor_frontend_assets.sh
-
-          failed=0
-          for f in fonts.css NOTICE fonts/LICENSE-Inter-OFL.txt \
-                   fonts/LICENSE-JetBrainsMono-OFL.txt js/LICENSE-chartjs.md; do
-            if ! diff "/tmp/vendor-check/$f" "demo-ui/vendor/$f"; then
-              echo "::error file=demo-ui/vendor/$f::differs from a clean regeneration"
-              failed=1
-            fi
-          done
-          [ "$failed" -eq 0 ] || {
-            echo "Run ./scripts/vendor_frontend_assets.sh and commit the result."
-            exit 1
-          }
-
-      - name: Every font referenced by fonts.css is actually produced
-        run: |
-          # fonts.css is committed but the .woff2 files it points at are not.
-          # Verify the generated pair is self-consistent, so a weight added to
-          # the script's list can never ship as a CSS rule with no file behind it.
-          missing=0
-          for url in $(grep -oE 'url\("\./[^"]+"\)' demo-ui/vendor/fonts.css \
-                       | sed -E 's|url\("\./||; s|"\)||'); do
-            [ -f "/tmp/vendor-check/$url" ] || { echo "::error::fonts.css references missing $url"; missing=1; }
-          done
-          exit $missing
 
   models:
     name: Model gate status and licences

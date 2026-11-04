@@ -2,8 +2,9 @@
 #
 # agentgateway-sandbox: the only thing workspace sandboxes can reach (network sandbox-egress, no
 # other route out). Its own container because agentgateway can't bind a listener to one network:
-# on the main gateway, sandboxes could also reach /mcp/* and /llm. /llm/anthropic checks the JWT and
-# its sub, then swaps it for your Claude subscription token, which only this container holds.
+# on the main gateway, sandboxes could also reach /mcp/* and /llm. /llm/anthropic checks the
+# Keycloak token and its user, then swaps it for your Claude subscription token, which only this
+# container holds.
 config:
   adminAddr: 127.0.0.1:15000
 binds:
@@ -25,14 +26,14 @@ binds:
             - sub
             - iss
             - aud
-          issuer: aistudio
+          issuer: ${MCP_PUBLIC_URL}/realms/aistudio
           audiences:
-          - agentgateway
+          - aistudio-mcp
           jwks:
-            file: /config/jwks.json
+            url: http://keycloak:8080/realms/aistudio/protocol/openid-connect/certs
         authorization:
           rules:
-          - jwt.sub in ['rsingh']
+          - jwt.preferred_username in ['rsingh']
         localRateLimit:
         - type: requests
           maxTokens: 60

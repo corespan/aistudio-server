@@ -104,7 +104,15 @@
       "idempotentHint": false
     },
     {
-      "name": "stop_workload",
+      "name": "stop_jupyter",
+      "minRole": "operator",
+      "tier": "write",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true
+    },
+    {
+      "name": "delete_run_results",
       "minRole": "operator",
       "tier": "write",
       "readOnlyHint": false,

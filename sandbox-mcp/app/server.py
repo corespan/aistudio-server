@@ -202,10 +202,20 @@ class _FileJWKS:
         return self._keys[kid].key
 
 
+class _URLJWKS:
+    """Keycloak's keys, fetched and cached (PyJWKClient, as aistudio-mcp does)."""
+
+    def __init__(self, url: str):
+        self._client = jwt.PyJWKClient(url, cache_keys=True, lifespan=settings.jwks_cache_seconds)
+
+    def key(self, token: str):
+        return self._client.get_signing_key_from_jwt(token).key
+
+
 class JWTAuth:
     """ASGI middleware: 401 unless the request carries a valid JWT (audience mcp:sandbox)."""
 
-    def __init__(self, app, jwks: _FileJWKS):
+    def __init__(self, app, jwks):
         self.app, self.jwks = app, jwks
 
     def _verify(self, token: str) -> str:
@@ -224,7 +234,7 @@ class JWTAuth:
             if scheme.lower() != "bearer" or not token.strip():
                 raise jwt.InvalidTokenError("missing bearer token")
             sub = await anyio.to_thread.run_sync(self._verify, token.strip())
-        except (jwt.InvalidTokenError, OSError, ValueError) as exc:
+        except (jwt.PyJWTError, OSError, ValueError) as exc:
             log.info("auth.rejected", reason=str(exc))
             body = b'{"title": "unauthorized", "status": 401}'
             await send({"type": "http.response.start", "status": 401, "headers": [
@@ -247,7 +257,8 @@ def build_http_app():
     async def health(request):
         return JSONResponse({"status": "ok", "runtime": settings.runtime})
     server.custom_route(HEALTH_PATH, methods=["GET"])(health)
-    return JWTAuth(server.streamable_http_app(), _FileJWKS(settings.jwks_file))
+    jwks = _URLJWKS(settings.jwks_url) if settings.jwks_url else _FileJWKS(settings.jwks_file)
+    return JWTAuth(server.streamable_http_app(), jwks)
 
 
 def main() -> None:

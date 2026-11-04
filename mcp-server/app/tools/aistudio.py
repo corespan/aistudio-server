@@ -1,10 +1,10 @@
-"""Diagnostic tools that call the aistudio-server REST API as the calling user."""
+"""Diagnostic tools that read aistudio-server's REST API (which has no per-user access of its own)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from urllib.parse import quote
+import re
 import statistics
 from collections import deque
 
@@ -13,9 +13,19 @@ import structlog
 from langchain_core.tools import tool
 
 from app.config import settings
-from app.services import platform_api
+from app.services import platform_api, request_ctx
 
 logger = structlog.get_logger()
+
+_URL = re.compile(r"https?://\S+")
+_URL_HIDDEN = "(hidden: only the notebook's creator or an aistudio admin sees its URL)"
+
+
+def _may_open(row: dict | None) -> bool:
+    """A notebook URL is a way onto the GPU node, so only its creator or an admin sees it."""
+    who = request_ctx.caller.get()
+    creator = (row or {}).get("created_by")
+    return who is not None and (who.role == "admin" or bool(creator and creator == who.sub))
 
 
 def _fmt_ts(ts) -> str:
@@ -90,7 +100,8 @@ def _format_no_exact_match(term: str, matches: list[dict]) -> str:
         return (
             f"No workload or benchmark run matches {term!r} — searched the task status "
             "routes AND completed benchmark_results, by id and by model. It may "
-            "be a typo or an older run outside the search. Give me the exact id if you "
+            f"be a typo or an older run (the search reads the newest {platform_api.ROW_CAP} "
+            "result rows). Give me the exact id if you "
             "have it, or ask me to list recent runs."
         )
     out = [f"{len(matches)} run(s)/workload(s) matching {term!r} (id | state | model):"]
@@ -108,7 +119,7 @@ def _format_workload_detail(wl: dict) -> str:
         f"  state: {wl.get('state')}   updated: {_fmt_ts(wl.get('updated_at'))}",
     ]
     if wl.get("jupyter_url"):
-        out.append(f"  jupyter_url: {wl['jupyter_url']}")
+        out.append(f"  jupyter_url: {wl['jupyter_url'] if _may_open(wl) else _URL_HIDDEN}")
     err = (wl.get("error_message") or "").strip()
     if err:
         out.append(f"  error_message: {err}")
@@ -143,12 +154,12 @@ async def workload_history(
         runs = await platform_api.recent_runs(only_failed, limit)
         if not runs:
             scope = "non-success " if only_failed else ""
-            return f"No {scope}benchmark runs on record."
+            return (f"No {scope}benchmark runs among the newest {platform_api.ROW_CAP} result "
+                    "rows. Older runs: list_benchmarks(date=YYYY-MM-DD).")
         return _format_run_list(runs, only_failed)
     except Exception as exc:
         return f"Could not read workload history from aistudio-server: {exc}"
 
-# Regression threshold, in percent.
 _REGRESSION_PCT = 10.0
 _DIFF_FIELDS = ("node_ips", "server_name", "gpu_model")
 
@@ -222,12 +233,9 @@ async def throughput_compare(run_id: str, limit: int = 10) -> str:
     return "\n\n".join(blocks)
 
 
-def _seg(value: str) -> str:
-    """Escape one id for a URL path segment."""
-    return quote(str(value), safe="")
+_seg = platform_api._seg   # one escaper, so every id refuses `..` the same way
 
 
-# Shared API client.
 _client = httpx.AsyncClient(base_url=settings.aistudio_api_url, timeout=15.0)
 
 
@@ -326,7 +334,7 @@ async def get_task_status(task_id: str) -> str:
         if error:
             parts.append(f"Error message: {error}")
         if jupyter_url:
-            parts.append(f"Jupyter URL: {jupyter_url}")
+            parts.append(f"Jupyter URL: {jupyter_url if _may_open(data) else _URL_HIDDEN}")
 
         for key in ("workload_port", "updated_at"):
             if key in data:
@@ -391,6 +399,14 @@ async def get_task_logs(task_id: str, tail: int = 50) -> str:
     lines = list(recent)
     if not lines:
         return f"No logs available yet for task {task_id}."
+    # The log prints the notebook URL: same rule as get_task_status.
+    if task_id.startswith("jup-"):
+        try:
+            owner_row = await platform_api.workload(task_id)
+        except Exception:
+            owner_row = None
+        if not _may_open(owner_row):
+            lines = [_URL.sub("<url hidden>", ln) for ln in lines]
 
     error_lines = [
         ln for ln in lines if any(kw in ln.lower() for kw in
@@ -412,10 +428,8 @@ async def get_task_logs(task_id: str, tail: int = 50) -> str:
     return "\n".join(result_parts)
 
 
-# catalog
 _CATALOG_KINDS = ("models", "nodes", "servers", "gpu-types", "workload-types", "concurrencies",
                   "precisions", "input-tokens", "output-tokens")
-# Max values shown per catalog.
 _CATALOG_MAX = 40
 
 
@@ -469,7 +483,6 @@ async def platform_catalog(kind: str = "") -> str:
     return CATALOG_HEADER + "\n" + "\n".join(blocks)
 
 
-# benchmark results
 async def _api_json(path: str, **params) -> str:
     """GET an API path and return its JSON text, or an error message."""
     query = {k: v for k, v in params.items() if v not in (None, "", 0)}

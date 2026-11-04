@@ -18,3 +18,11 @@ __pycache__/
 tests/
 pytest.ini
 requirements-dev.txt
+
+# Keys and local secrets never go into the image (COPY . .)
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.env.*
+!.env.example

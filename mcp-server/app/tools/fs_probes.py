@@ -6,6 +6,7 @@ import asyncio
 import fnmatch
 import os
 import re
+import stat
 
 import structlog
 from langchain_core.tools import tool
@@ -20,22 +21,30 @@ def _readable_roots() -> list[str]:
     return [r.strip() for r in settings.readable_roots.split(",") if r.strip()]
 
 
-# Secret file name patterns (case-insensitive).
+# Secret file names (case-insensitive).
 _SECRET_NAMES = (".env", ".env.*", "*.env", ".envrc", "*.pem", "*.key", "*.p12", "*.pfx",
-                 "*.kdbx", "*.tfvars", "id_rsa*", "id_ecdsa*", "id_ed25519*",
+                 "*.kdbx", "*.tfvars", "*.ppk", "id_rsa*", "id_dsa*", "id_ecdsa*",
+                 "id_ed25519*", "id_xmss*",
                  "*-keyfile.json", "gcr-key.json", "service-account*.json", "credentials*",
-                 ".git-credentials", ".netrc", ".pgpass")
+                 ".git-credentials", ".netrc", ".pgpass", ".npmrc", ".pypirc",
+                 "kubeconfig", "kubeconfig.*", "*.kubeconfig",
+                 # Login, sudo and auditd logs from the /var/log mount.
+                 "auth.log*", "secure*", "btmp*", "faillog", "audit.log*")
+
+# Parent dir + name: these names are only secret in that dir (config.json is everywhere).
+_SECRET_PATHS = (".docker/config.json", ".kube/config")
 
 
 def _is_secret(path: str) -> bool:
     name = os.path.basename(path).lower()
-    return name != ".env.example" and any(fnmatch.fnmatch(name, p) for p in _SECRET_NAMES)
+    parent = os.path.basename(os.path.dirname(path)).lower()
+    return name != ".env.example" and (any(fnmatch.fnmatch(name, p) for p in _SECRET_NAMES)
+                                       or f"{parent}/{name}" in _SECRET_PATHS)
 
 
-# The same patterns as git pathspecs.
-_GIT_SECRET_EXCLUDES = tuple(f":(exclude,glob,icase)**/{p}" for p in _SECRET_NAMES)
+_GIT_SECRET_EXCLUDES = tuple(f":(exclude,glob,icase)**/{p}"
+                             for p in _SECRET_NAMES + _SECRET_PATHS)
 
-# A plain revision.
 _REF_RE = re.compile(r"^[0-9A-Za-z._/~^@{}-]{1,100}$")
 
 
@@ -55,6 +64,16 @@ def _resolve_within_roots(path: str, roots: list[str]) -> str | None:
     return None
 
 
+def _open_regular(path: str):
+    """Open `path` for binary reading, refusing anything but a regular file. O_NONBLOCK: an
+    open() of a FIFO swapped in after an isfile() check would otherwise block forever."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(f"{path}: not a regular file")
+    return os.fdopen(fd, "rb")
+
+
 @tool
 async def read_file(path: str, max_lines: int = 200, from_end: bool = True) -> str:
     """Read text file `path`, returning up to `max_lines` lines from the end (or the start if `from_end` is false)."""
@@ -72,7 +91,7 @@ async def read_file(path: str, max_lines: int = 200, from_end: bool = True) -> s
     def _blocking() -> str:
         cap = 1_000_000
         size = os.path.getsize(real)
-        with open(real, "rb") as f:
+        with _open_regular(real) as f:
             if from_end and size > cap:
                 f.seek(size - cap)
                 data = f.read()
@@ -109,9 +128,7 @@ async def grep_logs(pattern: str, path: str = "", max_matches: int = 50,
     if len(pattern) > 200:
         return "Refused: pattern is over 200 characters; search for a shorter string."
     logger.info("tool.fs.grep_logs", pattern=pattern, path=path)
-    # Plain text, never a regex: the pattern comes from the model, which log text it has just
-    # read can steer, and a pattern like (a+)+$ would stall every call on this event loop
-    # (a thread does not help: re holds the GIL). Escaped, matching stays linear.
+    # Escaped, never a regex: a model-chosen (a+)+$ would stall the event loop.
     rx = re.compile(re.escape(pattern), re.IGNORECASE if ignore_case else 0)
     roots = _readable_roots()
     target = path or (roots[0] if roots else "")
@@ -123,8 +140,9 @@ async def grep_logs(pattern: str, path: str = "", max_matches: int = 50,
 
     def _blocking() -> str:
         files = [real] if os.path.isfile(real) else _iter_files(real, cap=2000)
+        # Regular files only: a FIFO, socket or device under a root would block the read.
         files = [r for r in (_resolve_within_roots(f, roots) for f in files)
-                 if r and not _is_secret(r)]
+                 if r and os.path.isfile(r) and not _is_secret(r)]
         hits: list[str] = []
         scanned = 0
         for fp in files:
@@ -132,7 +150,7 @@ async def grep_logs(pattern: str, path: str = "", max_matches: int = 50,
                 break
             scanned += 1
             try:
-                with open(fp, "rb") as f:
+                with _open_regular(fp) as f:
                     data = f.read(1_000_000)
             except OSError:
                 continue
@@ -146,7 +164,6 @@ async def grep_logs(pattern: str, path: str = "", max_matches: int = 50,
         capped = " (capped — narrow the pattern/path for more)" if len(hits) >= max_matches else ""
         body = (f"{len(hits)} match(es){capped} for {pattern!r} under {target} "
                 f"({scanned} file(s) scanned):\n" + "\n".join(hits))
-        # Add the source-not-runtime note for repo hits.
         repo = os.path.realpath(settings.repo_path)
         in_repo = real == repo or real.startswith(repo + os.sep)
         return body + (_SOURCE_IS_NOT_RUNTIME if in_repo else "")
@@ -187,6 +204,21 @@ async def list_dir(path: str) -> str:
         return f"Error listing {path!r}: {exc}"
 
 
+def _configured_repo(repo: str) -> str | None:
+    """Real path of the configured repo if `repo` is it (or empty), else None. git obeys the
+    repo's own config (pager, gpg.program, filters, fsmonitor), so a .git planted anywhere
+    else under the readable roots (/var/log) must never be opened."""
+    want = os.path.realpath(settings.repo_path)
+    return want if os.path.realpath(repo or want) == want else None
+
+
+def _git(repo: str) -> tuple[str, ...]:
+    # Command-line -c beats the repo's config: no setting there can name a program to run.
+    return ("git", "--no-pager", "-c", f"safe.directory={repo}", "-c", "core.fsmonitor=",
+            "-c", "core.pager=cat", "-c", "log.showSignature=false", "-c", "gpg.program=false",
+            "-c", "diff.external=", "-C", repo)
+
+
 @tool
 async def git_log(since_minutes: int = 120, max_commits: int = 20, repo: str = "") -> str:
     """List git commits from the last `since_minutes` minutes (at most `max_commits`) in `repo` (default configured repo)."""
@@ -196,12 +228,12 @@ async def git_log(since_minutes: int = 120, max_commits: int = 20, repo: str = "
     logger.info("tool.fs.git_log", repo=repo, since_minutes=since_minutes)
     if _resolve_within_roots(repo, _readable_roots()) is None:
         return f"Refused: repo {repo!r} is outside the allowed roots."
-
-    # git config overrides for this invocation.
-    _safe = ("-c", "safe.directory=*", "-c", "core.fsmonitor=")
+    real = _configured_repo(repo)
+    if real is None:
+        return f"Refused: {repo!r} is not the configured repo ({settings.repo_path})."
 
     rc, out, err = await run_command(
-        "git", *_safe, "-C", repo, "log",
+        *_git(real), "log",
         f"--since={since_minutes} minutes ago",
         f"-n{max_commits}",
         "--pretty=format:%h  %ci  %an  %s",
@@ -211,7 +243,7 @@ async def git_log(since_minutes: int = 120, max_commits: int = 20, repo: str = "
     if rc != 0:
         return f"git log failed: {(err or out).strip()}"
 
-    rc2, dirty, _ = await run_command("git", *_safe, "-C", repo, "status", "--porcelain")
+    rc2, dirty, _ = await run_command(*_git(real), "status", "--porcelain")
     # Ignore deleted (" D") entries.
     dirty_n = (len([ln for ln in dirty.splitlines() if ln.strip() and not ln.startswith(" D")])
                if rc2 == 0 else -1)
@@ -224,11 +256,9 @@ async def git_log(since_minutes: int = 120, max_commits: int = 20, repo: str = "
             "someone may have edited files on the host directly."
         )
     body = "\n".join(parts)
-    # Add the note only when commits exist.
     return body + (_SOURCE_IS_NOT_RUNTIME if out.strip() else "")
 
 
-# Note appended to source-derived output.
 _SOURCE_IS_NOT_RUNTIME = (
     "\n\nNote: the above is source, not runtime. It carries no "
     "information about whether the containers currently running include it — a "
@@ -246,6 +276,9 @@ async def git_show(ref: str = "HEAD", repo: str = "", max_lines: int = 200) -> s
     logger.info("tool.fs.git_show", repo=repo, ref=ref)
     if _resolve_within_roots(repo, _readable_roots()) is None:
         return f"Refused: repo {repo!r} is outside the allowed roots."
+    real = _configured_repo(repo)
+    if real is None:
+        return f"Refused: {repo!r} is not the configured repo ({settings.repo_path})."
 
     if option_like(ref):
         return (f"Refused: {ref!r} is a git option, not a revision. Pass a commit hash, "
@@ -255,8 +288,7 @@ async def git_show(ref: str = "HEAD", repo: str = "", max_lines: int = 200) -> s
                 "hash, tag or ref (git_log lists the recent ones).")
     max_lines = max(1, min(max_lines, 2000))
     rc, out, err = await run_command(
-        "git", "-c", "safe.directory=*", "-c", "core.fsmonitor=", "-C", repo,
-        "show", ref, "--stat", "--patch", "--no-color", "--no-textconv", "--no-ext-diff",
+        *_git(real), "show", ref, "--stat", "--patch", "--no-color", "--no-textconv", "--no-ext-diff",
         "--", ".", *_GIT_SECRET_EXCLUDES,
     )
     if rc == 127:

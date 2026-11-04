@@ -75,7 +75,9 @@ class Connector(BaseModel):
     description: str = ""
     # ponytail: CEL rules per connector until the policy kind (step 3) writes them from roles.
     rules: list[str] = Field(min_length=1, description="agentgateway mcpAuthorization: who may call which tool")
-    browser: bool = Field(False, description="Browser MCP clients may call it: CORS for any origin, Origin dropped")
+    browser: bool = Field(False, description="MCP clients outside: served on the gateway's HTTPS port too, "
+                                             "with OAuth discovery and CORS for any origin")
+    audience: str | None = Field(None, description="The token audience its server checks (default mcp:<name>)")
 
 
 class Model(BaseModel):

@@ -18,7 +18,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.tools._shell import option_like, run_command
-from app.tools.ssh_probes import _run_ssh_command
+from app.tools.ssh_probes import _resolve_node_user, _run_ssh_command
 
 logger = structlog.get_logger()
 
@@ -42,9 +42,12 @@ _TCP_FAIL_IS_AMBIGUOUS = (
 
 
 async def _tcp(host: str, port: int, timeout: float) -> str:
+    refused, ips = await _vet(host)
+    if refused:
+        return f"TCP {host}:{port}: [REFUSED] {refused}"
     start = time.monotonic()
     try:
-        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout)
+        _, writer = await asyncio.wait_for(asyncio.open_connection(ips[0], port), timeout=timeout)
         writer.close()
         try:
             await writer.wait_closed()
@@ -67,48 +70,108 @@ def _docker_api_host() -> str:
     return (parsed.hostname or "") if parsed.scheme in ("tcp", "http", "https") else ""
 
 
-async def blocked_url(url: str) -> str | None:
-    """Return why the URL must not be fetched (metadata, loopback, Docker API), or None."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return f"only http(s) URLs are fetched, not {parsed.scheme or 'no scheme'!r}"
-    host = parsed.hostname or ""
+async def _addresses(host: str) -> list[str]:
+    infos = await asyncio.get_running_loop().getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    return list(dict.fromkeys(i[4][0].split("%")[0] for i in infos))
+
+
+def _unmapped(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    ip = ipaddress.ip_address(raw)
+    return getattr(ip, "ipv4_mapped", None) or ip     # ::ffff:127.0.0.1 is 127.0.0.1
+
+
+# Metadata services that are not link-local: AWS IMDS over IPv6, Alibaba Cloud.
+_METADATA = {ipaddress.ip_address("fd00:ec2::254"), ipaddress.ip_address("100.100.100.200")}
+
+
+async def _vet(host: str) -> tuple[str | None, list[str]]:
+    """(refusal or None, addresses); callers connect to these, never re-resolve (rebinding)."""
     if not host:
-        return "the URL has no host"
+        return "no host given", []
     docker = _docker_api_host()
     try:
-        infos = await asyncio.get_event_loop().getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-        docker_ips = ({i[4][0] for i in await asyncio.get_event_loop().getaddrinfo(
-            docker, None, proto=socket.IPPROTO_TCP)} if docker else set())
-    except socket.gaierror:
-        return None
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        ips = await _addresses(host)
+    except socket.gaierror as exc:
+        return f"cannot resolve {host!r}: {exc}", []
+    if not ips:
+        return f"cannot resolve {host!r}: no addresses", []
+    try:
+        docker_ips = {_unmapped(a) for a in await _addresses(docker)} if docker else set()
+    except socket.gaierror as exc:
+        # Still refused (the target could be the Docker API), but the name that failed is DOCKER_HOST's.
+        return f"cannot resolve the Docker API host {docker!r} (DOCKER_HOST) to rule it out: {exc}", []
+    for raw in ips:
+        ip = _unmapped(raw)
         if ip.is_link_local or ip.is_loopback or ip.is_unspecified or ip.is_multicast:
-            return f"{host} resolves to {ip}, a link-local/loopback address (metadata, local admin)"
-        if str(ip) in docker_ips:
-            return f"{host} is the Docker API, whose responses carry every container's secrets"
-    return None
+            return f"{host} resolves to {ip}, a link-local/loopback address (metadata, local admin)", ips
+        if ip in _METADATA:
+            return f"{host} resolves to {ip}, a cloud metadata service address", ips
+        if ip in docker_ips:   # compared unmapped: [::ffff:10.0.0.1] is the same host as 10.0.0.1
+            return f"{host} is the Docker API, whose responses carry every container's secrets", ips
+    return None, ips
+
+
+async def _vet_url(url: str) -> tuple[str | None, list[str]]:
+    """(refusal or None, addresses) for a URL; fetch from these addresses only."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"only http(s) URLs are fetched, not {parsed.scheme or 'no scheme'!r}", []
+    if not parsed.hostname:
+        return "the URL has no host", []
+    return await _vet(parsed.hostname)
+
+
+async def blocked_url(url: str) -> str | None:
+    """Return why the URL must not be fetched (metadata, loopback, Docker API), or None."""
+    return (await _vet_url(url))[0]
+
+
+def _pinned(url: str, ip: str) -> tuple[str, dict, dict]:
+    """`url` aimed at the vetted `ip`: (url, headers, extensions) keeping Host and TLS SNI/verification."""
+    parsed = urlparse(url)
+    host = f"[{ip}]" if ":" in ip else ip
+    netloc = host + (f":{parsed.port}" if parsed.port else "")
+    headers = {"Host": parsed.netloc.rsplit("@", 1)[-1]}
+    extensions = {"sni_hostname": parsed.hostname} if parsed.scheme == "https" else {}
+    return parsed._replace(netloc=netloc).geturl(), headers, extensions
+
+
+_BODY_CAP = 65536   # bytes read of a probed body; only 200 characters are shown
 
 
 async def _http(url: str, timeout: float) -> str:
-    refused = await blocked_url(url)
+    # One resolution, vetted and then used: a second lookup could answer differently (rebinding).
+    refused, ips = await _vet_url(url)
     if refused:
         return f"HTTP {url}: [REFUSED] {refused}"
+    target, headers, extensions = _pinned(url, ips[0])
+
+    async def fetch() -> tuple[httpx.Response, bytes]:
+        # Streamed and capped: a huge body is never read, and the stream closes early.
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            async with client.stream("GET", target, headers=headers, extensions=extensions) as resp:
+                body = b""
+                async for chunk in resp.aiter_bytes():
+                    body += chunk
+                    if len(body) > _BODY_CAP:
+                        break
+                return resp, body
+
     start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            resp = await client.get(url)
+        # httpx's timeout is per read, so a server trickling bytes would never trip it.
+        resp, body = await asyncio.wait_for(fetch(), timeout)
         ms = int((time.monotonic() - start) * 1000)
         ctype = resp.headers.get("content-type", "?").split(";")[0].strip() or "?"
-        snippet = " ".join(resp.text[:200].split())
-        line = f"HTTP {url}: [{resp.status_code}] {ctype} ({ms} ms, {len(resp.content)} bytes)"
+        size = f"≥{_BODY_CAP}" if len(body) > _BODY_CAP else str(len(body))
+        snippet = " ".join(body[:800].decode(resp.encoding or "utf-8", "replace")[:200].split())
+        line = f"HTTP {url}: [{resp.status_code}] {ctype} ({ms} ms, {size} bytes)"
         if snippet:
             line += f"\n    body: {snippet}"
         return line
     except httpx.ConnectError as exc:
         return f"HTTP {url}: [FAIL] cannot connect: {exc}"
-    except httpx.TimeoutException:
+    except (httpx.TimeoutException, asyncio.TimeoutError):
         return f"HTTP {url}: [FAIL] timed out after {timeout}s"
     except Exception as exc:
         return f"HTTP {url}: [FAIL] {exc}"
@@ -117,7 +180,10 @@ async def _http(url: str, timeout: float) -> str:
 async def _ping(host: str) -> str:
     if option_like(host):
         return f"PING: refused — {host!r} is a ping option, not a host."
-    rc, out, err = await run_command("ping", "-c", "3", "-w", "8", host, timeout=11)
+    refused, ips = await _vet(host)
+    if refused:
+        return f"PING {host}: [REFUSED] {refused}"
+    rc, out, err = await run_command("ping", "-c", "3", "-w", "8", ips[0], timeout=11)
     if rc == 127:
         return "PING: (ping not installed in image)"
     tail = out.strip().splitlines()[-2:] if out.strip() else [err.strip()]
@@ -152,14 +218,16 @@ async def network_check(host: str = "", port: int = 0, url: str = "", timeout: i
 
 @tool
 async def list_listening_ports() -> str:
-    """List TCP ports listening on the host."""
+    """List TCP ports listening in this MCP server's own network namespace (not the Docker host's; node_exec `ss -tlnp` reads a GPU node's)."""
     logger.info("tool.net.list_listening_ports")
     rc, out, err = await run_command("ss", "-tlnp")
     if rc == 127:
         return "ss is not installed (add iproute2 to the image)."
     if rc != 0:
         return f"ss failed: {err.strip()}"
-    return "Listening TCP sockets:\n" + out.strip()
+    return ("Listening TCP sockets in the aistudio-mcp container's network namespace (the Docker "
+            "host's own listeners are not visible from here; list_containers shows published "
+            "ports):\n" + out.strip())
 
 
 @tool
@@ -176,20 +244,27 @@ async def tcpdump_capture(
         return (f"Refused: {bad!r} is a tcpdump option, not filter syntax. A BPF filter "
                 "is made of expressions like 'host 10.0.0.1 and port 8002'.")
     logger.info("tool.net.tcpdump", iface=iface, filter=bpf_filter, count=count)
+    # -l keeps packets seen before a timeout kill. -q and a 96-byte snaplen keep it to headers:
+    # by default tcpdump decodes HTTP request lines, DNS names and other payload summaries.
     rc, out, err = await run_command(
-        "tcpdump", "-i", iface, "-c", str(count), "-nn", "-tttt", *bpf_filter.split(),
+        "tcpdump", "-l", "-q", "-s", "96", "-i", iface, "-c", str(count), "-nn", "-tttt",
+        *bpf_filter.split(),
         timeout=timeout,
     )
     if rc == 127:
         return "tcpdump is not installed in the agent image."
     if rc != 0 and "permission" in err.lower():
         return "tcpdump: permission denied — the container needs the NET_RAW capability."
+    if rc == 124:
+        if not out.strip():
+            return f"tcpdump captured no packets matching {bpf_filter!r} in {timeout}s."
+        return (f"tcpdump ({bpf_filter}): {len(out.strip().splitlines())} pkt in the {timeout}s "
+                f"window (fewer than {count}):\n{out.strip()}")
     body = out.strip() or err.strip()
     return f"tcpdump ({bpf_filter}), up to {count} pkt:\n{body}" if body else \
         "tcpdump captured no packets in the window (no matching traffic)."
 
 
-# TLS certificate
 _TLS_IS_NOT_REACHABILITY = (
     "\n  Reading this chain required a TCP connection and a TLS handshake, so the "
     "listener is up and answering. A plain HTTP probe against the same port reports "
@@ -201,23 +276,23 @@ _TLS_IS_NOT_REACHABILITY = (
 )
 
 
-def _read_cert(host: str, port: int, timeout: float) -> tuple[bytes | None, str, str]:
-    """Return (DER bytes, TLS version, error) without validating the chain."""
+def _read_cert(host: str, ip: str, port: int, timeout: float) -> tuple[bytes | None, str, str]:
+    """Return (DER bytes, TLS version, error) from `ip`, presenting `host`, without validating the chain."""
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     try:
-        with socket.create_connection((host, port), timeout=timeout) as sock:
+        with socket.create_connection((ip, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as tls:
                 return tls.getpeercert(binary_form=True), tls.version() or "?", ""
     except Exception as exc:
         return None, "", f"{type(exc).__name__}: {exc}"
 
 
-def _validate_cert(host: str, port: int, timeout: float) -> str:
+def _validate_cert(host: str, ip: str, port: int, timeout: float) -> str:
     """Return "" if the default trust store accepts the chain, else the reason."""
     try:
-        with socket.create_connection((host, port), timeout=timeout) as sock:
+        with socket.create_connection((ip, port), timeout=timeout) as sock:
             with ssl.create_default_context().wrap_socket(sock, server_hostname=host):
                 return ""
     except ssl.SSLCertVerificationError as exc:
@@ -265,8 +340,11 @@ async def check_tls_cert(host: str, port: int = 443) -> str:
     port = max(1, min(port, 65535))
     t = float(settings.net_probe_timeout)
     logger.info("tool.net.check_tls_cert", host=host, port=port)
+    refused, ips = await _vet(host.strip())
+    if refused:
+        return f"TLS certificate for {host}:{port}: [REFUSED] {refused}"
 
-    der, version, err = await asyncio.to_thread(_read_cert, host, port, t)
+    der, version, err = await asyncio.to_thread(_read_cert, host, ips[0], port, t)
     if der is None:
         return (
             f"TLS certificate for {host}:{port}\n"
@@ -276,7 +354,7 @@ async def check_tls_cert(host: str, port: int = 443) -> str:
             "other than TLS here."
         )
 
-    reason = await asyncio.to_thread(_validate_cert, host, port, t)
+    reason = await asyncio.to_thread(_validate_cert, host, ips[0], port, t)
     out = [f"TLS certificate for {host}:{port}", f"  handshake: {version}"]
     out += _cert_lines(der, datetime.now(timezone.utc))
     out.append(
@@ -284,8 +362,6 @@ async def check_tls_cert(host: str, port: int = 443) -> str:
     )
     return "\n".join(out) + _TLS_IS_NOT_REACHABILITY
 
-
-# clock skew
 
 _SKEW_BREAKS_AUTH_AND_TIMELINES = (
     "\n  Certificate and token validity windows (JWT iat/exp, Kerberos tickets, "
@@ -331,8 +407,9 @@ async def _api_clock(max_ok: int, timeout: float) -> str:
 
 
 async def _node_clock(node_ip: str, max_ok: int) -> str:
+    user = await _resolve_node_user(node_ip)    # NODE_SSH_USER, like every other node probe
     t0 = time.time()
-    ok, out = await _run_ssh_command(node_ip, "date -u +%s")
+    ok, out = await _run_ssh_command(node_ip, "date -u +%s", username=user)
     t1 = time.time()
     if not ok:
         first = out.splitlines()[0] if out else "no output"
@@ -344,11 +421,15 @@ async def _node_clock(node_ip: str, max_ok: int) -> str:
     return _skew_line(f"node {node_ip}", remote, (t0 + t1) / 2, 1.0, max_ok)
 
 
+_MAX_CLOCK_NODES = 20
+
+
 @tool
 async def check_clock_skew(node_ips: str = "", max_ok_seconds: int = 60) -> str:
     """Compare clocks of this container, the aistudio API and GPU nodes `node_ips` (comma-separated); offsets above `max_ok_seconds` are flagged."""
     max_ok = max(1, max_ok_seconds)
     ips = [ip.strip() for ip in node_ips.split(",") if ip.strip()]
+    ips, dropped = ips[:_MAX_CLOCK_NODES], ips[_MAX_CLOCK_NODES:]   # one SSH session each, all at once
     logger.info("tool.net.check_clock_skew", nodes=len(ips), max_ok=max_ok)
 
     now = datetime.now(timezone.utc)
@@ -366,4 +447,6 @@ async def check_clock_skew(node_ips: str = "", max_ok_seconds: int = 60) -> str:
         if not ips
         else ""
     )
+    if dropped:
+        tail += f"\n  Only the first {_MAX_CLOCK_NODES} nodes were checked; {len(dropped)} more were not."
     return head + "\n" + "\n".join(lines) + tail + _SKEW_BREAKS_AUTH_AND_TIMELINES

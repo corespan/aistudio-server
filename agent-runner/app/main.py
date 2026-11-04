@@ -92,7 +92,7 @@ async def start_run(body: RunRequest, who: Identity = Depends(caller)):
         raise HTTPException(422, f"unknown harness {body.harness!r}")
     h = harnesses.load().get(body.harness or "")
     if h is not None and h.engine == "claude-code":
-        if not claude.allowed(h, who.sub):
+        if not claude.allowed(h, who.user):
             raise HTTPException(403, f"{h.name} runs on a Claude subscription that isn't yours")
         await _windows_left(who.sub)
     history = []
@@ -180,14 +180,14 @@ async def list_workflows(who: Identity = Depends(caller)):
     """The workflows this caller may start."""
     return [{"name": w.name, "purpose": w.purpose, "input": w.input, "repo": w.repo,
              "steps": [s.id for s in w.steps]}
-            for w in registry.load().workflows.values() if who.sub in w.users]
+            for w in registry.load().workflows.values() if who.user in w.users]
 
 
 @app.post("/workflows/{name}/runs")
 async def start_workflow(name: str, body: WorkflowRequest, who: Identity = Depends(caller)):
     """Start a workflow; returns its event stream, like POST /runs. It ends at the approval gate."""
     wf = registry.load().workflows.get(name)
-    if wf is None or who.sub not in wf.users:
+    if wf is None or who.user not in wf.users:
         raise HTTPException(404, "no such workflow")      # someone else's doesn't exist for this caller
     given = getattr(body, wf.input)
     if given is None:

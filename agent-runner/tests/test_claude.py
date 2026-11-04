@@ -116,7 +116,7 @@ async def test_the_step_cap_stops_a_step_and_is_recorded(sandbox):
 
 async def test_a_run_past_its_token_cap_refuses_the_next_step(sandbox, monkeypatch):
     fake_mcp, _ = sandbox
-    rt = run_graph.Runtime(token="tok", sub="rsingh")
+    rt = run_graph.Runtime(token="tok", sub="rsingh", user="rsingh")
     rt.budget.weighted = settings.claude_run_max_weighted
     with pytest.raises(claude.LimitHit, match="run"):
         await claude.run(harnesses.load()["coder"], rt, "run-1", "t1", lambda *a, **k: None, "x", {})
@@ -132,7 +132,7 @@ async def test_the_step_cap_shrinks_to_what_the_windows_have_left(monkeypatch):
 
 def test_a_used_up_window_refuses_new_runs_with_when_it_frees(signer, monkeypatch):
     monkeypatch.setattr(settings, "claude_day_weighted", 1000)
-    asyncio.run(usage.store.add(sub="rsingh", run_id="r", task="t", agent="coder", model="m", kind="turn",
+    asyncio.run(usage.store.add(sub="id-rsingh", run_id="r", task="t", agent="coder", model="m", kind="turn",
                                 tokens={"input": 0, "output": 1000, "cache_read": 0, "cache_write": 0}))
     with TestClient(app) as client:
         r = client.post("/runs", json={"message": "x", "harness": "coder"},
@@ -163,7 +163,7 @@ async def test_one_claude_step_runs_at_a_time(sandbox):
         return await claude_step(args, progress)
     fake_mcp["answers"]["workspace_claude"] = slow_claude
     h = harnesses.load()["coder"]
-    rts = [run_graph.Runtime(token="tok", sub="rsingh") for _ in range(2)]
+    rts = [run_graph.Runtime(token="tok", sub="rsingh", user="rsingh") for _ in range(2)]
     await asyncio.gather(*(claude.run(h, rt, f"run-{i}", "t1", lambda *a, **k: None, "x", {})
                            for i, rt in enumerate(rts)))
     assert peak[0] == 1

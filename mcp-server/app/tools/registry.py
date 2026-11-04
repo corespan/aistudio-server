@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.tools.actions import start_jupyter, start_workload, stop_workload
+from app.tools.actions import delete_run_results, start_jupyter, start_workload, stop_jupyter
 from app.tools.aistudio import (
     check_service_health,
     get_benchmark,
@@ -85,7 +85,8 @@ ALL_TOOLS: list = [
     # actions (write tools)
     start_workload,
     start_jupyter,
-    stop_workload,
+    stop_jupyter,
+    delete_run_results,
 ]
 
 

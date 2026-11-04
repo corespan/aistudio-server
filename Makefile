@@ -1,6 +1,6 @@
 .PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark \
-        compliance deps-lock third-party vendor-assets sbom check-models check-node-env \
-        mcp-init mcp-up mcp-token mcp-check mcp-test sbom-mcp runner-test registry sandbox-test
+        compliance deps-lock third-party sbom check-models check-node-env \
+        mcp-env mcp-init mcp-up mcp-db mcp-rabbit mcp-tls mcp-user mcp-prune mcp-token mcp-check mcp-test sbom-mcp runner-test registry sandbox-test
 
 up:
 	docker compose up --build -d
@@ -26,7 +26,7 @@ wait-api:
 	done; \
 	echo "ERROR: API did not become ready after 90s." && exit 1
 
-setup: vendor-assets up
+setup: up
 	@echo "Waiting for services to start..."
 	@sleep 5
 	$(MAKE) migrate
@@ -38,7 +38,6 @@ setup: vendor-assets up
 	@echo "  API:         http://localhost:8002"
 	@echo "  Swagger:     http://localhost:8002/docs"
 	@echo "  RabbitMQ:    http://localhost:15672"
-	@echo "  Demo UI:     http://localhost:3000"
 
 seed-real:
 	docker compose exec api python scripts/seed_rtx5090_results.py
@@ -73,31 +72,117 @@ shell:
 	docker compose exec api python
 
 # ── MCP server (behind agentgateway) — see docs/mcp-server.md ─────────────────
-# mint.py runs in the aistudio-mcp image, so the host needs no Python packages.
-# As the host user: the service drops every capability, so root in it cannot write gateway/, and
-# the key should belong to whoever runs make anyway.
-MCP_MINT = docker compose --profile mcp run --rm --no-deps --user "$(shell id -u):$(shell id -g)" \
-	-v "$(CURDIR)/gateway:/gateway-rw" aistudio-mcp python /gateway-rw/mint.py
+# The address clients use for the gateway (and Keycloak's login pages): MCP_PUBLIC_HOST from the
+# environment or .env, else this host's first address. mcp-init/mcp-up write it to .env for compose.
+MCP_PUBLIC_HOST ?= $(shell sed -n 's/^MCP_PUBLIC_HOST=//p' .env 2>/dev/null)
+ifeq ($(strip $(MCP_PUBLIC_HOST)),)
+MCP_PUBLIC_HOST := $(firstword $(shell hostname -I 2>/dev/null) localhost)
+endif
+AGW_PORT ?= $(or $(shell sed -n 's/^AGW_PORT=//p' .env 2>/dev/null),8050)
+export MCP_PUBLIC_HOST
 
-mcp-init:
+# Keycloak passwords, the CA key and the gateway's TLS files live outside the repo, which api and
+# worker mount read-write. Pinned in .env so compose and every later make use the same place.
+MCP_SECRETS_DIR ?= $(or $(shell sed -n 's/^MCP_SECRETS_DIR=//p' .env 2>/dev/null),$(HOME)/.aistudio-mcp)
+export MCP_SECRETS_DIR
+
+# Names and IPs in the gateway's TLS cert: MCP_TLS_HOSTS from the environment or .env, else this
+# host's name and addresses, detected at run time. MCP_PUBLIC_HOST is always added.
+MCP_TLS_HOSTS ?= $(shell sed -n 's/^MCP_TLS_HOSTS=//p' .env 2>/dev/null)
+ifeq ($(strip $(MCP_TLS_HOSTS)),)
+MCP_TLS_HOSTS := $(shell hostname) $(shell hostname -I 2>/dev/null) localhost 127.0.0.1
+endif
+
+# The AIStudio admin make mcp-up creates when the realm has none (kc.py first_admin).
+MCP_ADMIN_USER ?= $(or $(shell sed -n 's/^MCP_ADMIN_USER=//p' .env 2>/dev/null),aistudio-admin)
+
+# Where the AI Assistant panel may send users back after a Keycloak login (kc.py setup, client
+# aistudio-panel), space separated. Blank = localhost only.
+PANEL_REDIRECT_URIS ?= $(shell sed -n 's/^PANEL_REDIRECT_URIS=//p' .env 2>/dev/null)
+
+# mint.py (TLS) and kc.py (Keycloak) run in the aistudio-mcp image, so the host needs no Python packages.
+# As the host user: the service drops every capability, so root in it cannot write the secrets, and
+# the keys should belong to whoever runs make anyway.
+MCP_RUN = docker compose --profile mcp run --rm --no-deps --user "$(shell id -u):$(shell id -g)" \
+	-e MCP_TLS_HOSTS="$(MCP_PUBLIC_HOST) $(MCP_TLS_HOSTS)" -e MCP_PUBLIC_URL="https://$(MCP_PUBLIC_HOST):$(AGW_PORT)" \
+	-e MCP_SECRETS=/secrets -e MCP_ADMIN_USER="$(MCP_ADMIN_USER)" -e PANEL_REDIRECT_URIS="$(PANEL_REDIRECT_URIS)" \
+	-v "$(MCP_SECRETS_DIR):/secrets" -v "$(CURDIR)/gateway:/gateway:ro" aistudio-mcp python
+MCP_MINT = $(MCP_RUN) /gateway/mint.py
+MCP_KC = $(MCP_RUN) /gateway/kc.py
+
+mcp-env:
+	@touch .env
+	@for v in MCP_PUBLIC_HOST MCP_SECRETS_DIR; do grep -q "^$$v=" .env || echo "$$v=" >> .env; done
+	@sed -i -e 's|^MCP_PUBLIC_HOST=$$|MCP_PUBLIC_HOST=$(MCP_PUBLIC_HOST)|' \
+		-e 's|^MCP_SECRETS_DIR=$$|MCP_SECRETS_DIR=$(MCP_SECRETS_DIR)|' .env
+	@mkdir -p -m 700 "$(MCP_SECRETS_DIR)"
+	@# These lived in gateway/ before: keep the Keycloak passwords (its database has them) and
+	@# retire the old CA (it could sign any name).
+	@if [ -f gateway/keycloak.env ] && [ ! -f "$(MCP_SECRETS_DIR)/keycloak.env" ]; then \
+		mv gateway/keycloak.env "$(MCP_SECRETS_DIR)/" && echo "moved gateway/keycloak.env to $(MCP_SECRETS_DIR)"; fi
+	@if [ -d gateway/tls ] && [ ! -e "$(MCP_SECRETS_DIR)/tls" ]; then rm -rf gateway/tls && \
+		echo "removed the old CA in gateway/tls: clients must trust the new $(MCP_SECRETS_DIR)/tls/ca.pem"; fi
+	@test -s "$(MCP_SECRETS_DIR)/rabbitmq_password" || { umask 077; \
+		head -c 24 /dev/urandom | base64 | tr -d '/+=\n' > "$(MCP_SECRETS_DIR)/rabbitmq_password"; }
+	@echo "MCP public address: https://$(MCP_PUBLIC_HOST):$(AGW_PORT); secrets in $(MCP_SECRETS_DIR) (both in .env)"
+
+mcp-init: mcp-env
 	docker compose --profile mcp build aistudio-mcp
-	$(MCP_MINT) init
+	$(MCP_KC) env
+	$(MCP_MINT) tls
 
-mcp-up:
-	@test -f gateway/jwks.json || $(MAKE) mcp-init
-	@# A token pasted across a terminal line wrap has a space in it, and Anthropic answers 401.
+mcp-up: mcp-env
+	@test -f "$(MCP_SECRETS_DIR)/keycloak.env" -a -f "$(MCP_SECRETS_DIR)/tls/ca.pem" || $(MAKE) mcp-init
+	$(MCP_MINT) tls --if-needed
+	@# A token pasted across a terminal line wrap has a space in it, and Anthropic or GitHub answers 401.
 	@! grep -Eq '^(CLAUDE_CODE_OAUTH_TOKEN|GITHUB_PAT)=.*[[:space:]]' .env 2>/dev/null || { echo 'CLAUDE_CODE_OAUTH_TOKEN or GITHUB_PAT in .env contains whitespace (a wrapped paste?): remove it' >&2; exit 1; }
-	@# sandbox-mcp can't pull images (its Docker proxy allows containers only), so pull here.
+	@# sandbox-mcp can't pull or build images (its Docker proxy allows containers only), so here.
 	docker pull -q $${SANDBOX_IMAGE:-python:3.11-slim}
-	@# The workspace image (Claude Code, git, the repo's test deps): sandbox-mcp can't build or pull.
 	docker build -q -f sandbox-mcp/workspace/Dockerfile -t aistudio-workspace:local .
-	docker compose --profile mcp up --build -d
+	$(MAKE) mcp-db
+	$(MAKE) mcp-rabbit
+	@# --remove-orphans: containers of services since removed (keycloak-db, pgadmin) go too.
+	docker compose --profile mcp up --build -d --remove-orphans
+	docker compose --profile mcp restart agentgateway agentgateway-sandbox
+	$(MCP_KC) setup
+
+mcp-rabbit:
+	@# queue_status's own RabbitMQ user: monitoring tag, vhost access, no configure/write/read, so it
+	@# lists queues but cannot publish or consume tasks. The password goes in on stdin, not argv.
+	docker compose up -d --wait rabbitmq
+	@docker compose exec -T rabbitmq sh -c 'read -r pw; \
+		{ rabbitmqctl -q add_user aistudio-mcp "$$pw" 2>/dev/null || rabbitmqctl -q change_password aistudio-mcp "$$pw"; } && \
+		rabbitmqctl -q set_user_tags aistudio-mcp monitoring && \
+		rabbitmqctl -q set_permissions -p / aistudio-mcp "^$$" "^$$" "^$$"' < "$(MCP_SECRETS_DIR)/rabbitmq_password"
+	@echo "rabbitmq: user aistudio-mcp (monitoring only)"
+
+mcp-db:
+	@# Keycloak's role and database in the shared postgres; the password goes in on stdin, not argv.
+	docker compose up -d --wait postgres
+	@{ printf "\\set pw '%s'\n" "$$(sed -n 's/^KC_DB_PASSWORD=//p' "$(MCP_SECRETS_DIR)/keycloak.env")"; \
+		cat gateway/keycloak/db.sql; } | docker compose exec -T postgres psql -q -v ON_ERROR_STOP=1 -U aistudio -d postgres
+	@echo "postgres: database keycloak, owned by role keycloak"
+
+mcp-tls:
+	@# Reissue for exactly MCP_PUBLIC_HOST + MCP_TLS_HOSTS with the same CA, so clients keep trusting it.
+	$(MCP_MINT) tls
+	-docker compose --profile mcp restart agentgateway
+
+mcp-user:
+	@# make mcp-user NAME=alice ROLE=viewer|operator|admin|none (a new user gets a one-time password)
+	@$(MCP_KC) user $(NAME) $(ROLE)
+
+mcp-prune:
+	@# Remove self-registered clients no one is logged in through (anyone can register; Keycloak stops at 200).
+	@$(MCP_KC) prune
 
 mcp-token:
-	@$(MCP_MINT) $(or $(ROLE),viewer) $(or $(SUB),local-$(or $(ROLE),viewer)) --ttl $(or $(TTL),3600)
+	@# A real Keycloak login token for the mcp-check-ROLE user, for curl and scripts. CLIENT=panel:
+	@# the panel client's (an hour, as agent-runner's workflows need); default the MCP client's (10 min).
+	@$(MCP_KC) token $(or $(ROLE),viewer) $(CLIENT)
 
 mcp-check:
-	MINT='$(MCP_MINT)' bash gateway/check.sh
+	TOKEN='$(MCP_KC) token' bash gateway/check.sh
 
 mcp-test:
 	cd mcp-server && python -m pytest -q
@@ -137,28 +222,14 @@ deps-lock:
 third-party:
 	python3 scripts/generate_third_party_notices.py
 
-vendor-assets:
-	@# `make setup` depends on this. The .woff2 and chart.umd.js binaries are
-	@# gitignored, so a fresh clone has the CSS and the licence notices but not
-	@# the files themselves. --if-missing makes repeat setups a no-op.
-	@#
-	@# Non-fatal: demo-ui is a demo. A node without npm, or an air-gapped one,
-	@# should still get a working API and worker.
-	@./scripts/vendor_frontend_assets.sh --if-missing || { \
-		echo ""; \
-		echo "WARNING: could not vendor demo-ui assets — the dashboard will render"; \
-		echo "         with system fonts and no charts. Everything else is unaffected."; \
-		echo "         Fix with: make vendor-assets"; \
-		echo ""; \
-	}
-
 sbom:
 	@# Needs syft and pull access to the workload registry:
 	@#   gcloud auth configure-docker us-docker.pkg.dev
 	./scripts/generate_sbom.sh
 
 sbom-mcp:
-	@# Needs only docker: builds aistudio-mcp, agent-runner and sandbox-mcp, pulls agentgateway + docker-socket-proxy.
+	@# Needs only docker: builds aistudio-mcp, agent-runner and sandbox-mcp, pulls agentgateway,
+	@# docker-socket-proxy, keycloak.
 	./scripts/generate_sbom.sh mcp
 
 check-models:
@@ -195,7 +266,7 @@ compliance:
 	@grep -qF "3. Grant of Patent License" LICENSE || (echo "FAIL: LICENSE missing section 3" && exit 1)
 	@echo "  ok — $$(wc -c < LICENSE) bytes, all sections present"
 	@echo "── Required files ──────────────────────────────────────────────────"
-	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md agent-runner/THIRD-PARTY-NOTICES.md sandbox-mcp/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do \
+	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md agent-runner/THIRD-PARTY-NOTICES.md sandbox-mcp/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md; do \
 		test -f $$f && echo "  ok — $$f" || (echo "  FAIL — missing $$f" && exit 1); \
 	done
 	@echo "── Pinned dependencies ─────────────────────────────────────────────"
@@ -215,10 +286,6 @@ compliance:
 	done
 	@echo "── Third-party inventory ───────────────────────────────────────────"
 	@python3 scripts/generate_third_party_notices.py --check
-	@echo "── Frontend assets ─────────────────────────────────────────────────"
-	@! grep -rqE 'https?://(fonts|cdn)\.' demo-ui/ --include='*.html' --include='*.js' --include='*.css' \
-		|| (echo "  FAIL — demo-ui references a third-party origin" && exit 1)
-	@echo "  ok — no third-party asset references"
 	@echo ""
 	@echo "Compliance checks passed."
 	@echo "Not covered here (require credentials or docker): 'make sbom', 'make sbom-mcp', 'make check-models'."

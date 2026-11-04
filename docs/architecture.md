@@ -104,10 +104,13 @@ corespan/aistudio-server#8). It replaces the earlier idea of a stateless chat pr
 UI actions: it runs agents that look things up and answer, and changes nothing.
 
 ```
-panel ──JWT──> agent-runner :8060 ──same JWT──> agentgateway :8050 ──> /mcp/aistudio, /mcp/sandbox
-                  │  LangGraph: plan → agents (parallel) → answer          └──> /llm (vLLM)
+panel ──Keycloak token──> agent-runner :8060 ──same token──> agentgateway :8052 (inside) ──> /mcp/aistudio, /mcp/sandbox
+                  │  LangGraph: plan → agents (parallel) → answer                       └──> /llm (vLLM)
                   └─ Postgres: checkpoints, run log, conversations
 ```
+
+Users log in to Keycloak (realm `aistudio`, client `aistudio-panel`), the same login as the MCP
+door; their role is the `roles.aistudio` claim.
 
 - **Agents**, read-only: `analyst` (benchmark results, comparisons), `assistant` (quick status
   and health), `diagnostics` (failures and slowdowns). Each is a file in

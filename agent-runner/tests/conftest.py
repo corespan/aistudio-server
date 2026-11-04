@@ -129,7 +129,8 @@ def signer(tmp_path, monkeypatch):
 
     def make(sub="alice", role="viewer", aud=("agentgateway", "mcp:aistudio", "agent-runner")):
         now = int(time.time())
-        return jwt.encode({"iss": "aistudio", "aud": list(aud), "sub": sub, "jti": uuid.uuid4().hex,
-                           "iat": now, "exp": now + 300, "roles": {"aistudio": role}},
+        # As Keycloak issues them: a user id as sub, the username in preferred_username.
+        return jwt.encode({"iss": "aistudio", "aud": list(aud), "sub": f"id-{sub}", "preferred_username": sub,
+                           "jti": uuid.uuid4().hex, "iat": now, "exp": now + 300, "roles": {"aistudio": role}},
                           key, algorithm="ES256", headers={"kid": "test"})
     return make

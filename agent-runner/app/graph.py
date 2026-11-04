@@ -26,6 +26,7 @@ from app.prompts import PLANNER, PLANNER_RETRY, SUMMARIZER
 class Runtime:
     token: str
     sub: str = ""
+    user: str = ""          # the username: model and workflow allow-lists
     budget: agent.Budget = field(default_factory=agent.Budget)
     agents: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(settings.max_parallel_agents))
@@ -129,7 +130,7 @@ async def plan_node(state: RunState, config) -> dict:
         agents = {n: h.purpose for n, h in harnesses.available(user_tools).items()}
     if state.get("harness"):
         h = harnesses.load()[state["harness"]]
-        if h.engine == "claude-code" and claude.allowed(h, rt.sub):
+        if h.engine == "claude-code" and claude.allowed(h, rt.user):
             agents = {**agents, h.name: h.purpose}     # started by name only, never planned
         plan = {"goal": state["message"], "tasks": [
             {"id": "t1", "agent": state["harness"], "task": state["message"] + framing(state), "needs": []}]}

@@ -30,6 +30,7 @@ class Run:
     status: str = "running"
     workflow: str | None = None
     started: float = field(default_factory=time.monotonic)
+    user: str = ""          # the username, for allow-lists; sub owns the run
 
 
 class TooManyRuns(Exception):
@@ -71,7 +72,7 @@ class RunManager:
                      conversation_id: str | None = None) -> Run:
         if self.active(ident.sub) >= settings.max_runs_per_user:
             raise TooManyRuns(f"at most {settings.max_runs_per_user} active runs per user")
-        run = Run(id="run-" + secrets.token_hex(8), sub=ident.sub, workflow=workflow)
+        run = Run(id="run-" + secrets.token_hex(8), sub=ident.sub, workflow=workflow, user=ident.user)
         await self.runlog.start(run.id, ident.sub, message, conversation_id, inputs.get("context") or None)
         self._launch(run, ident.token, inputs)
         return run
@@ -80,7 +81,7 @@ class RunManager:
         """Continue a run this process doesn't hold (after a restart) from its last checkpoint."""
         if self.active(ident.sub) >= settings.max_runs_per_user:
             raise TooManyRuns(f"at most {settings.max_runs_per_user} active runs per user")
-        run = Run(id=run_id, sub=ident.sub, events=await self.runlog.events(run_id))
+        run = Run(id=run_id, sub=ident.sub, events=await self.runlog.events(run_id), user=ident.user)
         self._launch(run, ident.token, None)
         return run
 
@@ -91,18 +92,19 @@ class RunManager:
             row = await self.runlog.get(run_id)
             if row is None or row["sub"] != ident.sub:
                 return None
-            run = Run(id=run_id, sub=ident.sub, events=await self.runlog.events(run_id), status=row["status"])
+            run = Run(id=run_id, sub=ident.sub, events=await self.runlog.events(run_id), status=row["status"],
+                      user=ident.user)
         if run.sub != ident.sub:
             return None
         if run.status != "awaiting_approval":
             raise NotWaiting(f"the run is {run.status}, not waiting for approval")
         run.status = "running"
-        self._launch(run, ident.token, Command(resume={**decision, "by": ident.sub}))
+        self._launch(run, ident.token, Command(resume={**decision, "by": ident.user}))
         return run
 
     def _launch(self, run: Run, token: str, inputs) -> None:
         self.runs[run.id] = run
-        run_graph.RUNTIME[run.id] = run_graph.Runtime(token=token, sub=run.sub)
+        run_graph.RUNTIME[run.id] = run_graph.Runtime(token=token, sub=run.sub, user=run.user)
         run.task = asyncio.create_task(self._drive(run, inputs))
         asyncio.create_task(self._watch(run))
 

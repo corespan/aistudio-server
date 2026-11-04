@@ -24,20 +24,38 @@ def test_the_shipped_lock_file_is_up_to_date():
 def test_each_connector_renders_a_gateway_route_and_an_audience():
     files = registry.render(registry.build(Path(settings.platform_dir)))
     by_name = {p.name: text for p, text in files.items()}
-    routes = yaml.safe_load(by_name["config.yaml"])["binds"][0]["listeners"][0]["routes"]
+    binds = {b["port"]: b["listeners"][0] for b in yaml.safe_load(by_name["config.yaml"])["binds"]}
+    # :8052, inside only: everything agent-runner calls.
+    routes = binds[8052]["routes"]
     policies = {r["matches"][0]["path"]["pathPrefix"]: r["policies"] for r in routes}
-    assert set(policies) == {"/llm", "/mcp/aistudio", "/mcp/sandbox", "/github/"}
-    # GitHub: the sub and the exact REST calls are checked; the PAT comes from the gateway's env.
+    assert set(policies) == {"/llm", "/mcp/aistudio", "/mcp/sandbox", "/github/"} and "tls" not in binds[8052]
+    # GitHub: the user and the exact REST calls are checked; the PAT comes from the gateway's env.
     rule = policies["/github/"]["authorization"]["rules"][0]
-    assert rule.startswith("jwt.sub in ['rsingh'] && ") and "git/(blobs|trees|commits|refs)" in rule
+    assert rule.startswith("jwt.preferred_username in ['rsingh'] && ") and "git/(blobs|trees|commits|refs)" in rule
     assert "receive-pack" not in rule and "DELETE" not in rule and "PUT" not in rule
     # The one update allowed: refs under agent/ (pr-followup's fast-forward). Never master.
     assert "request.method == 'PATCH' && request.path.matches('^/github/repos/(corespan/aistudio-server)/git/refs/heads/agent/" in rule
     assert policies["/github/"]["requestHeaderModifier"]["set"]["authorization"] == "Bearer ${GITHUB_PAT}"
-    # Every route checks the JWT; only the browser connector answers CORS.
-    assert all(p["jwtAuth"]["mode"] == "strict" for p in policies.values())
-    assert "cors" in policies["/mcp/aistudio"] and "cors" not in policies["/mcp/sandbox"]
-    assert json.loads(by_name["audiences.json"]) == ["agentgateway", "agent-runner", "mcp:aistudio", "mcp:sandbox"]
+    # Every inside route checks Keycloak's token, for the gateway's audience.
+    for p in policies.values():
+        assert p["jwtAuth"]["mode"] == "strict" and p["jwtAuth"]["audiences"] == ["aistudio-mcp"]
+        assert p["jwtAuth"]["issuer"] == "${MCP_PUBLIC_URL}/realms/aistudio" and "keycloak:8080" in p["jwtAuth"]["jwks"]["url"]
+    # Every token carries one audience per service that checks it (kc.py setup adds them in Keycloak).
+    assert json.loads(by_name["audiences.json"]) == ["aistudio-mcp", "agent-runner", "mcp:sandbox"]
+
+
+def test_the_https_port_has_only_what_mcp_clients_outside_need():
+    files = registry.render(registry.build(Path(settings.platform_dir)))
+    gw = yaml.safe_load(next(t for p, t in files.items() if p.name == "config.yaml"))
+    [outside] = [b["listeners"][0] for b in gw["binds"] if b["port"] == 8050]
+    assert outside["protocol"] == "HTTPS" and outside["tls"]["cert"] == "/config/tls/cert.pem"
+    prefixes = {m["path"].get("pathPrefix") or m["path"].get("exact") for r in outside["routes"] for m in r["matches"]}
+    # The browser connector with OAuth discovery, and Keycloak's login: never /llm, /github or sandbox.
+    assert "/mcp/aistudio" in prefixes and "/.well-known/oauth-protected-resource/mcp/aistudio" in prefixes
+    assert "/realms/aistudio/protocol/openid-connect/" in prefixes
+    assert not {"/llm", "/github/", "/mcp/sandbox"} & prefixes
+    mcp = outside["routes"][0]["policies"]["mcpAuthentication"]
+    assert mcp["audiences"] == ["aistudio-mcp"] and mcp["resourceMetadata"]["resource"] == "${MCP_PUBLIC_URL}/mcp/aistudio"
 
 
 def test_an_anthropic_model_renders_the_sandbox_gateway_for_its_users_only():
@@ -49,7 +67,7 @@ def test_an_anthropic_model_renders_the_sandbox_gateway_for_its_users_only():
     assert route["matches"][0]["path"]["pathPrefix"] == "/llm/anthropic"
     pol = route["policies"]
     assert pol["jwtAuth"]["mode"] == "strict"
-    assert pol["authorization"]["rules"] == ["jwt.sub in ['rsingh']"]
+    assert pol["authorization"]["rules"] == ["jwt.preferred_username in ['rsingh']"]
     assert pol["localRateLimit"][0]["maxTokens"] == 60
     # The token is substituted by agentgateway from its own env, never rendered into the file.
     assert pol["requestHeaderModifier"]["set"]["authorization"] == "Bearer ${CLAUDE_CODE_OAUTH_TOKEN}"

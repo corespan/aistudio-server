@@ -6,14 +6,17 @@ built on [LangGraph](https://github.com/langchain-ai/langgraph) and runs in the 
 profile beside agentgateway and the MCP server.
 
 ```
-panel ──JWT──> agent-runner :8060 ──same JWT──> agentgateway :8050 ──> /mcp/aistudio  (platform tools)
-                    │                                              ├──> /mcp/sandbox   (sandbox_run)
-                    │                                              └──> /llm           (vLLM)
-                    └── Postgres: agent_runner database (LangGraph checkpoints, run log)
+panel ──Keycloak token──> agent-runner :8060 ──same token──> agentgateway :8052 ──> /mcp/aistudio  (platform tools)
+  │                            │                            (inside only)    ├──> /mcp/sandbox   (sandbox_run, workspaces)
+  └─ logs in to Keycloak       │                                             ├──> /llm           (vLLM)
+     (realm aistudio)          │                                             └──> /github        (after approval)
+                               └── Postgres: agent_runner database (checkpoints, run log, conversations, usage)
 ```
 
-It holds no keys. Every tool call and every LLM call carries the caller's own JWT through
-agentgateway, so no agent can do more than the caller could, however many run at once.
+It holds no keys. Every tool call and every LLM call carries the caller's own Keycloak token
+through agentgateway, so no agent can do more than the caller could, however many run at once.
+agentgateway's `:8052` listener is for the runner inside the compose network and is never
+published; `:8050` is the HTTPS door for MCP clients outside ([mcp-server.md](mcp-server.md)).
 
 Each agent opens one MCP session per connector in the registry (see [Packs](#packs)), at
 `GATEWAY_URL/mcp/<connector>`, and calls each tool on the connector that listed it. A connector
@@ -78,7 +81,7 @@ It checks every file, then writes these files. None of them is edited by hand:
 | `agent-runner/platform/registry.lock.json` | Every enabled file, with one hash | The runner, at start; it logs the hash, and `GET /healthz` shows it |
 | `gateway/config.yaml` | The `/llm` route, and one `/mcp/<name>` route per connector with its JWT check and rules | agentgateway (restart it after a render) |
 | `gateway/sandbox.yaml` | `/llm/anthropic` on `:8051`, when a pack has an `anthropic` model | agentgateway-sandbox (restart it after a render) |
-| `gateway/audiences.json` | `agentgateway`, `agent-runner`, and `mcp:<name>` per connector | `gateway/mint.py`: the audiences in a new token |
+| `gateway/audiences.json` | `aistudio-mcp` (the gateway and aistudio-mcp), `agent-runner`, and each connector's audience (`mcp:<name>` unless it sets `audience`) | `gateway/kc.py setup` (`make mcp-up`): an audience mapper for each, so every Keycloak token carries them all |
 
 A new connector is one file: `make registry`, restart agentgateway and agent-runner, and mint new
 tokens if its server checks its own audience. The aistudio connector's rules come from the MCP
@@ -264,7 +267,7 @@ approving again retries only the publish.
 
 **How it writes.** The runner, never a sandbox: it reads the approved files from the
 snapshot (`workspace_files`, no container), then calls GitHub's REST API through agentgateway's
-`/github` route with the caller's JWT. The route checks the JWT, that the `sub` is one of the
+`/github` route with the caller's token. The route checks the token, that its username is one of the
 workflows' `users`, and the exact call, on the workflows' repos only:
 
 | | |
@@ -330,8 +333,11 @@ used, left, and when its oldest usage drops out.
 2. Start the profile: `make mcp-up`. The runner creates its `agent_runner` database on first
    start.
 
-3. Mint a token for the caller: `make mcp-token ROLE=viewer SUB=alice`. Tokens carry the
-   audience `agent-runner`; tokens minted before this change don't, so mint new ones.
+3. Users and roles are Keycloak's: `make mcp-user NAME=alice ROLE=viewer`. For curl and
+   scripts, `make -s mcp-token ROLE=viewer CLIENT=panel` logs in a `mcp-check-viewer` user
+   through the panel's client and prints its token (an hour; without `CLIENT=panel`, the MCP
+   client's 10 minutes). Set `PANEL_REDIRECT_URIS` in `.env` to the panel's own URL before
+   `make mcp-up`, so Keycloak sends its users back there.
 
 ## The LLM route
 
@@ -354,7 +360,8 @@ the main gateway. Nothing is published on the host.
 A workspace runs Claude Code with `ANTHROPIC_BASE_URL=http://agentgateway-sandbox:8051/llm/anthropic` and
 the caller's JWT as `ANTHROPIC_AUTH_TOKEN`. The route:
 
-- checks the JWT, and that its `sub` is one of the `users` of an `anthropic` model file;
+- checks the Keycloak token, and that its username (`preferred_username`) is one of the `users`
+  of an `anthropic` model file;
 - allows 60 requests a minute (429 after that; Claude Code retries), a backstop under the
   runner's own limits;
 - replaces the JWT with `CLAUDE_CODE_OAUTH_TOKEN`, so no container ever holds the real token.
@@ -418,21 +425,30 @@ retention period, if one is needed, is a cleanup job on `conversations.deleted_a
 
 ### Who the caller is
 
-The runner accepts a JWT signed by a key in `JWKS_FILE` (`gateway/jwks.json`), with issuer
-`JWT_ISSUER` (`aistudio`) and audience `JWT_AUDIENCE` (`agent-runner`), and `sub` and
-`roles.aistudio` claims. It passes the same token to agentgateway on every tool call, so the
-caller's role decides which tools any agent can reach. In this install `gateway/mint.py` issues
-them. A login service in front of the panel (corespan-proxy, Keycloak) can issue them instead.
-It needs either the same key, or its public key added to `jwks.json` (the file holds several,
-and the runner and agentgateway pick by `kid`), plus those claims and audiences
-`agentgateway`, `agent-runner` and `mcp:<connector>`.
+Keycloak, realm `aistudio` (the same login as the MCP door, [mcp-server.md](mcp-server.md)),
+issues every token. The panel logs its users in through the `aistudio-panel` client (code + PKCE,
+redirects from `PANEL_REDIRECT_URIS`), whose tokens last an hour: a coding workflow runs up to 45
+minutes on the token it started with, and approving resumes it with your fresh one. MCP clients'
+tokens last 10 minutes.
+
+The runner checks the token against Keycloak's keys (`JWKS_URL`, cached), its issuer
+(`JWT_ISSUER`, `https://<MCP_PUBLIC_HOST>:8050/realms/aistudio`, as clients see it) and its
+audience `agent-runner`. It passes the same token to agentgateway on every call, so the caller's
+role (`roles.aistudio`, from the user's `aistudio_role` attribute) decides which tools any agent
+can reach. `kc.py setup` puts every audience in `gateway/audiences.json` into every token.
+
+Two names for a caller: `sub`, Keycloak's user id, owns runs, conversations, workspaces and
+usage; the username (`preferred_username`) is what allow-lists name, such as a model's or a
+workflow's `users` and the gateway's rules for the Claude subscription and the PAT. Users
+can't change their username (`kc.py setup` keeps `editUsernameAllowed` off), and nobody can
+register themselves.
 
 Events (server-sent; each has `seq`, `type`, and task events also `task` and `agent`):
 `run`, `plan`, `task_queued`, `agent_started`, `step_started` (a tool call), `step_result`,
 `agent_done`, `message` (the answer), `error`, `done` (`status`: ok, failed, cancelled, timeout).
 
 ```bash
-T=$(make -s mcp-token ROLE=viewer SUB=alice)
+T=$(make -s mcp-token ROLE=viewer CLIENT=panel)
 curl -N http://localhost:8060/runs -H "Authorization: Bearer $T" \
   -H 'content-type: application/json' \
   -d '{"message": "Which model had the best throughput on T4, and are the services healthy?"}'
@@ -494,7 +510,7 @@ caller's `sub`.
 - **Repeats and spin.** A repeated call is refused with a nudge; three rounds of repeats, or
   the step budget, make the agent answer with what it has.
 - **No keys.** The container runs as a non-root user, read-only, with no capabilities, and is
-  mounted only the gateway's public `jwks.json`.
+  mounted nothing: it fetches Keycloak's public keys to check tokens.
 
 ## Not yet
 
