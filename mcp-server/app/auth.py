@@ -37,11 +37,12 @@ def _clean(value, limit: int = 128) -> Optional[str]:
 
 
 def _aistudio_role(claims: dict) -> Optional[str]:
-    # Nested or flat; a list takes its first entry.
+    # Nested or flat. A list counts only with one entry: picking one of several would depend on
+    # claim order, and agentgateway's `jwt.roles.aistudio in [...]` matches no list at all.
     roles = claims.get("roles")
     value = roles.get("aistudio") if isinstance(roles, dict) else claims.get("roles.aistudio")
     if isinstance(value, list):
-        value = value[0] if value else None
+        value = value[0] if len(value) == 1 else None
     return str(value) if value else None
 
 

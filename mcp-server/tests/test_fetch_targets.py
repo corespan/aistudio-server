@@ -27,6 +27,7 @@ async def test_secret_bearing_targets_are_refused(url):
 async def test_the_docker_api_is_refused_by_address(monkeypatch):
     monkeypatch.setattr(settings, "docker_host", "tcp://10.9.9.9:2375")
     assert "Docker API" in (await blocked_url("http://10.9.9.9:2375/containers/json"))
+    assert "Docker API" in (await blocked_url("http://[::ffff:10.9.9.9]:2375/containers/json"))
 
 
 @pytest.mark.parametrize("url", ["http://10.0.0.5:8002/health", "https://192.168.1.10/"])

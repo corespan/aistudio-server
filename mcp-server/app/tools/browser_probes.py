@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urljoin
+
 import structlog
 from langchain_core.tools import tool
 
@@ -59,6 +61,37 @@ def _summarize(
     return "\n".join(lines)
 
 
+def _route_guard(failed: list[tuple[str, str, str]]):
+    """A route handler that vets every request and every redirect hop before the browser follows it."""
+    # ponytail: route.fetch runs in the Playwright driver, which resolves DNS again after the check (rebinding).
+    async def _guard(route):
+        req = route.request
+        why = await blocked_url(req.url)
+        if why:
+            failed.append((req.method, req.url, f"refused: {why}"))
+            await route.abort("blockedbyclient")
+            return
+        try:
+            # The browser follows 3xx without re-entering route, so the hop is fetched here, unfollowed.
+            resp = await route.fetch(max_redirects=0)
+        except Exception as exc:
+            failed.append((req.method, req.url, f"fetch failed: {exc}"))
+            await route.abort("failed")
+            return
+        loc = resp.headers.get("location")
+        if 300 <= resp.status < 400 and loc:
+            hop = urljoin(req.url, loc)
+            why = await blocked_url(hop)
+            if why:
+                failed.append((req.method, req.url, f"refused redirect to {hop}: {why}"))
+                await route.fulfill(status=403, body=f"redirect to {hop} refused: {why}")
+                return
+        # A fulfilled 3xx makes the browser issue the next hop as a new, routed request.
+        await route.fulfill(response=resp)
+
+    return _guard
+
+
 @tool
 async def frontend_check(url: str, wait_seconds: int = 3) -> str:
     """Load `url` in a headless browser and report HTTP status, console errors and failed requests; waits `wait_seconds` for late calls."""
@@ -82,18 +115,9 @@ async def frontend_check(url: str, wait_seconds: int = 3) -> str:
         async with async_playwright() as pw:
             browser = await pw.chromium.connect_over_cdp(cdp, timeout=15000)
             try:
-                context = await browser.new_context(ignore_https_errors=True)
-
-                # ponytail: every request is checked, but the browser resolves DNS itself (rebinding).
-                async def _guard(route):
-                    why = await blocked_url(route.request.url)
-                    if why:
-                        failed.append((route.request.method, route.request.url, f"refused: {why}"))
-                        await route.abort("blockedbyclient")
-                    else:
-                        await route.continue_()
-
-                await context.route("**/*", _guard)
+                # Service Worker fetches bypass context.route, so no workers at all.
+                context = await browser.new_context(ignore_https_errors=True, service_workers="block")
+                await context.route("**/*", _route_guard(failed))
                 page = await context.new_page()
 
                 page.on("console", lambda m: console.append((m.type, m.text)))

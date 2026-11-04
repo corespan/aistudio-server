@@ -138,8 +138,9 @@ def _gate_ip(rest: list[str]) -> str:
     i += 1
     if i < len(rest) and rest[i] in _IP_SHOW:
         i += 1
+    # iproute2 takes any prefix of a verb ("se" is set, "fl" is flush), so refuse those too.
     return next((t for t in rest[i:] if t.startswith("-") or not _VALUE.fullmatch(t)
-                 or t in _IP_WRITE_VERBS), "")
+                 or any(v.startswith(t) for v in _IP_WRITE_VERBS)), "")
 
 
 def _gate_cat(rest: list[str]) -> str | None:
@@ -148,6 +149,9 @@ def _gate_cat(rest: list[str]) -> str | None:
     for path in rest:
         if path.startswith("-"):
             return f"node_exec: `cat` takes plain paths, not options ({path!r})."
+        # The node resolves the raw path: /proc/self/root/.. is the node's /, not /proc/self.
+        if {".", ".."}.intersection(path.split("/")):
+            return f"node_exec: `cat` takes paths without `.` or `..` components (refused {path!r})."
         norm = posixpath.normpath(path)
         if not norm.startswith(_CAT_ROOTS):
             return (
@@ -254,7 +258,30 @@ def _capped(text: str | None) -> str:
     text = (text or "").strip()
     if len(text) <= _MAX_OUTPUT:
         return text
-    return text[:_MAX_OUTPUT] + f"\n… ({len(text) - _MAX_OUTPUT} more character(s) truncated)"
+    # No exact count: reading stops at the cap, so the rest was never fetched.
+    return text[:_MAX_OUTPUT] + f"\n… (output truncated at {_MAX_OUTPUT} characters)"
+
+
+async def _read_capped(proc) -> tuple[str, str, bool]:
+    """(stdout, stderr, hit_cap): both streams read as they arrive, never past _MAX_OUTPUT."""
+    hit = False
+
+    async def drain(stream) -> str:
+        nonlocal hit
+        buf, n = [], 0
+        while n <= _MAX_OUTPUT:
+            chunk = await stream.read(65536)
+            if not chunk:
+                return "".join(buf)
+            buf.append(chunk)
+            n += len(chunk)
+        hit = True
+        proc.close()    # the rest stays on the node; closing also ends the other stream's read
+        return "".join(buf)
+
+    # Both at once: the channel window is shared, so an unread stderr would stall stdout.
+    out, err = await asyncio.gather(drain(proc.stdout), drain(proc.stderr))
+    return out, err, hit
 
 
 def _refuse_target(node_ip: str) -> str:
@@ -321,20 +348,27 @@ async def _ssh_exec(
             known_hosts=known_hosts,
             connect_timeout=connect_timeout,
         ) as conn:
+            # Streamed, not conn.run(): that buffers everything (/proc/kpageflags) before any cap.
+            async def _run():
+                async with await conn.create_process(command) as proc:
+                    out, err, hit = await _read_capped(proc)
+                    if not hit:
+                        await proc.wait_closed()   # the exit status arrives with the close
+                    return out, err, hit, proc.exit_status
+
             try:
-                result = await asyncio.wait_for(conn.run(command, check=False),
-                                                timeout=_RUN_TIMEOUT)
+                stdout, stderr, hit, status = await asyncio.wait_for(_run(), timeout=_RUN_TIMEOUT)
             except asyncio.TimeoutError:
                 # Not an SSH-layer failure: the node answered.
                 return False, f"the command did not finish within {_RUN_TIMEOUT}s"
-            if result.exit_status == 0:
+            if status == 0 or (hit and status is None):   # stopped at the cap: what it printed is the answer
                 logger.debug("ssh.command_success", node_ip=node_ip)
-                return True, _capped(result.stdout)
+                return True, _capped(stdout)
             else:
-                stderr = _capped(result.stderr)
-                stdout = _capped(result.stdout)
-                logger.warning("ssh.command_failed", node_ip=node_ip, exit_status=result.exit_status)
-                return False, f"Exit code {result.exit_status}. stderr: {stderr}. stdout: {stdout}"
+                stderr = _capped(stderr)
+                stdout = _capped(stdout)
+                logger.warning("ssh.command_failed", node_ip=node_ip, exit_status=status)
+                return False, f"Exit code {status}. stderr: {stderr}. stdout: {stdout}"
 
     except asyncssh.HostKeyNotVerifiable:
         logger.error("ssh.host_key_mismatch", node_ip=node_ip)

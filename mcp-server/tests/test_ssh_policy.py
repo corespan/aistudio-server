@@ -120,3 +120,79 @@ def test_the_default_user_needs_no_database(monkeypatch):
     # The caller never picks the SSH user (no override parameter on any probe).
     for t in (S.check_ssh_connectivity, S.check_node_docker, S.node_exec, S.node_docker_logs):
         assert "username" not in t.args, t.name
+
+
+# ── output is streamed and capped, not buffered whole
+class _Proc:
+    """A fake SSHClientProcess: stdout from `chunks`, stderr silent until the channel closes."""
+
+    def __init__(self, chunks, exit_status=None, stderr=""):
+        self.chunks, self.exit_status, self.reads = iter(chunks), exit_status, 0
+        self._closed = asyncio.Event()
+        self._stderr = stderr
+        proc = self
+
+        class _Out:
+            async def read(self, n=-1):
+                proc.reads += 1
+                return "" if proc._closed.is_set() else next(proc.chunks, "")
+
+        class _Err:
+            async def read(self, n=-1):
+                if proc._stderr:
+                    err, proc._stderr = proc._stderr, ""
+                    return err
+                if proc.exit_status is None:
+                    await proc._closed.wait()   # a still-running command: no EOF until we close
+                return ""
+
+        self.stdout, self.stderr = _Out(), _Err()
+
+    def close(self):
+        self._closed.set()
+
+    async def wait_closed(self):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        self.close()
+
+
+def _fake_node(monkeypatch, proc):
+    class _Conn:
+        async def create_process(self, command):
+            return proc
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    async def known_hosts(node_ip, timeout):
+        return "/nonexistent"
+
+    monkeypatch.setattr(S.asyncssh, "connect", lambda *a, **k: _Conn())
+    monkeypatch.setattr(S, "_known_hosts_for", known_hosts)
+    monkeypatch.setattr(settings, "node_allowed_cidrs", "10.0.0.0/24")
+
+
+def test_endless_output_is_cut_at_the_cap_not_buffered(monkeypatch):
+    import itertools
+    proc = _Proc(itertools.repeat("x" * 65536))      # cat /proc/kpageflags: effectively endless
+    _fake_node(monkeypatch, proc)
+    ok, out = run(S._ssh_exec("10.0.0.5", "cat /proc/kpageflags", key_path="/nonexistent"))
+    assert ok and out.startswith("x" * 1000) and "truncated" in out
+    assert len(out) < S._MAX_OUTPUT + 200
+    assert proc._closed.is_set() and proc.reads <= S._MAX_OUTPUT // 65536 + 2
+
+
+def test_a_finished_command_keeps_the_old_result_shape(monkeypatch):
+    _fake_node(monkeypatch, _Proc(["hello\n"], exit_status=0))
+    assert run(S._ssh_exec("10.0.0.5", "uname", key_path="/nonexistent")) == (True, "hello")
+    _fake_node(monkeypatch, _Proc([], exit_status=2, stderr="boom\n"))
+    ok, out = run(S._ssh_exec("10.0.0.5", "uname", key_path="/nonexistent"))
+    assert not ok and out == "Exit code 2. stderr: boom. stdout: "

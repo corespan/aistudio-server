@@ -38,6 +38,17 @@ REFUSED = [
     "cat /sys/../root/.ssh/id_rsa",
     # Sensitive /proc paths.
     "cat /proc/self/root/home/drut/.ssh/id_rsa",
+    # `..` after a /proc link: normpath drops `root`, the node follows it.
+    "cat /proc/self/root/../etc/shadow",
+    "cat /proc/self/cwd/../drut/.ssh/id_rsa",
+    "cat /proc/self/./root/etc/shadow",
+    # iproute2 takes any prefix of a verb.
+    "ip link se eth0 down",
+    "ip link s eth0 down",
+    "ip route de default",
+    "ip route a default via 1.2.3.4",
+    "ip addr fl dev eth0",
+    "ip neigh show fl all",
     "cat /proc/1/root/etc/shadow",
     "cat /proc/self/environ",
     "cat /proc/1234/cmdline",

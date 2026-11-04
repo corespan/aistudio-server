@@ -1,6 +1,6 @@
 .PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark \
         compliance deps-lock third-party sbom check-models check-node-env \
-        mcp-env mcp-init mcp-up mcp-db mcp-tls mcp-user mcp-prune mcp-token mcp-check mcp-test sbom-mcp
+        mcp-env mcp-init mcp-up mcp-db mcp-rabbit mcp-tls mcp-user mcp-prune mcp-token mcp-check mcp-test sbom-mcp
 
 up:
 	docker compose up --build -d
@@ -118,6 +118,8 @@ mcp-env:
 		mv gateway/keycloak.env "$(MCP_SECRETS_DIR)/" && echo "moved gateway/keycloak.env to $(MCP_SECRETS_DIR)"; fi
 	@if [ -d gateway/tls ] && [ ! -e "$(MCP_SECRETS_DIR)/tls" ]; then rm -rf gateway/tls && \
 		echo "removed the old CA in gateway/tls: clients must trust the new $(MCP_SECRETS_DIR)/tls/ca.pem"; fi
+	@test -s "$(MCP_SECRETS_DIR)/rabbitmq_password" || { umask 077; \
+		head -c 24 /dev/urandom | base64 | tr -d '/+=\n' > "$(MCP_SECRETS_DIR)/rabbitmq_password"; }
 	@echo "MCP public address: https://$(MCP_PUBLIC_HOST):$(AGW_PORT); secrets in $(MCP_SECRETS_DIR) (both in .env)"
 
 mcp-init: mcp-env
@@ -129,10 +131,21 @@ mcp-up: mcp-env
 	@test -f "$(MCP_SECRETS_DIR)/keycloak.env" -a -f "$(MCP_SECRETS_DIR)/tls/ca.pem" || $(MAKE) mcp-init
 	$(MCP_MINT) tls --if-needed
 	$(MAKE) mcp-db
+	$(MAKE) mcp-rabbit
 	@# --remove-orphans: containers of services since removed (keycloak-db, pgadmin) go too.
 	docker compose --profile mcp up --build -d --remove-orphans
 	docker compose --profile mcp restart agentgateway
 	$(MCP_KC) setup
+
+mcp-rabbit:
+	@# queue_status's own RabbitMQ user: monitoring tag, vhost access, no configure/write/read, so it
+	@# lists queues but cannot publish or consume tasks. The password goes in on stdin, not argv.
+	docker compose up -d --wait rabbitmq
+	@docker compose exec -T rabbitmq sh -c 'read -r pw; \
+		{ rabbitmqctl -q add_user aistudio-mcp "$$pw" 2>/dev/null || rabbitmqctl -q change_password aistudio-mcp "$$pw"; } && \
+		rabbitmqctl -q set_user_tags aistudio-mcp monitoring && \
+		rabbitmqctl -q set_permissions -p / aistudio-mcp "^$$" "^$$" "^$$"' < "$(MCP_SECRETS_DIR)/rabbitmq_password"
+	@echo "rabbitmq: user aistudio-mcp (monitoring only)"
 
 mcp-db:
 	@# Keycloak's role and database in the shared postgres; the password goes in on stdin, not argv.

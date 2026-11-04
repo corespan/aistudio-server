@@ -50,6 +50,13 @@ def test_if_needed_keeps_a_fresh_cert_that_covers_the_hosts(tls_dir):
     assert (tls_dir / "cert.pem").read_bytes() == before
 
 
+def test_if_needed_reissues_a_cert_from_an_earlier_ca(tls_dir):
+    mint.tls(["10.0.0.5"])
+    (tls_dir.parent / "ca.key").unlink()      # lost: the next run makes a new CA
+    assert mint.tls(["10.0.0.5"], if_needed=True)
+    _cert(tls_dir).verify_directly_issued_by(_ca(tls_dir))
+
+
 def test_the_ca_can_sign_only_the_names_it_was_made_for(tls_dir):
     mint.tls(["mcp.example.com", "10.0.0.5", "S53"])
     ca = _ca(tls_dir)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from urllib.parse import quote
 import statistics
 from collections import deque
 
@@ -234,9 +233,7 @@ async def throughput_compare(run_id: str, limit: int = 10) -> str:
     return "\n\n".join(blocks)
 
 
-def _seg(value: str) -> str:
-    """Escape one id for a URL path segment."""
-    return quote(str(value), safe="")
+_seg = platform_api._seg   # one escaper, so every id refuses `..` the same way
 
 
 _client = httpx.AsyncClient(base_url=settings.aistudio_api_url, timeout=15.0)

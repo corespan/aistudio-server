@@ -95,11 +95,13 @@ def _logs_raw(name: str, since: datetime, tail: int) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def _extract_one_file(raw: bytes, cap: int = 1_000_000) -> tuple[str, str]:
-    """Parse a tar blob holding one file into ("file", text), or ("dir", "")."""
+def _extract_one_file(raw: bytes, name: str, cap: int = 1_000_000) -> tuple[str, str]:
+    """Parse a tar blob that is exactly the regular file `name` into ("file", text), else
+    ("dir", ""). A directory's lone file would dodge the secret-name and size checks, which
+    only saw the directory."""
     with tarfile.open(fileobj=io.BytesIO(raw)) as tf:
-        members = [m for m in tf.getmembers() if m.isfile()]
-        if len(members) != 1:
+        members = tf.getmembers()
+        if len(members) != 1 or not members[0].isfile() or members[0].name != name:
             return "dir", ""
         extracted = tf.extractfile(members[0])
         data = extracted.read(cap) if extracted else b""
@@ -120,7 +122,7 @@ def _container_read_raw(name: str, path: str, cap: int = 1_000_000) -> tuple[str
         buf.write(chunk)
         if buf.tell() > cap + 200_000:
             break
-    return _extract_one_file(buf.getvalue(), cap)
+    return _extract_one_file(buf.getvalue(), posixpath.basename(path), cap)
 
 
 def _container_roots() -> list[str]:
@@ -246,6 +248,7 @@ async def inspect_container(name: str) -> str:
 @tool
 async def container_diff(container: str, path: str, repo_path: str = "", max_lines: int = 120) -> str:
     """Diff file `path` inside `container` against its repo copy `repo_path` (same file name) to detect stale code; `max_lines` caps output."""
+    max_lines = max(1, min(max_lines, 2000))
     logger.info("tool.docker.container_diff", container=container, path=path, repo_path=repo_path)
     if not container.strip():
         return ("Refused: container is required — `list_containers` names every container "

@@ -33,7 +33,11 @@ async def _get(path: str, params: dict | None = None) -> httpx.Response:
 
 def _seg(value: str) -> str:
     """One id escaped for a URL path segment."""
-    return quote(str(value), safe="")
+    value = str(value)
+    # httpx resolves dot segments: an id of ".." would name the parent route (/api/v1/status).
+    if value.strip() in ("", ".", ".."):
+        raise PlatformApiError(f"{value!r} is not a task or run id")
+    return quote(value, safe="")
 
 
 def _rows(r: httpx.Response, what: str) -> list | dict:

@@ -30,14 +30,28 @@ INJECTION_WARNING = (
 _SECRETS = (
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)"),
      "[REDACTED PRIVATE KEY]"),
-    (re.compile(r"(\w+://)[^/\s:@]+:[^/\s@]+@"), r"\1***@"),     # user:pass@ in a URL
+    # A key body cut off from its BEGIN line (read_file from_end, grep_logs): 64-char base64 lines.
+    # Pure hex is left alone: that is a SHA-256, not a key.
+    (re.compile(r"(?m)^(?![0-9a-fA-F]{64}$)[A-Za-z0-9+/]{64}\r?$"), "[REDACTED BASE64 LINE]"),
+    # user:pass@ in a URL; the password may itself hold an @, so up to the last one.
+    (re.compile(r"(\w+://)[^/\s:@]+:[^/\s]*@"), r"\1***@"),
     (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/-]{16,}=*"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(\bbasic\s+)[A-Za-z0-9+/]{8,}=*"), r"\1[REDACTED]"),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "[REDACTED JWT]"),
     (re.compile(r"\b(?:hf_[A-Za-z0-9]{30,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}"
-                r"|AKIA[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{32,})\b"),
+                r"|AKIA[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9-]{10,}|sk-[A-Za-z0-9_-]{32,}"
+                r"|[sr]k_(?:live|test)_[A-Za-z0-9]{16,})\b"),
      "[REDACTED TOKEN]"),
-    # FOO_PASSWORD=value, "api_key": "value", token: value
-    (re.compile(r"(?i)\b([A-Z0-9_.-]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|ACCESS_KEY)[A-Z0-9_]*"
+    # kubeconfig client-key-data, docker config.json "auth"
+    (re.compile(r"(?i)(\bclient-key-data\s*:\s*[\"']?|\"auth\"\s*:\s*\")[A-Za-z0-9+/=]{8,}"), r"\1***"),
+    # --password hunter2 (the = form is the rule below); --password-file names a path, not a secret
+    (re.compile(r"(?i)(--[A-Za-z0-9-]*(?:password|passwd|secret|token|api-?key)\s+)"
+                r"(?![-*\[])\S+"), r"\1***"),
+    # "password": "a value with spaces"
+    (re.compile(r"(?i)([\"'][A-Z0-9_.-]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API[_-]?KEY|ACCESS_KEY)[A-Z0-9_]*"
+                r"[\"']\s*:\s*)([\"'])(?!\*\*\*|\$\{)[^\"'\n]*\s[^\"'\n]*\2"), r"\1\2***\2"),
+    # FOO_PASSWORD=value, "api_key": "value", token: value, X-Api-Key: value
+    (re.compile(r"(?i)\b([A-Z0-9_.-]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API[_-]?KEY|ACCESS_KEY)[A-Z0-9_]*"
                 r"[\"']?\s*[=:]\s*[\"']?)(?!\$\{|\[REDACTED|\*\*\*)([^\s\"',;}]{4,})"),
      r"\1***"),
 )

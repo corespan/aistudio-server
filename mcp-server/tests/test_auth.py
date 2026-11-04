@@ -26,6 +26,15 @@ def test_only_the_aistudio_role_counts(verifier, mint):
     assert who.role is None
 
 
+@pytest.mark.parametrize("value, role", [
+    (["operator"], "operator"),
+    (["viewer", "admin"], None),      # which one would hang on claim order
+    ([], None),
+])
+def test_a_role_list_counts_only_with_one_entry(value, role):
+    assert identity_from_claims({"sub": "alice", "roles": {"aistudio": value}}).role == role
+
+
 @pytest.mark.parametrize("bad", [
     dict(ttl=-120),                                   # expired
     dict(aud="mcp:composer"),                         # a token for another server

@@ -157,8 +157,9 @@ services:
       MCP_WRITES_ENABLED: "${MCP_WRITES_ENABLED:-false}"
       AISTUDIO_API_URL: "http://api:8001"
       RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
-      RABBITMQ_USER: "${RABBITMQ_USERNAME:-aistudio}"
-      RABBITMQ_PASSWORD: "${RABBITMQ_PASSWORD:-aistudio}"
+      # Monitoring-only user (make mcp-rabbit), not the broker's admin; its password is the
+      # rabbitmq_password secret below, so it is not in this container's env either.
+      RABBITMQ_USER: "aistudio-mcp"
       DOCKER_HOST: "tcp://aistudio-docker-proxy:2375"
       SSH_KEY_PATH: "/root/.ssh/id_rsa"
       SSH_DEFAULT_USER: "${SSH_DEFAULT_USER:-ubuntu}"
@@ -197,9 +198,14 @@ services:
       - DAC_READ_SEARCH
     security_opt:
       - no-new-privileges:true
+      # Docker's default profile (moby/profiles@6fe7deb) minus open_by_handle_at / name_to_handle_at:
+      # with DAC_READ_SEARCH those open host files by handle through any bind mount ("Shocker").
+      - seccomp=./mcp-server/seccomp.json
     read_only: true
     tmpfs:
       - /tmp
+    secrets:
+      - rabbitmq_password      # /run/secrets/rabbitmq_password, read by app/config.py
     networks:
       - default
       - mcp-docker
@@ -232,6 +238,10 @@ services:
     networks:
       - mcp-docker
     restart: unless-stopped
+
+secrets:
+  rabbitmq_password:
+    file: ${MCP_SECRETS_DIR:-~/.aistudio-mcp}/rabbitmq_password   # make mcp-env
 
 networks:
   mcp-docker:

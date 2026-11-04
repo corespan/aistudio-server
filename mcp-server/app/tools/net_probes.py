@@ -18,7 +18,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.tools._shell import option_like, run_command
-from app.tools.ssh_probes import _run_ssh_command
+from app.tools.ssh_probes import _resolve_node_user, _run_ssh_command
 
 logger = structlog.get_logger()
 
@@ -75,6 +75,15 @@ async def _addresses(host: str) -> list[str]:
     return list(dict.fromkeys(i[4][0].split("%")[0] for i in infos))
 
 
+def _unmapped(raw: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    ip = ipaddress.ip_address(raw)
+    return getattr(ip, "ipv4_mapped", None) or ip     # ::ffff:127.0.0.1 is 127.0.0.1
+
+
+# Metadata services that are not link-local: AWS IMDS over IPv6, Alibaba Cloud.
+_METADATA = {ipaddress.ip_address("fd00:ec2::254"), ipaddress.ip_address("100.100.100.200")}
+
+
 async def _vet(host: str) -> tuple[str | None, list[str]]:
     """(refusal or None, addresses); callers connect to these, never re-resolve (rebinding)."""
     if not host:
@@ -82,27 +91,39 @@ async def _vet(host: str) -> tuple[str | None, list[str]]:
     docker = _docker_api_host()
     try:
         ips = await _addresses(host)
-        docker_ips = set(await _addresses(docker)) if docker else set()
     except socket.gaierror as exc:
         return f"cannot resolve {host!r}: {exc}", []
+    if not ips:
+        return f"cannot resolve {host!r}: no addresses", []
+    try:
+        docker_ips = {_unmapped(a) for a in await _addresses(docker)} if docker else set()
+    except socket.gaierror as exc:
+        # Still refused (the target could be the Docker API), but the name that failed is DOCKER_HOST's.
+        return f"cannot resolve the Docker API host {docker!r} (DOCKER_HOST) to rule it out: {exc}", []
     for raw in ips:
-        ip = ipaddress.ip_address(raw)
-        ip = getattr(ip, "ipv4_mapped", None) or ip     # ::ffff:127.0.0.1 is 127.0.0.1
+        ip = _unmapped(raw)
         if ip.is_link_local or ip.is_loopback or ip.is_unspecified or ip.is_multicast:
             return f"{host} resolves to {ip}, a link-local/loopback address (metadata, local admin)", ips
-        if raw in docker_ips:
+        if ip in _METADATA:
+            return f"{host} resolves to {ip}, a cloud metadata service address", ips
+        if ip in docker_ips:   # compared unmapped: [::ffff:10.0.0.1] is the same host as 10.0.0.1
             return f"{host} is the Docker API, whose responses carry every container's secrets", ips
     return None, ips
 
 
-async def blocked_url(url: str) -> str | None:
-    """Return why the URL must not be fetched (metadata, loopback, Docker API), or None."""
+async def _vet_url(url: str) -> tuple[str | None, list[str]]:
+    """(refusal or None, addresses) for a URL; fetch from these addresses only."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        return f"only http(s) URLs are fetched, not {parsed.scheme or 'no scheme'!r}"
+        return f"only http(s) URLs are fetched, not {parsed.scheme or 'no scheme'!r}", []
     if not parsed.hostname:
-        return "the URL has no host"
-    return (await _vet(parsed.hostname))[0]
+        return "the URL has no host", []
+    return await _vet(parsed.hostname)
+
+
+async def blocked_url(url: str) -> str | None:
+    """Return why the URL must not be fetched (metadata, loopback, Docker API), or None."""
+    return (await _vet_url(url))[0]
 
 
 def _pinned(url: str, ip: str) -> tuple[str, dict, dict]:
@@ -115,26 +136,42 @@ def _pinned(url: str, ip: str) -> tuple[str, dict, dict]:
     return parsed._replace(netloc=netloc).geturl(), headers, extensions
 
 
+_BODY_CAP = 65536   # bytes read of a probed body; only 200 characters are shown
+
+
 async def _http(url: str, timeout: float) -> str:
-    refused = await blocked_url(url)
+    # One resolution, vetted and then used: a second lookup could answer differently (rebinding).
+    refused, ips = await _vet_url(url)
     if refused:
         return f"HTTP {url}: [REFUSED] {refused}"
-    _, ips = await _vet(urlparse(url).hostname)
     target, headers, extensions = _pinned(url, ips[0])
+
+    async def fetch() -> tuple[httpx.Response, bytes]:
+        # Streamed and capped: a huge body is never read, and the stream closes early.
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            async with client.stream("GET", target, headers=headers, extensions=extensions) as resp:
+                body = b""
+                async for chunk in resp.aiter_bytes():
+                    body += chunk
+                    if len(body) > _BODY_CAP:
+                        break
+                return resp, body
+
     start = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            resp = await client.get(target, headers=headers, extensions=extensions)
+        # httpx's timeout is per read, so a server trickling bytes would never trip it.
+        resp, body = await asyncio.wait_for(fetch(), timeout)
         ms = int((time.monotonic() - start) * 1000)
         ctype = resp.headers.get("content-type", "?").split(";")[0].strip() or "?"
-        snippet = " ".join(resp.text[:200].split())
-        line = f"HTTP {url}: [{resp.status_code}] {ctype} ({ms} ms, {len(resp.content)} bytes)"
+        size = f"≥{_BODY_CAP}" if len(body) > _BODY_CAP else str(len(body))
+        snippet = " ".join(body[:800].decode(resp.encoding or "utf-8", "replace")[:200].split())
+        line = f"HTTP {url}: [{resp.status_code}] {ctype} ({ms} ms, {size} bytes)"
         if snippet:
             line += f"\n    body: {snippet}"
         return line
     except httpx.ConnectError as exc:
         return f"HTTP {url}: [FAIL] cannot connect: {exc}"
-    except httpx.TimeoutException:
+    except (httpx.TimeoutException, asyncio.TimeoutError):
         return f"HTTP {url}: [FAIL] timed out after {timeout}s"
     except Exception as exc:
         return f"HTTP {url}: [FAIL] {exc}"
@@ -207,9 +244,11 @@ async def tcpdump_capture(
         return (f"Refused: {bad!r} is a tcpdump option, not filter syntax. A BPF filter "
                 "is made of expressions like 'host 10.0.0.1 and port 8002'.")
     logger.info("tool.net.tcpdump", iface=iface, filter=bpf_filter, count=count)
-    # -l keeps packets seen before a timeout kill; headers only, never payloads.
+    # -l keeps packets seen before a timeout kill. -q and a 96-byte snaplen keep it to headers:
+    # by default tcpdump decodes HTTP request lines, DNS names and other payload summaries.
     rc, out, err = await run_command(
-        "tcpdump", "-l", "-i", iface, "-c", str(count), "-nn", "-tttt", *bpf_filter.split(),
+        "tcpdump", "-l", "-q", "-s", "96", "-i", iface, "-c", str(count), "-nn", "-tttt",
+        *bpf_filter.split(),
         timeout=timeout,
     )
     if rc == 127:
@@ -368,8 +407,9 @@ async def _api_clock(max_ok: int, timeout: float) -> str:
 
 
 async def _node_clock(node_ip: str, max_ok: int) -> str:
+    user = await _resolve_node_user(node_ip)    # NODE_SSH_USER, like every other node probe
     t0 = time.time()
-    ok, out = await _run_ssh_command(node_ip, "date -u +%s")
+    ok, out = await _run_ssh_command(node_ip, "date -u +%s", username=user)
     t1 = time.time()
     if not ok:
         first = out.splitlines()[0] if out else "no output"
@@ -381,11 +421,15 @@ async def _node_clock(node_ip: str, max_ok: int) -> str:
     return _skew_line(f"node {node_ip}", remote, (t0 + t1) / 2, 1.0, max_ok)
 
 
+_MAX_CLOCK_NODES = 20
+
+
 @tool
 async def check_clock_skew(node_ips: str = "", max_ok_seconds: int = 60) -> str:
     """Compare clocks of this container, the aistudio API and GPU nodes `node_ips` (comma-separated); offsets above `max_ok_seconds` are flagged."""
     max_ok = max(1, max_ok_seconds)
     ips = [ip.strip() for ip in node_ips.split(",") if ip.strip()]
+    ips, dropped = ips[:_MAX_CLOCK_NODES], ips[_MAX_CLOCK_NODES:]   # one SSH session each, all at once
     logger.info("tool.net.check_clock_skew", nodes=len(ips), max_ok=max_ok)
 
     now = datetime.now(timezone.utc)
@@ -403,4 +447,6 @@ async def check_clock_skew(node_ips: str = "", max_ok_seconds: int = 60) -> str:
         if not ips
         else ""
     )
+    if dropped:
+        tail += f"\n  Only the first {_MAX_CLOCK_NODES} nodes were checked; {len(dropped)} more were not."
     return head + "\n" + "\n".join(lines) + tail + _SKEW_BREAKS_AUTH_AND_TIMELINES

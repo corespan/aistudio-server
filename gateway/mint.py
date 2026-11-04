@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
@@ -111,6 +112,11 @@ def tls(hosts: list, if_needed: bool = False) -> bool:
     hosts = [h for h in hosts if h not in outside]
     if if_needed and current:
         fresh = current.not_valid_after_utc - datetime.now(timezone.utc) > timedelta(days=RENEW_DAYS)
+        # A cert from an earlier CA (ca.key lost and remade) fails every client that trusts ca.pem.
+        try:
+            current.verify_directly_issued_by(ca_cert)
+        except (ValueError, TypeError, InvalidSignature):
+            fresh = False
         if fresh and set(hosts) <= set(have):
             return False
         hosts = list(dict.fromkeys(have + hosts))
