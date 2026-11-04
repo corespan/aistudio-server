@@ -41,10 +41,10 @@
 # with pull access:
 #   gcloud auth configure-docker us-docker.pkg.dev
 #
-# The mcp mode builds aistudio-mcp from mcp-server/ and pulls agentgateway and
-# docker-socket-proxy from their upstream registries; it needs no credentials.
-# CoreSpan does not convey those two, but they run with the product, so their
-# inventories sit beside the rest.
+# The mcp mode builds aistudio-mcp from mcp-server/ and pulls the profile's other
+# images (agentgateway, docker-socket-proxy, Keycloak) from
+# their upstream registries; it needs no credentials. CoreSpan does not convey
+# those, but they run with the product, so their inventories sit beside the rest.
 #
 # Output: sbom/<image>-<tag>.spdx.json  (full machine-readable inventory)
 #         sbom/<image>-<tag>.txt        (human-readable licence summary)
@@ -105,8 +105,8 @@ for block in re.split(r"\n(?=  [a-z][\w-]*:\s*\n)", compose):
     ref, _, pinned = m.group(1).partition("@")   # a pinned digest is scanned as pinned
     repo, tag = ref.rsplit(":", 1)
     rows.append(f"{repo.rsplit('/', 1)[-1]}\t{repo}\t{tag}\t{pinned}")
-if len(rows) < 3:
-    sys.exit("ERROR: expected agentgateway and docker-socket-proxy in the mcp profile")
+if len(rows) < 4:
+    sys.exit("ERROR: expected agentgateway, docker-socket-proxy and keycloak in the mcp profile")
 print("\n".join(rows))
 PY
   ) || exit 1
@@ -217,9 +217,9 @@ lines = [
     "CoreSpan distributes the workload images to node operators. Third-party notice and\n"
     "redistribution obligations attach at the point of distribution, so they\n"
     "attach to us. This is the inventory of what we are handing over.\n\n",
-    "The `aistudio-mcp`, `agentgateway` and `docker-socket-proxy` sections are the\n"
-    "images the optional MCP profile runs. aistudio-mcp is built from `mcp-server/`\n"
-    "on the operator's host; the other two are pulled from their upstream\n"
+    "The `aistudio-mcp`, `agentgateway`, `docker-socket-proxy` and `keycloak` sections\n"
+    "are the images the optional MCP profile runs. aistudio-mcp is built from\n"
+    "`mcp-server/` on the operator's host; the others are pulled from their upstream\n"
     "registries unmodified. They are listed so the whole running set is inventoried.\n\n",
 ]
 

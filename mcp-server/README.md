@@ -6,7 +6,7 @@ read; `start_workload`, `start_jupyter`, `stop_jupyter` and `delete_run_results`
 `MCP_WRITES_ENABLED=true`.
 
 Tools only: no model, no reasoning loop; the MCP client supplies those. It is reached **only
-through agentgateway** with a JWT from `gateway/mint.py`. Setup, roles, connecting a client and
+through agentgateway**, with a token from the user's Keycloak login. Setup, roles, connecting a client and
 the safety gates: [docs/mcp-server.md](../docs/mcp-server.md).
 
 ## Run with Compose (the normal way)
@@ -27,10 +27,10 @@ python -m app.mcp_server  # streamable HTTP on MCP_HOST:MCP_PORT, /mcp
 
 ```bash
 curl localhost:8081/healthz        # {"status":"ok"}, no token needed
-curl -i -X POST localhost:8081/mcp # 401: every other path needs the JWT
+curl -i -X POST localhost:8081/mcp # 401: every other path needs a JWT (MCP_JWKS_URL or MCP_JWKS_FILE)
 ```
 
-Healthy log: `mcp.built tools=31 writes=False` (34 with `MCP_WRITES_ENABLED=true`), then `mcp.serving`.
+Healthy log: `mcp.built tools=31 writes=False` (35 with `MCP_WRITES_ENABLED=true`), then `mcp.serving`.
 
 ## The role rules
 

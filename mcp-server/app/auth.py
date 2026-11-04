@@ -47,7 +47,7 @@ def _aistudio_role(claims: dict) -> Optional[str]:
 
 def identity_from_claims(claims: dict) -> Identity:
     return Identity(sub=str(claims["sub"]), role=_aistudio_role(claims),
-                    client_id=_clean(claims.get("client_id")), claims=claims)
+                    client_id=_clean(claims.get("client_id") or claims.get("azp")), claims=claims)
 
 
 class _FileJWKS:

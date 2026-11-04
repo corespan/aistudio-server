@@ -208,8 +208,7 @@ def verifier() -> JWTVerifier:
     """The JWT verifier from settings. Refuses to start without a key source."""
     if not (settings.mcp_jwks_url or settings.mcp_jwks_file):
         raise SystemExit(
-            "No way to verify callers: set MCP_JWKS_FILE (compose mounts gateway/jwks.json; "
-            "make it with: python gateway/mint.py init) or MCP_JWKS_URL.\n\n"
+            "No way to verify callers: set MCP_JWKS_URL (compose: Keycloak's certs URL) or MCP_JWKS_FILE.\n\n"
             "This server is reached only through agentgateway, and every /mcp request "
             "must carry the user's JWT. It does not serve unauthenticated callers."
         )

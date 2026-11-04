@@ -54,10 +54,10 @@ Dependencies there with obligations that survive redistribution:
   * orjson              - MPL-2.0 AND (Apache-2.0 OR MIT)
 
 Its image adds Debian packages, among them git and iproute2 (GPL-2.0), under
-the same source offer as above. The profile also runs two upstream images that
-CoreSpan does not build or modify: agentgateway (Apache-2.0) and
-tecnativa/docker-socket-proxy (Apache-2.0, on an HAProxy base, GPL-2.0). Their
-inventories are in sbom/ (make sbom-mcp).
+the same source offer as above. The profile also runs three upstream images that
+CoreSpan does not build or modify: agentgateway (Apache-2.0),
+tecnativa/docker-socket-proxy (Apache-2.0, on an HAProxy base, GPL-2.0) and
+Keycloak (Apache-2.0). Their inventories are in sbom/ (make sbom-mcp).
 
 --------------------------------------------------------------------------------
 AI MODELS AND DATASETS

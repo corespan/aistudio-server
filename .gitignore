@@ -17,8 +17,8 @@ node_modules/
 # sbom/ is intentionally NOT ignored — the workload image inventory is a
 # compliance artifact and must be committed alongside each release.
 
-# MCP door: per-install signing key and its public half (gateway/mint.py init)
+# MCP secrets from before MCP_SECRETS_DIR (make mcp-up moves or removes them): never commit.
+gateway/keycloak.env
 gateway/dev-key.pem
 gateway/jwks.json
-# Local CA and the gateway's TLS cert (gateway/mint.py tls); clients get tls/ca.pem only.
 gateway/tls/

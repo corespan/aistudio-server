@@ -115,14 +115,15 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | `postgres` | 5432 | **127.0.0.1:5433** | PostgreSQL |
 | `rabbitmq` (AMQP) | 5672 | **127.0.0.1:5672** | Celery broker |
 | `rabbitmq` (UI) | 15672 | **127.0.0.1:15672** | RabbitMQ admin |
-| `pgadmin` | 80 | **127.0.0.1:5050** | DB admin |
 | `worker` | — | — | No port; connects outbound only |
 | `agentgateway` (profile `mcp`) | 8050 | **8050** (HTTPS) | MCP front door: TLS, JWT check, role → tool rules |
 | `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
+| `keycloak` (profile `mcp`) | 8080 | **127.0.0.1:8180** (admin console) | MCP users and logins; login pages via agentgateway |
 
-Postgres, RabbitMQ and pgAdmin run with default passwords, so they listen on the host's loopback
-only. From another machine, tunnel in: `ssh -L 5050:localhost:5050 <host>`, then open
-http://localhost:5050.
+Postgres and RabbitMQ run with default passwords, so they listen on the host's loopback only. From
+another machine, tunnel in, e.g. `ssh -L 15672:localhost:15672 <host>`, then open
+http://localhost:15672. With the `mcp` profile, Keycloak keeps its data in the same Postgres, in its
+own `keycloak` database and role.
 
 Architecture, component responsibilities, and the workload lifecycle are covered in [docs/architecture.md](./docs/architecture.md).
 
