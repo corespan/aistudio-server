@@ -88,10 +88,15 @@ data: Pulling workload image...
 data: Running benchmark: concurrency=4
 
 event: close
-data: stream closed
+data: READY
 ```
 
-The `close` event signals the stream is done. Reconnect if the connection drops.
+The `close` event signals the stream is done; its data says why: `READY` (the benchmark
+finished), `FAILED`, or `DELETED` (the workload was removed). The `READY` after dependency
+install doesn't close a benchmark's stream; the one after the benchmark does. Reconnect if the
+connection drops: each event has an `id`, and with `Last-Event-ID` the stream resumes after it
+without sending it again. A log line with line breaks in it arrives as one event with several
+`data:` lines (EventSource joins them with newlines). Node IPs are masked (`10.6.x.x`).
 
 ### POST /api/v1/metrics
 

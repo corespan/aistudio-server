@@ -138,6 +138,8 @@ async def stream_benchmark_logs(
             workload_db_id, request,
             filter_bench_result=True,
             last_event_id=last_event_id,
+            # READY after install isn't the end: wait for the READY the benchmark sets.
+            ready_after="execute_benchmark",
         ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
