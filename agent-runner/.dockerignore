@@ -1,0 +1,16 @@
+# Secrets and local venv
+.env
+.venv/
+venv/
+
+# VCS + Python caches
+.git/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Docs, tests, dev-only
+*.md
+tests/
+pytest.ini
+requirements-dev.txt

@@ -1,0 +1,6 @@
+# This install: the packs it enables (docs/agent-runner.md#packs).
+# After changing this or any pack: make registry
+name: aistudio
+packs: [core, aistudio, devflow]
+# Repos workspaces may clone (read-only, through agentgateway-sandbox): docs/sandbox.md#workspaces
+repos: [corespan/aistudio-server]

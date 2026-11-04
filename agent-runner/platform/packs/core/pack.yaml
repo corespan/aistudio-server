@@ -1,0 +1,4 @@
+kind: pack
+name: core
+version: 0.1.0
+description: What every install has. Today the gVisor sandbox (sandbox_run).

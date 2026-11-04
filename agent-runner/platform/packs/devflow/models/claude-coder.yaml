@@ -1,0 +1,6 @@
+kind: model
+name: claude-coder
+provider: anthropic          # agentgateway :8051/llm/anthropic adds the subscription token
+model: claude-opus-5-5       # always passed as --model: through the gateway Claude Code can't pick its default
+# Your subscription, so only you. Anyone else: switch the route to an API key first.
+users: [rsingh]

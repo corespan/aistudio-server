@@ -1,0 +1,17 @@
+kind: agent
+name: analyst
+purpose: >-
+  Benchmark numbers: find, compare and explain benchmark runs and their throughput and latency,
+  what models and nodes can be run, and the default config for a model. Can run a short Python
+  program in a no-network sandbox to compute statistics over the data it fetched.
+model: worker
+tools:
+  - aistudio/list_benchmarks
+  - aistudio/get_benchmark
+  - aistudio/summary
+  - aistudio/throughput_compare
+  - aistudio/workload_history
+  - aistudio/platform_catalog
+  - aistudio/model_config
+  - sandbox/sandbox_run
+budgets: { steps: 6, tokens: 60000, seconds: 300 }

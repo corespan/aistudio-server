@@ -1,0 +1,16 @@
+kind: agent
+name: assistant
+purpose: >-
+  General questions about the platform and its runs that need a few lookups and no deep dive:
+  status of a task, what ran recently, whether the services are up.
+model: worker
+tools:
+  - aistudio/list_benchmarks
+  - aistudio/get_benchmark
+  - aistudio/summary
+  - aistudio/workload_history
+  - aistudio/platform_catalog
+  - aistudio/model_config
+  - aistudio/get_task_status
+  - aistudio/check_service_health
+budgets: { steps: 4, tokens: 40000, seconds: 180 }

@@ -1,0 +1,9 @@
+kind: connector
+name: sandbox
+upstream: http://sandbox-mcp:8082/mcp
+description: Run a short program in a no-network gVisor container, and repo workspaces for the coding workflow (sandbox-mcp, docs/sandbox.md).
+# Read class in the agent-runner plan, so every role may call it; sandbox-mcp caps sandboxes per user.
+rules:
+- "jwt.roles.aistudio in ['viewer', 'operator', 'admin'] && mcp.tool.name in ['sandbox_run']"
+# Workflow steps the runner calls with the caller's JWT; they spend a Claude subscription, so not viewers.
+- "jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['workspace_open', 'workspace_claude', 'workspace_exec', 'workspace_diff', 'workspace_files', 'workspace_close']"

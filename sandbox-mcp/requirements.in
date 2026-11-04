@@ -1,0 +1,13 @@
+# The sandbox MCP server's direct dependencies. requirements.txt is the pinned resolution that gets
+# installed; regenerate both it and THIRD-PARTY-NOTICES.md with `make deps-lock third-party`
+# from the repository root.
+
+# FastMCP 1.x, the same pin as mcp-server.
+mcp==1.30.0
+uvicorn==0.54.0
+pydantic-settings==2.15.0
+structlog==26.1.0
+# Caller JWT verification (ES256 + JWKS), the keys agentgateway checks.
+pyjwt[crypto]==2.15.1  # 2.12.x: critical auth-bypass CVEs in token verification
+# Starts the sandbox containers (through a socket proxy that allows only containers).
+docker==7.2.0

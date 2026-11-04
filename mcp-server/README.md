@@ -38,11 +38,12 @@ agentgateway's role → tool rules are generated from this server's manifest (`a
 they cannot drift from what it enforces:
 
 ```bash
-python -m app.manifest ../gateway/config.yaml   # regenerate the block between the markers
-python -m app.manifest --check ../gateway/config.yaml
+python -m app.manifest ../agent-runner/platform/packs/aistudio/connectors/aistudio.yaml   # regenerate the block between the markers
+python -m app.manifest --check ../agent-runner/platform/packs/aistudio/connectors/aistudio.yaml
 ```
 
-The block lives in `gateway/config.yaml`, the gateway's own config.
+The block lives in the aistudio connector file; `make registry` then renders `gateway/config.yaml`
+from it (see [docs/agent-runner.md](../docs/agent-runner.md#packs)).
 
 ## Tests
 

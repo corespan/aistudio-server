@@ -107,10 +107,76 @@ services:
     command: ["-f", "/config/config.yaml"]
     ports:
       - "${AGW_PORT:-8050}:8050"
+    environment:
+      # The LLM route (/llm) for agent-runner: an OpenAI-compatible server, host:port. Unset: the
+      # route answers 503 and the MCP route is unaffected.
+      LLM_HOST: "${LLM_HOST:-llm-unset.invalid:8000}"
+      LLM_MODEL: "${LLM_MODEL:-}"           # the served model every logical name maps to
+      LLM_API_KEY: "${LLM_API_KEY:-none}"   # the LLM server's own key; callers' JWTs never reach it
+      # Your fine-grained GitHub token for /github: the coding workflows' draft PRs and reviews,
+      # after your approval (docs/agent-runner.md#approval-and-github). Only this container holds it.
+      GITHUB_PAT: "${GITHUB_PAT:-}"
     volumes:
       - ./gateway:/config:ro               # config.yaml + jwks.json (from make mcp-init)
     depends_on:
       - aistudio-mcp
+    restart: unless-stopped
+
+  # The only thing workspace sandboxes reach: /llm/anthropic on :8051 (gateway/sandbox.yaml, from
+  # make registry). Its own container because agentgateway can't bind a listener to one network.
+  # Not published on the host. docs/agent-runner.md#the-anthropic-route
+  agentgateway-sandbox:
+    profiles: ["mcp"]
+    image: cr.agentgateway.dev/agentgateway:v1.6.0@sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c
+    command: ["-f", "/config/sandbox.yaml"]
+    environment:
+      # Your Claude subscription (`claude setup-token`). Only this container holds it: sandboxes
+      # send the caller's JWT and the gateway swaps it. Unset: Anthropic answers 401.
+      CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+    volumes:
+      - ./gateway:/config:ro               # sandbox.yaml + jwks.json
+    networks:
+      default: {}                          # its way out to api.anthropic.com
+      sandbox-egress:
+        # Fixed, because gVisor can't use Docker's DNS: workspaces get --add-host agentgateway-sandbox:<this>.
+        ipv4_address: 172.30.51.10
+    restart: unless-stopped
+
+  # Multi-agent runs for a panel: http://<host>:8060 (docs/agent-runner.md). It holds no keys and
+  # reaches tools and the LLM only through agentgateway, with the caller's own JWT.
+  agent-runner:
+    profiles: ["mcp"]
+    build: ./agent-runner
+    ports:
+      - "${RUNNER_PORT:-8060}:8060"
+    environment:
+      LLM_BASE_URL: "http://agentgateway:8050/llm/v1"
+      # LangGraph checkpoints and the run log; the database is created on first start.
+      DATABASE_URL: "postgresql://aistudio:aistudio@postgres:5432/agent_runner"
+      JWKS_FILE: "/gateway/jwks.json"
+      # Langfuse traces, off unless all three are set (docs/agent-runner.md#traces).
+      LANGFUSE_HOST: "${LANGFUSE_HOST:-}"
+      LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+      LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+    volumes:
+      - ./gateway/jwks.json:/gateway/jwks.json:ro   # the public key only, never dev-key.pem
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      agentgateway:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8060/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   aistudio-mcp:
@@ -201,11 +267,76 @@ services:
       - mcp-docker
     restart: unless-stopped
 
+  # sandbox_run: programs in disposable gVisor containers with no network (docs/sandbox.md).
+  # Needs the runsc runtime on the Docker host. Reached only through agentgateway (/mcp/sandbox).
+  sandbox-mcp:
+    profiles: ["mcp"]
+    build: ./sandbox-mcp
+    environment:
+      DOCKER_HOST: "tcp://sandbox-docker-proxy:2375"
+      SANDBOX_JWKS_FILE: "/gateway/jwks.json"
+      SANDBOX_RUNTIME: "${SANDBOX_RUNTIME:-runsc}"
+      SANDBOX_IMAGE: "${SANDBOX_IMAGE:-python:3.11-slim}"
+      # Workspaces (docs/sandbox.md#workspaces): built by make mcp-up; containers join sandbox-egress.
+      SANDBOX_WORKSPACE_IMAGE: "aistudio-workspace:local"
+      SANDBOX_WORKSPACE_NETWORK: "aistudio-sandbox-egress"
+      SANDBOX_WORKSPACE_GATEWAY_IP: "172.30.51.10"
+    volumes:
+      - ./gateway/jwks.json:/gateway/jwks.json:ro   # the public key only
+      - sandbox-workspaces:/var/lib/sandbox/workspaces   # snapshots, deleted on close or after 24h
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - default
+      - sandbox-docker
+    depends_on:
+      - sandbox-docker-proxy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8082/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # The Docker API sandbox-mcp may use: containers only (create, start, wait, logs, copy, kill,
+  # remove). No exec, images, networks, volumes or build. It can still create any container, so
+  # whoever controls sandbox-mcp controls the host: it is small, has no LLM, and only the gateway
+  # reaches it.
+  sandbox-docker-proxy:
+    profiles: ["mcp"]
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      VERSION: 1
+      PING: 1
+      EVENTS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - sandbox-docker
+    restart: unless-stopped
+
 networks:
   mcp-docker:
     internal: true
+  sandbox-docker:
+    internal: true
+  # Workspace sandboxes and agentgateway-sandbox, nothing else: no route to the internet.
+  sandbox-egress:
+    name: aistudio-sandbox-egress        # sandbox-mcp names it when it creates a workspace
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.51.0/24
 
 volumes:
   pgdata:
   jupyter-locations:
   aistudio-mcp-data:
+  sandbox-workspaces:

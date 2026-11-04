@@ -15,6 +15,10 @@ This file covers the **server application** dependency tree only. It does
 - the optional MCP server (`mcp-server/`) — see
   `mcp-server/THIRD-PARTY-NOTICES.md`, and `sbom/` for its image and the
   agentgateway and docker-socket-proxy images it runs with;
+- the optional agent runner (`agent-runner/`) — see
+  `agent-runner/THIRD-PARTY-NOTICES.md`, and `sbom/` for its image;
+- the optional sandbox MCP server (`sandbox-mcp/`) — see
+  `sandbox-mcp/THIRD-PARTY-NOTICES.md`;
 - model weights and datasets — see `MODEL-LICENSES.md`;
 - frontend assets in `demo-ui/` — see `demo-ui/vendor/NOTICE`.
 

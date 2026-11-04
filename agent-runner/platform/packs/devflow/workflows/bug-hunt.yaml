@@ -1,0 +1,18 @@
+kind: workflow
+name: bug-hunt
+purpose: Look for real bugs in aistudio-server, let you choose which to fix, fix and review them, up to a draft PR.
+input: task                        # the scope: "app/routers/", "the Celery tasks", or "anything"
+users: [rsingh]
+repo: corespan/aistudio-server
+ref: master
+max_usd: 15
+steps:
+  # Read-only, and may run the tests: findings with evidence, ten at most.
+  - { id: hunt, agent: reviewer, mode: hunt }
+  - { id: triage, gate: triage }   # you drop the findings not to fix: approve {"drop": [..]}
+  - { id: fix, agent: coder, mode: fix }
+  - { id: check, run: "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider" }
+  - { id: review, agent: reviewer, mode: review, needs: [fix, check], revise: { step: fix, rounds: 2 } }
+  - { id: approve, gate: write }
+  - { id: learn, agent: coder, mode: learn }
+  - { id: pr, publish: pr }

@@ -1,0 +1,11 @@
+#!/bin/sh
+# with-postgres CMD...: start a throwaway PostgreSQL in the workspace, run CMD, stop it.
+# User aistudio on 127.0.0.1:5432 (and /tmp), trust auth: it lives in a box with no network,
+# for one check, and is gone with the container.
+set -e
+PG=/usr/lib/postgresql/15/bin
+D=/tmp/pg
+"$PG/initdb" -D "$D" -U aistudio --auth=trust >/dev/null
+"$PG/pg_ctl" -D "$D" -o "-k /tmp -c listen_addresses=127.0.0.1" -l /tmp/pg.log -w start >/dev/null
+trap '"$PG/pg_ctl" -D "$D" -m immediate stop >/dev/null' EXIT
+"$@"

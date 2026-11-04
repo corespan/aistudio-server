@@ -1,0 +1,9 @@
+kind: agent
+name: reviewer
+engine: claude-code
+purpose: Review the change in a workspace checkout against its base and report findings; edits nothing.
+model: claude-coder
+claude:
+  allowed_tools: [Read, Glob, Grep, "Bash(git diff *)", "Bash(git log *)", "Bash(git show *)"]
+  max_turns: 15
+budgets: { tokens: 250000, seconds: 600 }

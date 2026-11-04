@@ -98,8 +98,47 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Gateway rules match the tool manifest
-        run: python -m app.manifest --check ../gateway/config.yaml
+        run: python -m app.manifest --check ../agent-runner/platform/packs/aistudio/connectors/aistudio.yaml
 
       - name: Run tests
         run: pytest -q
 
+  sandbox-test:
+    name: sandbox-mcp pytest
+    runs-on: ubuntu-latest
+    # Offline: a fake Docker client; nothing is started.
+    defaults:
+      run:
+        working-directory: sandbox-mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  runner-test:
+    name: agent-runner pytest
+    runs-on: ubuntu-latest
+    # Offline: a scripted model and a fake gateway; runs are kept in memory.
+    defaults:
+      run:
+        working-directory: agent-runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q

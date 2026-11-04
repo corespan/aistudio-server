@@ -1,0 +1,30 @@
+# The agent runner's direct dependencies. requirements.txt is the pinned resolution that gets
+# installed; regenerate both it and THIRD-PARTY-NOTICES.md with `make deps-lock third-party`
+# from the repository root.
+
+# Each agent's loop (app/agent.py). Runs, task graphs and scheduling are the runner's own code.
+langgraph==1.2.18
+langchain-core==1.6.2
+# Any OpenAI-compatible endpoint: agentgateway's LLM route in front of vLLM.
+langchain-openai==1.6.2
+
+# MCP client, the same pin as mcp-server: every tool call goes through agentgateway.
+mcp==1.30.0
+httpx==0.28.1
+
+fastapi==0.162.0
+uvicorn==0.54.0
+# Caller JWT verification (ES256 + JWKS), the keys agentgateway already checks.
+pyjwt[crypto]==2.15.1  # 2.12.x: critical auth-bypass CVEs in token verification
+pydantic-settings==2.15.0
+structlog==26.1.0
+# Run state: LangGraph checkpoints plus the run log, in its own database on the compose Postgres.
+# [binary] ships libpq in the wheel (the image installs --only-binary, no compiler).
+langgraph-checkpoint-postgres==3.2.0
+psycopg[binary,pool]==3.3.6
+# Harness files.
+pyyaml==6.0.3
+# Traces (app/tracing.py). SDK v4: the self-hosted server is v3.200; SDK v5 needs server 4.59+.
+langfuse==4.18.0
+# langfuse.langchain imports it (only to read its version, then uses langchain-core).
+langchain==1.4.1

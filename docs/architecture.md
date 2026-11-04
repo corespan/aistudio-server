@@ -97,6 +97,37 @@ Message broker for Celery. The API enqueues tasks; the worker picks them up. No 
 
 Optional reverse proxy for Jupyter instances. When `NGINX_ENABLED=true`, each Jupyter session gets a path-based public URL (`{PROXY_BASE_URL}/jupyter/{gpu_type}/{task_id}/lab`). The worker writes an nginx location config file; `inotifywait` inside the nginx container auto-reloads on changes — no manual reload needed.
 
+### AI Assistant backend (`agent-runner`, compose profile `mcp`)
+
+The service the in-product AI Assistant Panel talks to (corespan/aistudio-app#5,
+corespan/aistudio-server#8). It replaces the earlier idea of a stateless chat proxy that returns
+UI actions: it runs agents that look things up and answer, and changes nothing.
+
+```
+panel ──JWT──> agent-runner :8060 ──same JWT──> agentgateway :8050 ──> /mcp/aistudio, /mcp/sandbox
+                  │  LangGraph: plan → agents (parallel) → answer          └──> /llm (vLLM)
+                  └─ Postgres: checkpoints, run log, conversations
+```
+
+- **Agents**, read-only: `analyst` (benchmark results, comparisons), `assistant` (quick status
+  and health), `diagnostics` (failures and slowdowns). Each is a file in
+  `agent-runner/platform/packs/`, with its purpose, tools and limits.
+- **Read-only is enforced in code**: agents are given only tools the MCP server marks read-only,
+  so `start_workload`, `start_jupyter` and `stop_workload` are never offered. agentgateway also
+  filters every tool by the caller's own role.
+- **The panel's API**: start a turn and stream it over SSE (tool progress, then the answer),
+  conversations with history, and the panel context with each turn ("this run").
+- **Limits** per run and per agent: tool rounds, tokens, time. When one runs out, the agent
+  answers with what it has.
+- **Audit**: every run and every event (each tool call with its arguments and result) is in the
+  run log, with the caller's `sub`; traces go to Langfuse when it is configured.
+- **The LLM** is any OpenAI-compatible server (vLLM) behind agentgateway's `/llm` route:
+  `LLM_HOST` and `LLM_MODEL` in `.env`.
+
+Details, settings and the API: [agent-runner.md](agent-runner.md). The same service also runs
+the coding workflows (Claude Code in sandboxes, draft PRs after approval), which are a separate,
+single-user track: [agent-runner.md#workflows](agent-runner.md#workflows).
+
 ---
 
 ## Workload Lifecycle

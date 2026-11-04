@@ -1,0 +1,12 @@
+kind: agent
+name: coder
+engine: claude-code
+purpose: Make the requested change in a workspace checkout of the repo, run the tests, and explain the diff.
+model: claude-coder
+claude:
+  # with-postgres: the workflows' check (a throwaway test database in the box); the code step is told the exact command.
+  allowed_tools: [Read, Edit, Write, Glob, Grep, "Bash(git *)", "Bash(make *)", "Bash(python -m pytest *)", "Bash(with-postgres *)"]
+  max_turns: 40
+# tokens: weighted (input + cache writes + output + 0.1 x cache reads) for one step. P0 measured
+# about 25k of fixed overhead per step; set again from the first real runs.
+budgets: { tokens: 600000, seconds: 900 }

@@ -90,11 +90,18 @@ if [ "${1:-}" = "mcp" ]; then
   docker build -q -t aistudio-mcp:local "$ROOT/mcp-server" >/dev/null
   mcp_tag="$(cat "$ROOT/mcp-server/Dockerfile" "$ROOT/mcp-server/requirements.txt" | sha256sum | cut -c1-12)"
   docker tag aistudio-mcp:local "aistudio-mcp:$mcp_tag"
-  mapfile -t IMAGES < <(python3 - "$ROOT/docker-compose.yml" "$mcp_tag" <<'PY'
+  docker build -q -t agent-runner:local "$ROOT/agent-runner" >/dev/null
+  runner_tag="$(cat "$ROOT/agent-runner/Dockerfile" "$ROOT/agent-runner/requirements.lock.txt" | sha256sum | cut -c1-12)"
+  docker tag agent-runner:local "agent-runner:$runner_tag"
+  docker build -q -t sandbox-mcp:local "$ROOT/sandbox-mcp" >/dev/null
+  sandbox_tag="$(cat "$ROOT/sandbox-mcp/Dockerfile" "$ROOT/sandbox-mcp/requirements.lock.txt" | sha256sum | cut -c1-12)"
+  docker tag sandbox-mcp:local "sandbox-mcp:$sandbox_tag"
+  mapfile -t IMAGES < <(python3 - "$ROOT/docker-compose.yml" "$mcp_tag" "$runner_tag" "$sandbox_tag" <<'PY'
 import re, sys
 
-compose, mcp_tag = open(sys.argv[1], encoding="utf-8").read(), sys.argv[2]
-rows = [f"aistudio-mcp\taistudio-mcp\t{mcp_tag}"]
+compose, mcp_tag, runner_tag, sandbox_tag = open(sys.argv[1], encoding="utf-8").read(), *sys.argv[2:5]
+rows = [f"aistudio-mcp\taistudio-mcp\t{mcp_tag}", f"agent-runner\tagent-runner\t{runner_tag}",
+        f"sandbox-mcp\tsandbox-mcp\t{sandbox_tag}"]
 # One block per top-level service; keep those in the mcp profile that pull an image.
 for block in re.split(r"\n(?=  [a-z][\w-]*:\s*\n)", compose):
     if not re.search(r'profiles:\s*\[\s*"mcp"\s*\]', block) or "build:" in block:
@@ -105,7 +112,7 @@ for block in re.split(r"\n(?=  [a-z][\w-]*:\s*\n)", compose):
     ref, _, pinned = m.group(1).partition("@")   # a pinned digest is scanned as pinned
     repo, tag = ref.rsplit(":", 1)
     rows.append(f"{repo.rsplit('/', 1)[-1]}\t{repo}\t{tag}\t{pinned}")
-if len(rows) < 3:
+if len(rows) < 5:
     sys.exit("ERROR: expected agentgateway and docker-socket-proxy in the mcp profile")
 print("\n".join(rows))
 PY

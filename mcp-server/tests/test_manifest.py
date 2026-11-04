@@ -80,12 +80,12 @@ def test_rewrite_replaces_only_the_generated_block():
     assert manifest_mod.rewrite(out) == out
 
 
-# agentgateway's config, whose role rules are generated from the manifest.
-CONNECTOR = Path(__file__).resolve().parents[2] / "gateway/config.yaml"
+# The aistudio connector file; `make registry` renders gateway/config.yaml from it.
+CONNECTOR = Path(__file__).resolve().parents[2] / "agent-runner/platform/packs/aistudio/connectors/aistudio.yaml"
 
 
 @pytest.mark.skipif(not CONNECTOR.exists(), reason="run from the repo, not the mcp-server image")
 def test_the_gateway_rules_are_generated_from_the_manifest():
     text = CONNECTOR.read_text(encoding="utf-8")
-    assert manifest_mod.rewrite(text) == text, f"run: python -m app.manifest {CONNECTOR}"
+    assert manifest_mod.rewrite(text) == text, f"run: python -m app.manifest {CONNECTOR}, then make registry"
     assert "jwt.roles.aistudio" in text

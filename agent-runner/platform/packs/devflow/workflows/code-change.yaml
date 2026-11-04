@@ -1,0 +1,21 @@
+kind: workflow
+name: code-change
+purpose: Make a requested change to aistudio-server, test it and review it, up to your approval.
+input: task
+users: [rsingh]                    # your subscription; the gateway checks this too
+repo: corespan/aistudio-server
+ref: master
+max_usd: 10                        # Claude Code's reported cost, an API-price equivalent
+steps:
+  - { id: plan, agent: coder, mode: plan }                     # read-only tools; the plan is its answer
+  - { id: plan-review, agent: reviewer, mode: plan-review, needs: [plan], revise: { step: plan, rounds: 2 } }
+  - { id: code, agent: coder, mode: code, needs: [plan] }
+  # From this file, never from a model. master's suite needs PostgreSQL: the workspace image
+  # starts a throwaway one in the box (with-postgres).
+  - { id: check, run: "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider" }
+  - { id: review, agent: reviewer, mode: review, needs: [code, check], revise: { step: code, rounds: 2 } }
+  - { id: approve, gate: write }   # stops here: POST /runs/{id}/approve or /reject
+  # After approval: what the coder had to discover, for next time (CLAUDE.md, .agents/knowledge/
+  # only), then a draft PR: the change and the knowledge as two commits on agent/<run-id>.
+  - { id: learn, agent: coder, mode: learn }
+  - { id: pr, publish: pr }

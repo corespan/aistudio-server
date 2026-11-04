@@ -1,0 +1,594 @@
+{
+  "agent": {
+    "analyst": {
+      "source": "packs/aistudio/agents/analyst.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 300,
+          "steps": 6,
+          "tokens": 60000
+        },
+        "claude": null,
+        "engine": "langgraph",
+        "kind": "agent",
+        "model": "worker",
+        "name": "analyst",
+        "purpose": "Benchmark numbers: find, compare and explain benchmark runs and their throughput and latency, what models and nodes can be run, and the default config for a model. Can run a short Python program in a no-network sandbox to compute statistics over the data it fetched.",
+        "tools": [
+          "aistudio/list_benchmarks",
+          "aistudio/get_benchmark",
+          "aistudio/summary",
+          "aistudio/throughput_compare",
+          "aistudio/workload_history",
+          "aistudio/platform_catalog",
+          "aistudio/model_config",
+          "sandbox/sandbox_run"
+        ]
+      }
+    },
+    "assistant": {
+      "source": "packs/aistudio/agents/assistant.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 180,
+          "steps": 4,
+          "tokens": 40000
+        },
+        "claude": null,
+        "engine": "langgraph",
+        "kind": "agent",
+        "model": "worker",
+        "name": "assistant",
+        "purpose": "General questions about the platform and its runs that need a few lookups and no deep dive: status of a task, what ran recently, whether the services are up.",
+        "tools": [
+          "aistudio/list_benchmarks",
+          "aistudio/get_benchmark",
+          "aistudio/summary",
+          "aistudio/workload_history",
+          "aistudio/platform_catalog",
+          "aistudio/model_config",
+          "aistudio/get_task_status",
+          "aistudio/check_service_health"
+        ]
+      }
+    },
+    "coder": {
+      "source": "packs/devflow/agents/coder.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 900,
+          "steps": 8,
+          "tokens": 600000
+        },
+        "claude": {
+          "allowed_tools": [
+            "Read",
+            "Edit",
+            "Write",
+            "Glob",
+            "Grep",
+            "Bash(git *)",
+            "Bash(make *)",
+            "Bash(python -m pytest *)",
+            "Bash(with-postgres *)"
+          ],
+          "max_turns": 40
+        },
+        "engine": "claude-code",
+        "kind": "agent",
+        "model": "claude-coder",
+        "name": "coder",
+        "purpose": "Make the requested change in a workspace checkout of the repo, run the tests, and explain the diff.",
+        "tools": []
+      }
+    },
+    "diagnostics": {
+      "source": "packs/aistudio/agents/diagnostics.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 300,
+          "steps": 8,
+          "tokens": 80000
+        },
+        "claude": null,
+        "engine": "langgraph",
+        "kind": "agent",
+        "model": "worker",
+        "name": "diagnostics",
+        "purpose": "Why something failed or is slow: a run's lifecycle and logs, service health, the queue, the containers, files and network on this host, and the GPU nodes over SSH.",
+        "tools": [
+          "aistudio/workload_history",
+          "aistudio/get_task_status",
+          "aistudio/get_task_logs",
+          "aistudio/check_service_health",
+          "aistudio/queue_status",
+          "aistudio/timeline",
+          "aistudio/list_containers",
+          "aistudio/docker_logs",
+          "aistudio/inspect_container",
+          "aistudio/container_diff",
+          "aistudio/read_file",
+          "aistudio/list_dir",
+          "aistudio/grep_logs",
+          "aistudio/git_log",
+          "aistudio/git_show",
+          "aistudio/network_check",
+          "aistudio/list_listening_ports",
+          "aistudio/check_tls_cert",
+          "aistudio/check_clock_skew",
+          "aistudio/frontend_check",
+          "aistudio/check_ssh_connectivity",
+          "aistudio/check_node_docker",
+          "aistudio/node_docker_logs",
+          "aistudio/node_exec"
+        ]
+      }
+    },
+    "reviewer": {
+      "source": "packs/devflow/agents/reviewer.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 600,
+          "steps": 8,
+          "tokens": 250000
+        },
+        "claude": {
+          "allowed_tools": [
+            "Read",
+            "Glob",
+            "Grep",
+            "Bash(git diff *)",
+            "Bash(git log *)",
+            "Bash(git show *)"
+          ],
+          "max_turns": 15
+        },
+        "engine": "claude-code",
+        "kind": "agent",
+        "model": "claude-coder",
+        "name": "reviewer",
+        "purpose": "Review the change in a workspace checkout against its base and report findings; edits nothing.",
+        "tools": []
+      }
+    }
+  },
+  "connector": {
+    "aistudio": {
+      "source": "packs/aistudio/connectors/aistudio.yaml",
+      "spec": {
+        "browser": true,
+        "description": "Benchmarks, workloads, logs, this host and the GPU nodes (mcp-server, docs/mcp-server.md).",
+        "kind": "connector",
+        "name": "aistudio",
+        "rules": [
+          "jwt.roles.aistudio in ['viewer', 'operator', 'admin'] && mcp.tool.name in ['workload_history', 'throughput_compare', 'check_service_health', 'platform_catalog', 'list_benchmarks', 'get_benchmark', 'summary', 'model_config', 'get_task_status', 'get_task_logs']",
+          "jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['start_workload', 'start_jupyter', 'stop_workload']",
+          "jwt.roles.aistudio in ['admin'] && mcp.tool.name in ['timeline', 'list_containers', 'docker_logs', 'inspect_container', 'container_diff', 'read_file', 'list_dir', 'grep_logs', 'git_log', 'git_show', 'network_check', 'list_listening_ports', 'tcpdump_capture', 'check_tls_cert', 'check_clock_skew', 'frontend_check', 'queue_status', 'check_ssh_connectivity', 'check_node_docker', 'node_docker_logs', 'node_exec']"
+        ],
+        "upstream": "http://aistudio-mcp:8081/mcp"
+      }
+    },
+    "sandbox": {
+      "source": "packs/core/connectors/sandbox.yaml",
+      "spec": {
+        "browser": false,
+        "description": "Run a short program in a no-network gVisor container, and repo workspaces for the coding workflow (sandbox-mcp, docs/sandbox.md).",
+        "kind": "connector",
+        "name": "sandbox",
+        "rules": [
+          "jwt.roles.aistudio in ['viewer', 'operator', 'admin'] && mcp.tool.name in ['sandbox_run']",
+          "jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['workspace_open', 'workspace_claude', 'workspace_exec', 'workspace_diff', 'workspace_files', 'workspace_close']"
+        ],
+        "upstream": "http://sandbox-mcp:8082/mcp"
+      }
+    }
+  },
+  "hash": "dc724406381d6bb82d99fc7ec3265911833f1924a3a0560fabcbac0c9bd885ae",
+  "model": {
+    "claude-coder": {
+      "source": "packs/devflow/models/claude-coder.yaml",
+      "spec": {
+        "kind": "model",
+        "model": "claude-opus-5-5",
+        "name": "claude-coder",
+        "provider": "anthropic",
+        "users": [
+          "rsingh"
+        ]
+      }
+    }
+  },
+  "packs": {
+    "aistudio": {
+      "description": "The aistudio-server platform. Its MCP server and the agents that answer from it.",
+      "kind": "pack",
+      "name": "aistudio",
+      "requires": [
+        "core"
+      ],
+      "version": "0.1.0"
+    },
+    "core": {
+      "description": "What every install has. Today the gVisor sandbox (sandbox_run).",
+      "kind": "pack",
+      "name": "core",
+      "requires": [],
+      "version": "0.1.0"
+    },
+    "devflow": {
+      "description": "Coding and code review on aistudio-server. Claude Code in gVisor workspaces, on your subscription.",
+      "kind": "pack",
+      "name": "devflow",
+      "requires": [],
+      "version": "0.1.0"
+    }
+  },
+  "platform": {
+    "name": "aistudio",
+    "packs": [
+      "core",
+      "aistudio",
+      "devflow"
+    ],
+    "repos": [
+      "corespan/aistudio-server"
+    ]
+  },
+  "workflow": {
+    "bug-hunt": {
+      "source": "packs/devflow/workflows/bug-hunt.yaml",
+      "spec": {
+        "input": "task",
+        "kind": "workflow",
+        "max_usd": 15.0,
+        "name": "bug-hunt",
+        "purpose": "Look for real bugs in aistudio-server, let you choose which to fix, fix and review them, up to a draft PR.",
+        "ref": "master",
+        "repo": "corespan/aistudio-server",
+        "reviewers": [],
+        "steps": [
+          {
+            "agent": "reviewer",
+            "gate": null,
+            "id": "hunt",
+            "mode": "hunt",
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": "triage",
+            "id": "triage",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": "coder",
+            "gate": null,
+            "id": "fix",
+            "mode": "fix",
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "check",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider"
+          },
+          {
+            "agent": "reviewer",
+            "gate": null,
+            "id": "review",
+            "mode": "review",
+            "needs": [
+              "fix",
+              "check"
+            ],
+            "publish": null,
+            "revise": {
+              "rounds": 2,
+              "step": "fix"
+            },
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": "write",
+            "id": "approve",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": "coder",
+            "gate": null,
+            "id": "learn",
+            "mode": "learn",
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "pr",
+            "mode": null,
+            "needs": [],
+            "publish": "pr",
+            "revise": null,
+            "run": null
+          }
+        ],
+        "trusted": [],
+        "users": [
+          "rsingh"
+        ]
+      }
+    },
+    "code-change": {
+      "source": "packs/devflow/workflows/code-change.yaml",
+      "spec": {
+        "input": "task",
+        "kind": "workflow",
+        "max_usd": 10.0,
+        "name": "code-change",
+        "purpose": "Make a requested change to aistudio-server, test it and review it, up to your approval.",
+        "ref": "master",
+        "repo": "corespan/aistudio-server",
+        "reviewers": [],
+        "steps": [
+          {
+            "agent": "coder",
+            "gate": null,
+            "id": "plan",
+            "mode": "plan",
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": "reviewer",
+            "gate": null,
+            "id": "plan-review",
+            "mode": "plan-review",
+            "needs": [
+              "plan"
+            ],
+            "publish": null,
+            "revise": {
+              "rounds": 2,
+              "step": "plan"
+            },
+            "run": null
+          },
+          {
+            "agent": "coder",
+            "gate": null,
+            "id": "code",
+            "mode": "code",
+            "needs": [
+              "plan"
+            ],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "check",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider"
+          },
+          {
+            "agent": "reviewer",
+            "gate": null,
+            "id": "review",
+            "mode": "review",
+            "needs": [
+              "code",
+              "check"
+            ],
+            "publish": null,
+            "revise": {
+              "rounds": 2,
+              "step": "code"
+            },
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": "write",
+            "id": "approve",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": "coder",
+            "gate": null,
+            "id": "learn",
+            "mode": "learn",
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "pr",
+            "mode": null,
+            "needs": [],
+            "publish": "pr",
+            "revise": null,
+            "run": null
+          }
+        ],
+        "trusted": [],
+        "users": [
+          "rsingh"
+        ]
+      }
+    },
+    "code-review": {
+      "source": "packs/devflow/workflows/code-review.yaml",
+      "spec": {
+        "input": "pr",
+        "kind": "workflow",
+        "max_usd": 3.0,
+        "name": "code-review",
+        "purpose": "Review a pull request on aistudio-server, up to your approval to post the review.",
+        "ref": "master",
+        "repo": "corespan/aistudio-server",
+        "reviewers": [],
+        "steps": [
+          {
+            "agent": null,
+            "gate": null,
+            "id": "check",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider"
+          },
+          {
+            "agent": "reviewer",
+            "gate": null,
+            "id": "review",
+            "mode": "review",
+            "needs": [
+              "check"
+            ],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": "write",
+            "id": "approve",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "post",
+            "mode": null,
+            "needs": [],
+            "publish": "review",
+            "revise": null,
+            "run": null
+          }
+        ],
+        "trusted": [],
+        "users": [
+          "rsingh"
+        ]
+      }
+    },
+    "pr-followup": {
+      "source": "packs/devflow/workflows/pr-followup.yaml",
+      "spec": {
+        "input": "pr",
+        "kind": "workflow",
+        "max_usd": 10.0,
+        "name": "pr-followup",
+        "purpose": "Address new comments from trusted people and failed checks on one of the agent's own PRs, pushing to its branch.",
+        "ref": "master",
+        "repo": "corespan/aistudio-server",
+        "reviewers": [],
+        "steps": [
+          {
+            "agent": "coder",
+            "gate": null,
+            "id": "address",
+            "mode": "address",
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "check",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider"
+          },
+          {
+            "agent": "reviewer",
+            "gate": null,
+            "id": "review",
+            "mode": "review",
+            "needs": [
+              "address",
+              "check"
+            ],
+            "publish": null,
+            "revise": {
+              "rounds": 2,
+              "step": "address"
+            },
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": "write",
+            "id": "approve",
+            "mode": null,
+            "needs": [],
+            "publish": null,
+            "revise": null,
+            "run": null
+          },
+          {
+            "agent": null,
+            "gate": null,
+            "id": "push",
+            "mode": null,
+            "needs": [],
+            "publish": "push",
+            "revise": null,
+            "run": null
+          }
+        ],
+        "trusted": [
+          "rsingh-alt"
+        ],
+        "users": [
+          "rsingh"
+        ]
+      }
+    }
+  }
+}

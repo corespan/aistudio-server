@@ -47,7 +47,7 @@ jobs:
       - name: Required compliance files exist
         run: |
           missing=0
-          for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do
+          for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md agent-runner/THIRD-PARTY-NOTICES.md sandbox-mcp/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do
             [ -f "$f" ] || { echo "::error::missing $f"; missing=1; }
           done
           exit $missing
@@ -158,6 +158,36 @@ jobs:
             exit 1
           fi
           echo "mcp-server/requirements.txt satisfies requirements.in."
+
+      - name: agent-runner requirements are pinned and a valid resolution
+        working-directory: agent-runner
+        run: |
+          if grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>|\*)' requirements.txt; then
+            echo "::error file=agent-runner/requirements.txt::unpinned requirement found. Edit requirements.in and run 'make deps-lock'."
+            exit 1
+          fi
+          cp requirements.txt /tmp/runner-recompiled.txt
+          uv pip compile requirements.in --python-version 3.11 --python-platform linux -o /tmp/runner-recompiled.txt --quiet
+          if ! diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/runner-recompiled.txt); then
+            echo "::error file=agent-runner/requirements.txt::not a valid resolution of requirements.in. Run 'make deps-lock' and commit."
+            exit 1
+          fi
+          echo "agent-runner/requirements.txt satisfies requirements.in."
+
+      - name: sandbox-mcp requirements are pinned and a valid resolution
+        working-directory: sandbox-mcp
+        run: |
+          if grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>|\*)' requirements.txt; then
+            echo "::error file=sandbox-mcp/requirements.txt::unpinned requirement found. Edit requirements.in and run 'make deps-lock'."
+            exit 1
+          fi
+          cp requirements.txt /tmp/sandbox-recompiled.txt
+          uv pip compile requirements.in --python-version 3.11 --python-platform linux -o /tmp/sandbox-recompiled.txt --quiet
+          if ! diff <(grep -v '^#' requirements.txt) <(grep -v '^#' /tmp/sandbox-recompiled.txt); then
+            echo "::error file=sandbox-mcp/requirements.txt::not a valid resolution of requirements.in. Run 'make deps-lock' and commit."
+            exit 1
+          fi
+          echo "sandbox-mcp/requirements.txt satisfies requirements.in."
 
       - name: THIRD-PARTY-NOTICES.md files match the pinned sets
         run: python3 scripts/generate_third_party_notices.py --check

@@ -30,7 +30,7 @@ MPL-2.0 is file-level copyleft. Unmodified, so MPL Section 3.2 is satisfied by s
 
 ### orjson 3.13.0 — `MPL-2.0 AND (Apache-2.0 OR MIT)`
 
-MCP server only, pulled in by langsmith (via langchain-core). orjson itself is Apache-2.0 OR MIT; the MPL-2.0 part is code it bundles, which ships in the compiled wheel. Unmodified, so as for certifi: MPL Section 3.2 is satisfied by shipping the licence texts the wheel carries (LICENSE-MPL-2.0 among them) and pointing at the upstream source.
+MCP server and agent runner, pulled in by langsmith (via langchain-core). orjson itself is Apache-2.0 OR MIT; the MPL-2.0 part is code it bundles, which ships in the compiled wheel. Unmodified, so as for certifi: MPL Section 3.2 is satisfied by shipping the licence texts the wheel carries (LICENSE-MPL-2.0 among them) and pointing at the upstream source.
 
 ### paramiko 5.1.0 — `LGPL-2.1`
 

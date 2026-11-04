@@ -1,6 +1,6 @@
 .PHONY: up down logs migrate seed seed-real seed-h100 seed-mi210 seed-t4 seed-benchmarks wait-api test spec shell benchmark \
         compliance deps-lock third-party vendor-assets sbom check-models check-node-env \
-        mcp-init mcp-up mcp-token mcp-check mcp-test sbom-mcp
+        mcp-init mcp-up mcp-token mcp-check mcp-test sbom-mcp runner-test registry sandbox-test
 
 up:
 	docker compose up --build -d
@@ -85,6 +85,12 @@ mcp-init:
 
 mcp-up:
 	@test -f gateway/jwks.json || $(MAKE) mcp-init
+	@# A token pasted across a terminal line wrap has a space in it, and Anthropic answers 401.
+	@! grep -Eq '^(CLAUDE_CODE_OAUTH_TOKEN|GITHUB_PAT)=.*[[:space:]]' .env 2>/dev/null || { echo 'CLAUDE_CODE_OAUTH_TOKEN or GITHUB_PAT in .env contains whitespace (a wrapped paste?): remove it' >&2; exit 1; }
+	@# sandbox-mcp can't pull images (its Docker proxy allows containers only), so pull here.
+	docker pull -q $${SANDBOX_IMAGE:-python:3.11-slim}
+	@# The workspace image (Claude Code, git, the repo's test deps): sandbox-mcp can't build or pull.
+	docker build -q -f sandbox-mcp/workspace/Dockerfile -t aistudio-workspace:local .
 	docker compose --profile mcp up --build -d
 
 mcp-token:
@@ -95,6 +101,18 @@ mcp-check:
 
 mcp-test:
 	cd mcp-server && python -m pytest -q
+
+# ── agent-runner (multi-agent runs, profile mcp) — see docs/agent-runner.md ───
+runner-test:
+	cd agent-runner && python -m pytest -q
+
+# After changing agent-runner/platform/: check every pack, then rewrite the lock file, gateway/config.yaml and gateway/audiences.json.
+registry:
+	cd agent-runner && python -m app.registry render
+
+# ── sandbox-mcp (sandbox_run in gVisor, profile mcp) — see docs/sandbox.md ────
+sandbox-test:
+	cd sandbox-mcp && python -m pytest -q
 
 # ── Licence compliance ────────────────────────────────────────────────────────
 # These targets mirror .github/workflows/compliance.yml. Run `make compliance`
@@ -110,6 +128,10 @@ deps-lock:
 	@# --python-platform linux: the image is Linux; compiled on Windows, docker would pin pywin32.
 	cd mcp-server && uv pip compile requirements.in --python-version 3.11 --python-platform linux -o requirements.txt
 	cd mcp-server && uv pip compile requirements.in --python-version 3.11 --python-platform linux --generate-hashes -o requirements.lock.txt
+	cd agent-runner && uv pip compile requirements.in --python-version 3.11 --python-platform linux -o requirements.txt
+	cd agent-runner && uv pip compile requirements.in --python-version 3.11 --python-platform linux --generate-hashes -o requirements.lock.txt
+	cd sandbox-mcp && uv pip compile requirements.in --python-version 3.11 --python-platform linux -o requirements.txt
+	cd sandbox-mcp && uv pip compile requirements.in --python-version 3.11 --python-platform linux --generate-hashes -o requirements.lock.txt
 	@echo "Now run 'make third-party' — the inventory must match the new pins."
 
 third-party:
@@ -136,7 +158,7 @@ sbom:
 	./scripts/generate_sbom.sh
 
 sbom-mcp:
-	@# Needs only docker: builds aistudio-mcp, pulls agentgateway + docker-socket-proxy.
+	@# Needs only docker: builds aistudio-mcp, agent-runner and sandbox-mcp, pulls agentgateway + docker-socket-proxy.
 	./scripts/generate_sbom.sh mcp
 
 check-models:
@@ -173,7 +195,7 @@ compliance:
 	@grep -qF "3. Grant of Patent License" LICENSE || (echo "FAIL: LICENSE missing section 3" && exit 1)
 	@echo "  ok — $$(wc -c < LICENSE) bytes, all sections present"
 	@echo "── Required files ──────────────────────────────────────────────────"
-	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do \
+	@for f in NOTICE THIRD-PARTY-NOTICES.md mcp-server/THIRD-PARTY-NOTICES.md agent-runner/THIRD-PARTY-NOTICES.md sandbox-mcp/THIRD-PARTY-NOTICES.md MODEL-LICENSES.md demo-ui/vendor/NOTICE; do \
 		test -f $$f && echo "  ok — $$f" || (echo "  FAIL — missing $$f" && exit 1); \
 	done
 	@echo "── Pinned dependencies ─────────────────────────────────────────────"
@@ -183,7 +205,7 @@ compliance:
 	@# extras like `uvicorn[standard]>=0.30.0` are exactly what requirements.in
 	@# contains and are the most likely thing to be pasted in here by mistake,
 	@# and bracket-inside-bracket-expression is easy to get subtly wrong.
-	@for r in requirements.txt mcp-server/requirements.txt; do \
+	@for r in requirements.txt mcp-server/requirements.txt agent-runner/requirements.txt sandbox-mcp/requirements.txt; do \
 		! grep -qE '^[^#[:space:]].*(>=|<=|~=|!=|<|>)' $$r \
 			|| (echo "  FAIL — unpinned requirement in $$r; run 'make deps-lock'" && \
 			    grep -nE '^[^#[:space:]].*(>=|<=|~=|!=|<|>)' $$r && exit 1) || exit 1; \

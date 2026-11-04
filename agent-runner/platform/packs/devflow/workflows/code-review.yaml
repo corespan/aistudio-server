@@ -1,0 +1,13 @@
+kind: workflow
+name: code-review
+purpose: Review a pull request on aistudio-server, up to your approval to post the review.
+input: pr
+users: [rsingh]
+repo: corespan/aistudio-server
+ref: master                        # the PR's base; its head is fetched as pull/<n>/head
+max_usd: 3
+steps:
+  - { id: check, run: "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider" }
+  - { id: review, agent: reviewer, mode: review, needs: [check] }
+  - { id: approve, gate: write }   # you see the findings and may drop any (approve's "drop")
+  - { id: post, publish: review }  # a COMMENT review: you decide approve or request changes

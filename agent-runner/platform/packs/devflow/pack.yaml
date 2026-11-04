@@ -1,0 +1,4 @@
+kind: pack
+name: devflow
+version: 0.1.0
+description: Coding and code review on aistudio-server. Claude Code in gVisor workspaces, on your subscription.

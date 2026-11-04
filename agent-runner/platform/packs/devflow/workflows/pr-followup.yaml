@@ -1,0 +1,16 @@
+kind: workflow
+name: pr-followup
+purpose: Address new comments from trusted people and failed checks on one of the agent's own PRs, pushing to its branch.
+input: pr
+users: [rsingh]
+repo: corespan/aistudio-server
+ref: master
+max_usd: 10
+# GitHub logins whose PR comments are work to do; anyone else's are ignored (they're untrusted text).
+trusted: [rsingh-alt]
+steps:
+  - { id: address, agent: coder, mode: address }
+  - { id: check, run: "with-postgres env POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=5432 python -m pytest tests/ -q -p no:cacheprovider" }
+  - { id: review, agent: reviewer, mode: review, needs: [address, check], revise: { step: address, rounds: 2 } }
+  - { id: approve, gate: write }
+  - { id: push, publish: push }    # a fast-forward of the PR's agent/ branch, then a comment on the PR

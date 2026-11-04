@@ -60,6 +60,40 @@ tecnativa/docker-socket-proxy (Apache-2.0, on an HAProxy base, GPL-2.0). Their
 inventories are in sbom/ (make sbom-mcp).
 
 --------------------------------------------------------------------------------
+OPTIONAL AGENT RUNNER (agent-runner/, docker compose profile "mcp")
+--------------------------------------------------------------------------------
+
+The agent runner has its own dependency set, inventoried in:
+
+    agent-runner/THIRD-PARTY-NOTICES.md
+
+Dependencies there with obligations that survive redistribution:
+
+  * psycopg, psycopg-binary, psycopg-pool - LGPL-3.0
+  * certifi             - MPL-2.0
+  * orjson              - MPL-2.0 AND (Apache-2.0 OR MIT)
+
+Its image is python:3.11-slim with no added Debian packages; its inventory is in
+sbom/ (make sbom-mcp). The LLM it calls, and that model's weights, are supplied
+by the site under their own licences (see the next section).
+
+--------------------------------------------------------------------------------
+OPTIONAL SANDBOX MCP SERVER (sandbox-mcp/, docker compose profile "mcp")
+--------------------------------------------------------------------------------
+
+The sandbox MCP server has its own dependency set, inventoried in:
+
+    sandbox-mcp/THIRD-PARTY-NOTICES.md
+
+Dependencies there with obligations that survive redistribution:
+
+  * certifi             - MPL-2.0
+
+It runs programs in containers under gVisor (runsc, Apache-2.0), which the site
+installs on its Docker host; CoreSpan does not ship gVisor. The sandbox image
+(python:3.11-slim by default) is pulled from Docker Hub under its own licences.
+
+--------------------------------------------------------------------------------
 AI MODELS AND DATASETS
 --------------------------------------------------------------------------------
 

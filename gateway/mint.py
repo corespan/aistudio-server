@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 HERE = Path(__file__).resolve().parent
 KEY = HERE / "dev-key.pem"
 JWKS = HERE / "jwks.json"
+AUDIENCES = HERE / "audiences.json"
 KID = "aistudio-1"
 ISSUER = "aistudio"
 ROLES = ("viewer", "operator", "admin")
@@ -39,9 +40,10 @@ def token(role: str, sub: str, ttl: int) -> str:
     if role not in ROLES:
         raise SystemExit(f"role must be one of {', '.join(ROLES)}")
     now = int(time.time())
-    # aud: agentgateway checks "agentgateway", aistudio-mcp "mcp:aistudio".
+    # aud: agentgateway checks "agentgateway", agent-runner "agent-runner", each connector
+    # "mcp:<name>". audiences.json is rendered from the registry (`make registry`).
     return jwt.encode(
-        {"iss": ISSUER, "aud": ["agentgateway", "mcp:aistudio"], "sub": sub,
+        {"iss": ISSUER, "aud": json.loads(AUDIENCES.read_text()), "sub": sub,
          "jti": str(uuid.uuid4()), "iat": now, "exp": now + ttl, "roles": {"aistudio": role}},
         KEY.read_text(), algorithm="ES256", headers={"kid": KID})
 

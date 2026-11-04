@@ -25,6 +25,8 @@ require you to request access from their publisher — see
 | [docs/models.md](./docs/models.md) | `catalog.json`, adding models, gated vs. ungated, licence obligations |
 | [docs/development.md](./docs/development.md) | Local dev setup, running tests, linting, contribution workflow |
 | [docs/mcp-server.md](./docs/mcp-server.md) | The MCP tool server behind agentgateway: setup, roles, connecting Claude Code and other MCP clients |
+| [docs/agent-runner.md](./docs/agent-runner.md) | Multi-agent runs for a chat panel: harnesses, the LLM route, the run API and its events |
+| [docs/sandbox.md](./docs/sandbox.md) | `sandbox_run`: programs in gVisor containers with no network, and installing gVisor |
 
 ---
 
@@ -92,6 +94,8 @@ make mcp-up                   # Start everything plus agentgateway + the MCP ser
 make mcp-token ROLE=operator  # Print a JWT for an MCP client (viewer | operator | admin)
 make mcp-check                # Smoke-test every role through the gateway
 make mcp-test                 # Run the MCP server's tests
+make runner-test              # Run agent-runner's tests (docs/agent-runner.md)
+make sandbox-test             # Run sandbox-mcp's tests (docs/sandbox.md)
 ```
 
 Licence compliance — see [Licensing](#licensing):
@@ -121,6 +125,9 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | `worker` | — | — | No port; connects outbound only |
 | `agentgateway` (profile `mcp`) | 8050 | **8050** | MCP front door: JWT check, role → tool rules |
 | `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
+| `agent-runner` (profile `mcp`) | 8060 | **8060** | Multi-agent runs for a panel; tools and LLM through agentgateway |
+| `sandbox-mcp` (profile `mcp`) | 8082 | — | `sandbox_run` in gVisor; reached only through agentgateway |
+| `sandbox-docker-proxy` (profile `mcp`) | 2375 | — | Docker API for sandbox-mcp: containers only |
 
 Architecture, component responsibilities, and the workload lifecycle are covered in [docs/architecture.md](./docs/architecture.md).
 

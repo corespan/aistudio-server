@@ -1,0 +1,5 @@
+kind: pack
+name: aistudio
+version: 0.1.0
+description: The aistudio-server platform. Its MCP server and the agents that answer from it.
+requires: [core]      # analyst uses sandbox/sandbox_run

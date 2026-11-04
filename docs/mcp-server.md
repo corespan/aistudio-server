@@ -57,13 +57,15 @@ this host. Whoever holds that key can mint `admin`.
 Browser clients on another origin work too: the gateway answers CORS for any origin (no cookies,
 so a page needs the token itself) and exposes `mcp-session-id`. It drops the `Origin` header before
 aistudio-mcp, whose DNS-rebinding check only knows its compose name. To limit which sites can call
-it, narrow `allowOrigins` (or drop the `cors` policy) in `gateway/config.yaml` and restart the gateway.
+it, set `browser: false` in `agent-runner/platform/packs/aistudio/connectors/aistudio.yaml` (or
+narrow `allowOrigins` in `agent-runner/app/registry.py`) and run `make registry`.
 
 ## Roles
 
 The role is the JWT's `roles.aistudio` claim. Each tool has a minimum role
-(`mcp-server/app/policy.py`); the gateway rules in `gateway/config.yaml` are generated from it. A test fails if they drift
-(`cd mcp-server && python -m app.manifest ../gateway/config.yaml`).
+(`mcp-server/app/policy.py`); the gateway rules are generated from it into the aistudio connector
+file, and `make registry` renders `gateway/config.yaml` from that. A test fails if either drifts
+(`cd mcp-server && python -m app.manifest ../agent-runner/platform/packs/aistudio/connectors/aistudio.yaml`).
 
 | Role | Tools |
 |---|---|
