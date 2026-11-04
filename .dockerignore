@@ -1,0 +1,34 @@
+# The API/worker image (Dockerfile does COPY . .). docker-compose bind-mounts the whole tree over it
+# in dev, so this only decides what a built image carries on its own.
+
+# Credentials and local config: never baked into an image
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*-keyfile.json
+service-account*.json
+
+# VCS, caches and editor noise
+.git
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.venv
+venv
+.vscode
+.idea
+.claude
+
+# Own images or build contexts, never read by the server
+mcp-server/
+gateway/
+nginx/
+sbom/

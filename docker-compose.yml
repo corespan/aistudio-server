@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
 
   postgres:
@@ -8,8 +6,9 @@ services:
       POSTGRES_USER: aistudio
       POSTGRES_PASSWORD: aistudio
       POSTGRES_DB: aistudio
+    # Default passwords: this host only (ssh -L to reach it from elsewhere).
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,9 +22,10 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: aistudio
       RABBITMQ_DEFAULT_PASS: aistudio
+    # Default passwords: this host only (ssh -L to reach it from elsewhere).
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -41,9 +41,17 @@ services:
     environment:
       POSTGRES_HOST: postgres
       RABBITMQ_URL: rabbitmq
+    # Read-only: the app writes only nginx's Jupyter config (its own volume); a compromised API cannot
+    # edit the gateway config, Makefile or helper scripts the next make mcp-up runs.
     volumes:
-      - .:/AIStudio
+      - .:/AIStudio:ro
       - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+    healthcheck:
+      # 503 while PostgreSQL is unreachable (app/routers/system.py).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,7 +66,7 @@ services:
       POSTGRES_HOST: postgres
       RABBITMQ_URL: rabbitmq
     volumes:
-      - .:/AIStudio
+      - .:/AIStudio:ro                     # as api
       - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
       - jupyter-locations:/etc/nginx/jupyter-locations
     depends_on:
@@ -77,21 +85,169 @@ services:
     depends_on:
       - api
 
-  pgadmin:
-    image: dpage/pgadmin4
-    ports:
-      - "5050:80"
+  # ── MCP (profile: mcp): make mcp-up (see docs/mcp-server.md) ──
+  # MCP clients reach the tools at https://<MCP_PUBLIC_HOST>:8050/mcp/aistudio and log in to Keycloak there.
+  agentgateway:
+    profiles: ["mcp"]
+    image: cr.agentgateway.dev/agentgateway:v1.6.0@sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c
+    command: ["-f", "/config/config.yaml"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-
-  demo-ui:
-    image: nginx:alpine
+      MCP_PUBLIC_URL: "https://${MCP_PUBLIC_HOST:-localhost}:${AGW_PORT:-8050}"
     ports:
-      - "3000:80"
+      - "${AGW_PORT:-8050}:8050"
     volumes:
-      - ./demo-ui:/usr/share/nginx/html:ro
+      - ./gateway/config.yaml:/config/config.yaml:ro
+      - ${MCP_SECRETS_DIR:-~/.aistudio-mcp}/tls:/config/tls:ro    # cert, key, ca.pem (make mcp-init)
+    depends_on:
+      aistudio-mcp:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Users, roles and logins for MCP clients. Login pages are served through agentgateway's TLS port;
+  # the admin console only on this host (ssh -L 8180:localhost:8180 to reach it).
+  keycloak:
+    profiles: ["mcp"]
+    image: quay.io/keycloak/keycloak:26.8.0@sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741
+    command: ["start", "--import-realm"]
+    env_file:                              # admin and DB passwords (make mcp-init)
+      - path: ${MCP_SECRETS_DIR:-~/.aistudio-mcp}/keycloak.env
+        required: false
+    environment:
+      KC_HOSTNAME: "https://${MCP_PUBLIC_HOST:-localhost}:${AGW_PORT:-8050}"
+      KC_HOSTNAME_ADMIN: "http://localhost:8180"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_DB: postgres
+      # Its own database and role in the shared postgres (gateway/keycloak/db.sql, make mcp-db).
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+    volumes:
+      - ./gateway/keycloak/aistudio-realm.json:/opt/keycloak/data/import/aistudio-realm.json:ro
+    ports:
+      - "127.0.0.1:8180:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  aistudio-mcp:
+    profiles: ["mcp"]
+    build: ./mcp-server
+    # No published port: agentgateway reaches it at http://aistudio-mcp:8081/mcp (gateway/config.yaml).
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8081"
+      # agentgateway sends Host: aistudio-mcp with no port, so list both spellings.
+      MCP_ALLOWED_HOSTS: "aistudio-mcp,aistudio-mcp:8081"
+      # The same Keycloak tokens agentgateway checks: keys from Keycloak, issuer as clients see it.
+      MCP_JWKS_URL: "http://keycloak:8080/realms/aistudio/protocol/openid-connect/certs"
+      MCP_JWT_ISSUER: "https://${MCP_PUBLIC_HOST:-localhost}:${AGW_PORT:-8050}/realms/aistudio"
+      MCP_JWT_AUDIENCE: "aistudio-mcp"
+      # start_workload / start_jupyter / stop_jupyter / delete_run_results exist only when true.
+      # stop_jupyter and delete_run_results: the task's creator (workloads.created_by, set from the
+      # Keycloak user id) or an admin. That binds MCP users only: the REST API on 8002 has no authentication.
+      MCP_WRITES_ENABLED: "${MCP_WRITES_ENABLED:-false}"
+      AISTUDIO_API_URL: "http://api:8001"
+      RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
+      # Monitoring-only user (make mcp-rabbit), not the broker's admin; its password is the
+      # rabbitmq_password secret below, so it is not in this container's env either.
+      RABBITMQ_USER: "aistudio-mcp"
+      DOCKER_HOST: "tcp://aistudio-docker-proxy:2375"
+      SSH_KEY_PATH: "/root/.ssh/id_rsa"
+      SSH_DEFAULT_USER: "${SSH_DEFAULT_USER:-ubuntu}"
+      # SSH known_hosts on the aistudio-mcp-data volume.
+      SSH_KNOWN_HOSTS: "/data/ssh/known_hosts"
+      SSH_HOST_KEY_POLICY: "${SSH_HOST_KEY_POLICY:-tofu}"
+      # The GPU node subnets the node probes may reach. Empty = node probes off.
+      NODE_ALLOWED_CIDRS: "${NODE_ALLOWED_CIDRS:-}"
+      REPO_PATH: "/repo"
+      READABLE_ROOTS: "/repo,/var/log"
+    # Tracked source read-only (never .env) and the SSH key; never MCP_SECRETS_DIR.
+    volumes:
+      - aistudio-mcp-data:/data
+      - ${SSH_KEY_PATH:-~/.ssh/id_rsa}:/root/.ssh/id_rsa:ro
+      - ./.git:/repo/.git:ro
+      - ./app:/repo/app:ro
+      - ./alembic:/repo/alembic:ro
+      - ./alembic.ini:/repo/alembic.ini:ro
+      - ./docs:/repo/docs:ro
+      - ./scripts:/repo/scripts:ro
+      - ./tests:/repo/tests:ro
+      - ./catalog.json:/repo/catalog.json:ro
+      - ./Dockerfile:/repo/Dockerfile:ro
+      - ./docker-compose.yml:/repo/docker-compose.yml:ro
+      - ./requirements.txt:/repo/requirements.txt:ro
+      - ./README.md:/repo/README.md:ro
+      - /var/log:/var/log:ro
+    # tcpdump: NET_RAW, SETUID/SETGID to drop to its user, KILL to stop it; DAC_READ_SEARCH: key, /var/log.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - SETUID
+      - SETGID
+      - KILL
+      - DAC_READ_SEARCH
+    security_opt:
+      - no-new-privileges:true
+      # Docker's default profile (moby/profiles@6fe7deb) minus open_by_handle_at / name_to_handle_at:
+      # with DAC_READ_SEARCH those open host files by handle through any bind mount ("Shocker").
+      - seccomp=./mcp-server/seccomp.json
+    read_only: true
+    tmpfs:
+      - /tmp
+    secrets:
+      - rabbitmq_password      # /run/secrets/rabbitmq_password, read by app/config.py
+    networks:
+      - default
+      - mcp-docker
+    depends_on:
+      - api
+      - aistudio-docker-proxy
+      - keycloak
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Read-only Docker API for the MCP's container tools, on a network only aistudio-mcp joins.
+  aistudio-docker-proxy:
+    profiles: ["mcp"]
+    # GET on containers lets a caller read any container's env (/json) and files (/archive): only
+    # aistudio-mcp, on an internal network, reaches it, and its tools never print either.
+    image: ghcr.io/tecnativa/docker-socket-proxy:0.3.0@sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-docker
+    restart: unless-stopped
+
+secrets:
+  rabbitmq_password:
+    file: ${MCP_SECRETS_DIR:-~/.aistudio-mcp}/rabbitmq_password   # make mcp-env
+
+networks:
+  mcp-docker:
+    internal: true
 
 volumes:
   pgdata:
   jupyter-locations:
+  aistudio-mcp-data:

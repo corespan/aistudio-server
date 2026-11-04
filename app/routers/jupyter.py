@@ -7,7 +7,9 @@ from datetime import datetime
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from typing import Optional
+
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete as sql_delete, select
 
@@ -74,6 +76,8 @@ async def check_assistant_health():
 
 class JupyterLaunchRequest(BaseModel):
     node_ip: str
+    # Who is launching it, as the caller reports it (the MCP server sends the JWT sub).
+    created_by: Optional[str] = Field(None, max_length=256)
 
 
 class PersistentJupyterRequest(BaseModel):
@@ -114,6 +118,7 @@ async def list_jupyter_instances(db: AsyncSession = Depends(get_db)):
             "node_ip": node_ip,
             "jupyter_url": (workload.workload_config or {}).get("jupyter_url"),
             "is_persistent": bool((workload.workload_config or {}).get("is_persistent")),
+            "created_by": workload.created_by,
             "created_at": workload.created_at,
             "updated_at": workload.updated_at,
         }
@@ -203,6 +208,7 @@ async def launch_jupyter(
     workload = Workload(
         workload_id=task_id,
         model_name="jupyter",
+        created_by=request.created_by,
         workload_config={"workload_type": "jupyter"},
         state="CREATED",
     )
@@ -257,6 +263,7 @@ async def get_jupyter_instance_status(task_id: str, db: AsyncSession = Depends(g
         "jupyter_url": (workload.workload_config or {}).get("jupyter_url"),
         "workload_port": workload.workload_port,
         "error_message": workload.error_message,
+        "created_by": workload.created_by,
         "updated_at": workload.updated_at,
     }
 

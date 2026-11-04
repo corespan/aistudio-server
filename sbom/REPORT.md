@@ -1,15 +1,323 @@
 # Workload Image SBOM Report
 
-Generated: 2026-08-05
+Generated: 2026-11-04
 
 Machine-readable SPDX documents sit alongside this file. Regenerate with
-`make sbom`.
+`make sbom` (workload images) and `make sbom-mcp` (MCP profile images).
 
 ## Why this report exists
 
-CoreSpan distributes these images to node operators. Third-party notice and
+CoreSpan distributes the workload images to node operators. Third-party notice and
 redistribution obligations attach at the point of distribution, so they
 attach to us. This is the inventory of what we are handing over.
+
+The `aistudio-mcp`, `agentgateway`, `docker-socket-proxy` and `keycloak` sections
+are the images the optional MCP profile runs. aistudio-mcp is built from
+`mcp-server/` on the operator's host; the others are pulled from their upstream
+registries unmodified. They are listed so the whole running set is inventoried.
+
+## agentgateway-v1.6.0
+
+- Digest: `sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c`
+- Packages: 8
+- Distinct licence strings: 1
+
+### Requires review (8)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `ca-certificates-bundle` | 20260909-r2 | NOASSERTION |
+| `cr.agentgateway.dev/agentgateway` | sha256:9d3e6044ddcdc0878b1787f77bd401252b95e22684203fb5e874c4c42d2ed90c | NOASSERTION |
+| `glibc-2.44` | 2.44-r7 | NOASSERTION |
+| `glibc-2.44-locale-posix` | 2.44-r7 | NOASSERTION |
+| `ld-linux-2.44` | 2.44-r7 | NOASSERTION |
+| `libgcc` | 16.2.0-r1 | NOASSERTION |
+| `libstdc++` | 16.2.0-r1 | NOASSERTION |
+| `wolfi-baselayout` | 20230201-r30 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 8 |
+
+</details>
+
+## aistudio-mcp-af5beb3f3dba
+
+- Digest: `sha256:f8af35d2fcca9062a01bad6dfda25e259f4caabe0efebd5ae94154ae13292002`
+- Packages: 232
+- Distinct licence strings: 8
+
+### Requires review (216)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `Simple Launcher` | 1.1.0.14 | NOASSERTION |
+| `adduser` | 3.152 | NOASSERTION |
+| `aistudio-mcp` | af5beb3f3dba | NOASSERTION |
+| `annotated-types` | 0.8.0 | NOASSERTION |
+| `anyio` | 4.15.1 | NOASSERTION |
+| `apt` | 3.0.3 | NOASSERTION |
+| `asyncssh` | 2.24.0 | NOASSERTION |
+| `attrs` | 26.1.0 | NOASSERTION |
+| `autocommand` | 2.2.2 | NOASSERTION |
+| `base-files` | 13.8+deb13u7 | NOASSERTION |
+| `base-passwd` | 3.6.7 | NOASSERTION |
+| `bash` | 5.2.37-2+b10 | NOASSERTION |
+| `bcrypt` | 5.0.0 | NOASSERTION |
+| `bsdutils` | 1:2.41.5-0+deb13u1 | NOASSERTION |
+| `ca-certificates` | 20250419+deb13u1 | NOASSERTION |
+| `certifi` | 2026.10.23 | NOASSERTION |
+| `cffi` | 2.1.1 | NOASSERTION |
+| `charset-normalizer` | 3.5.2 | NOASSERTION |
+| `cli` | UNKNOWN | NOASSERTION |
+| `cli-32` | UNKNOWN | NOASSERTION |
+| `cli-64` | UNKNOWN | NOASSERTION |
+| `cli-arm64` | UNKNOWN | NOASSERTION |
+| `click` | 8.5.0 | NOASSERTION |
+| `coreutils` | 9.7-3 | NOASSERTION |
+| `cryptography` | 50.0.1 | NOASSERTION |
+| `dash` | 0.5.12-12 | NOASSERTION |
+| `debconf` | 1.5.91 | NOASSERTION |
+| `debian-archive-keyring` | 2025.1 | NOASSERTION |
+| `debianutils` | 5.23.2 | NOASSERTION |
+| `diffutils` | 1:3.10-4 | NOASSERTION |
+| `distro` | 1.9.0 | NOASSERTION |
+| `docker` | 7.2.0 | NOASSERTION |
+| `dpkg` | 1.22.22 | NOASSERTION |
+| `findutils` | 4.10.0-3 | NOASSERTION |
+| `gcc-14-base` | 14.2.0-19 | NOASSERTION |
+| `git` | 1:2.47.3-0+deb13u1 | NOASSERTION |
+| `git-man` | 1:2.47.3-0+deb13u1 | NOASSERTION |
+| `greenlet` | 3.5.6 | NOASSERTION |
+| `grep` | 3.11-4 | NOASSERTION |
+| `gui` | UNKNOWN | NOASSERTION |
+| `gui-32` | UNKNOWN | NOASSERTION |
+| `gui-64` | UNKNOWN | NOASSERTION |
+| `gui-arm64` | UNKNOWN | NOASSERTION |
+| `gzip` | 1.13-1+deb13u1 | NOASSERTION |
+| `h11` | 0.16.0 | NOASSERTION |
+| `hostname` | 3.25 | NOASSERTION |
+| `httpcore` | 1.0.9 | NOASSERTION |
+| `httpcore2` | 2.16.0 | NOASSERTION |
+| `httpx` | 0.28.1 | NOASSERTION |
+| `httpx-sse` | 0.4.3 | NOASSERTION |
+| `httpx2` | 2.16.0 | NOASSERTION |
+| `idna` | 3.20 | NOASSERTION |
+| `init-system-helpers` | 1.69~deb13u1 | NOASSERTION |
+| `invoke` | 3.0.3 | NOASSERTION |
+| `iproute2` | 6.15.0-1 | NOASSERTION |
+| `iputils-ping` | 3:20240905-3 | NOASSERTION |
+| `jsonpatch` | 1.38 | NOASSERTION |
+| `jsonpointer` | 3.6 | NOASSERTION |
+| `jsonschema` | 4.26.0 | NOASSERTION |
+| `jsonschema-specifications` | 2025.9.1 | NOASSERTION |
+| `langchain-core` | 1.6.2 | NOASSERTION |
+| `langchain-protocol` | 0.0.20 | NOASSERTION |
+| `langsmith` | 0.14.14 | NOASSERTION |
+| `libacl1` | 2.3.2-2+b1 | NOASSERTION |
+| `libapt-pkg7.0` | 3.0.3 | NOASSERTION |
+| `libattr1` | 1:2.5.2-3 | NOASSERTION |
+| `libaudit-common` | 1:4.0.2-2+deb13u1 | NOASSERTION |
+| `libaudit1` | 1:4.0.2-2+deb13u1 | NOASSERTION |
+| `libblkid1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libbpf1` | 1:1.5.0-3 | NOASSERTION |
+| `libbrotli1` | 1.1.0-2+deb13u1 | NOASSERTION |
+| `libbsd0` | 0.12.2-2 | NOASSERTION |
+| `libbz2-1.0` | 1.0.8-6 | NOASSERTION |
+| `libc-bin` | 2.41-12+deb13u4 | NOASSERTION |
+| `libc6` | 2.41-12+deb13u4 | NOASSERTION |
+| `libcap-ng0` | 0.8.5-4+b1 | NOASSERTION |
+| `libcap2` | 1:2.75-10+deb13u1+b3 | NOASSERTION |
+| `libcap2-bin` | 1:2.75-10+deb13u1+b3 | NOASSERTION |
+| `libcbor0.10` | 0.10.2-2 | NOASSERTION |
+| `libcom-err2` | 1.47.2-3+b12 | NOASSERTION |
+| `libcurl3t64-gnutls` | 8.14.1-2+deb13u7 | NOASSERTION |
+| `libdb5.3t64` | 5.3.28+dfsg2-9 | NOASSERTION |
+| `libdbus-1-3` | 1.16.2-2 | NOASSERTION |
+| `libdebconfclient0` | 0.280 | NOASSERTION |
+| `libedit2` | 3.1-20250104-1 | NOASSERTION |
+| `libelf1t64` | 0.192-4 | NOASSERTION |
+| `liberror-perl` | 0.17030-1 | NOASSERTION |
+| `libexpat1` | 2.9.0-1~deb13u1 | NOASSERTION |
+| `libffi8` | 3.4.8-2 | NOASSERTION |
+| `libfido2-1` | 1.15.0-1+b1 | NOASSERTION |
+| `libgcc-s1` | 14.2.0-19 | NOASSERTION |
+| `libgdbm-compat4t64` | 1.24-2 | NOASSERTION |
+| `libgdbm6t64` | 1.24-2 | NOASSERTION |
+| `libgmp10` | 2:6.3.0+dfsg-3 | NOASSERTION |
+| `libgnutls30t64` | 3.8.9-3+deb13u4 | NOASSERTION |
+| `libgssapi-krb5-2` | 1.21.3-5+deb13u1 | NOASSERTION |
+| `libhogweed6t64` | 3.10.1-1 | NOASSERTION |
+| `libidn2-0` | 2.3.8-2 | NOASSERTION |
+| `libk5crypto3` | 1.21.3-5+deb13u1 | NOASSERTION |
+| `libkeyutils1` | 1.6.3-6 | NOASSERTION |
+| `libkrb5-3` | 1.21.3-5+deb13u1 | NOASSERTION |
+| `libkrb5support0` | 1.21.3-5+deb13u1 | NOASSERTION |
+| `liblastlog2-2` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libldap2` | 2.6.10+dfsg-1 | NOASSERTION |
+| `liblz4-1` | 1.10.0-4 | NOASSERTION |
+| `liblzma5` | 5.8.1-1+deb13u2 | NOASSERTION |
+| `libmd0` | 1.1.0-2+b1 | NOASSERTION |
+| `libmnl0` | 1.0.5-3 | NOASSERTION |
+| `libmount1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libncursesw6` | 6.5+20250216-2 | NOASSERTION |
+| `libnettle8t64` | 3.10.1-1 | NOASSERTION |
+| `libnghttp2-14` | 1.64.0-1.1+deb13u1 | NOASSERTION |
+| `libnghttp3-9` | 1.8.0-1 | NOASSERTION |
+| `libngtcp2-16` | 1.11.0-1+deb13u1 | NOASSERTION |
+| `libngtcp2-crypto-gnutls8` | 1.11.0-1+deb13u1 | NOASSERTION |
+| `libp11-kit0` | 0.25.5-3 | NOASSERTION |
+| `libpam-modules` | 1.7.0-5 | NOASSERTION |
+| `libpam-modules-bin` | 1.7.0-5 | NOASSERTION |
+| `libpam-runtime` | 1.7.0-5 | NOASSERTION |
+| `libpam0g` | 1.7.0-5 | NOASSERTION |
+| `libpcre2-8-0` | 10.46-1~deb13u3 | NOASSERTION |
+| `libperl5.40` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `libpsl5t64` | 0.21.2-1.1+b1 | NOASSERTION |
+| `libreadline8t64` | 8.2-6 | NOASSERTION |
+| `librtmp1` | 2.4+20151223.gitfa8646d.1-2+b5 | NOASSERTION |
+| `libsasl2-2` | 2.1.28+dfsg1-9 | NOASSERTION |
+| `libsasl2-modules-db` | 2.1.28+dfsg1-9 | NOASSERTION |
+| `libseccomp2` | 2.6.0-2 | NOASSERTION |
+| `libselinux1` | 3.8.1-1 | NOASSERTION |
+| `libsemanage-common` | 3.8.1-1 | NOASSERTION |
+| `libsemanage2` | 3.8.1-1 | NOASSERTION |
+| `libsepol2` | 3.8.1-1 | NOASSERTION |
+| `libsmartcols1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libsqlite3-0` | 3.46.1-7+deb13u2 | NOASSERTION |
+| `libssh2-1t64` | 1.11.1-1+deb13u2 | NOASSERTION |
+| `libssl3t64` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `libstdc++6` | 14.2.0-19 | NOASSERTION |
+| `libsystemd0` | 257.13-1~deb13u1 | NOASSERTION |
+| `libtasn1-6` | 4.20.0-2+deb13u1 | NOASSERTION |
+| `libtinfo6` | 6.5+20250216-2 | NOASSERTION |
+| `libtirpc-common` | 1.3.6+ds-1 | NOASSERTION |
+| `libtirpc3t64` | 1.3.6+ds-1 | NOASSERTION |
+| `libudev1` | 257.13-1~deb13u1 | NOASSERTION |
+| `libunistring5` | 1.3-2 | NOASSERTION |
+| `libuuid1` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `libxtables12` | 1.8.11-2 | NOASSERTION |
+| `libxxhash0` | 0.8.3-2 | NOASSERTION |
+| `libzstd1` | 1.5.7+dfsg-1 | NOASSERTION |
+| `login` | 1:4.16.0-2+really2.41.5-0+deb13u1 | NOASSERTION |
+| `login.defs` | 1:4.17.4-2 | NOASSERTION |
+| `mawk` | 1.3.4.20250131-1 | NOASSERTION |
+| `mcp` | 1.30.0 | NOASSERTION |
+| `mount` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `ncurses-base` | 6.5+20250216-2 | NOASSERTION |
+| `ncurses-bin` | 6.5+20250216-2 | NOASSERTION |
+| `netbase` | 6.5 | NOASSERTION |
+| `node` | 24.18.1 | NOASSERTION |
+| `openssh-client` | 1:10.0p1-7+deb13u4 | NOASSERTION |
+| `openssl` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `openssl-provider-legacy` | 3.5.7-1~deb13u3 | NOASSERTION |
+| `orjson` | 3.13.0 | NOASSERTION |
+| `packaging` | 26.3 | NOASSERTION |
+| `paramiko` | 5.1.0 | NOASSERTION |
+| `passwd` | 1:4.17.4-2 | NOASSERTION |
+| `perl` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `perl-base` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `perl-modules-5.40` | 5.40.1-6+deb13u1 | NOASSERTION |
+| `pip` | 24.0 | NOASSERTION |
+| `platformdirs` | 4.2.2 | NOASSERTION |
+| `playwright` | 1.62.0 | NOASSERTION |
+| `playwright-core` | 1.62.0 | NOASSERTION |
+| `pycparser` | 3.12 | NOASSERTION |
+| `pydantic` | 2.14.1 | NOASSERTION |
+| `pydantic-core` | 2.50.1 | NOASSERTION |
+| `pydantic-settings` | 2.15.0 | NOASSERTION |
+| `pyee` | 13.0.1 | NOASSERTION |
+| `pyjwt` | 2.15.1 | NOASSERTION |
+| `pynacl` | 1.6.2 | NOASSERTION |
+| `python` | 3.11.18 | NOASSERTION |
+| `python-dotenv` | 1.2.4 | NOASSERTION |
+| `python-multipart` | 0.0.32 | NOASSERTION |
+| `pyyaml` | 6.0.3 | NOASSERTION |
+| `readline-common` | 8.2-6 | NOASSERTION |
+| `referencing` | 0.37.0 | NOASSERTION |
+| `requests` | 2.34.2 | NOASSERTION |
+| `requests-toolbelt` | 1.0.0 | NOASSERTION |
+| `rpds-py` | 2026.9.1 | NOASSERTION |
+| `sed` | 4.9-2+deb13u1 | NOASSERTION |
+| `setuptools` | 79.0.1 | NOASSERTION |
+| `sniffio` | 1.3.1 | NOASSERTION |
+| `sqv` | 1.3.0-3+b2 | NOASSERTION |
+| `sse-starlette` | 3.6.0 | NOASSERTION |
+| `starlette` | 1.10.0 | NOASSERTION |
+| `structlog` | 26.1.0 | NOASSERTION |
+| `sysvinit-utils` | 3.14-4 | NOASSERTION |
+| `tar` | 1.35+dfsg-3.1 | NOASSERTION |
+| `tenacity` | 9.2.1 | NOASSERTION |
+| `truststore` | 0.10.5 | NOASSERTION |
+| `typeguard` | 4.3.0 | NOASSERTION |
+| `typing-extensions` | 4.16.0 | NOASSERTION |
+| `typing-inspection` | 0.4.4 | NOASSERTION |
+| `tzdata` | 2026e-0+deb13u1 | NOASSERTION |
+| `urllib3` | 2.8.0 | NOASSERTION |
+| `util-linux` | 2.41.5-0+deb13u1 | NOASSERTION |
+| `uuid-utils` | 0.19.0 | NOASSERTION |
+| `uvicorn` | 0.54.0 | NOASSERTION |
+| `websockets` | 17.3 | NOASSERTION |
+| `wheel` | 0.46.3 | NOASSERTION |
+| `xxhash` | 4.0.2 | NOASSERTION |
+| `zlib1g` | 1:1.3.dfsg+really1.3.1-1+b1 | NOASSERTION |
+| `zstandard` | 0.25.0 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 216 |
+| MIT | 10 |
+| Apache-2.0 | 1 |
+| LicenseRef-5a5e7ca0e9f3f9679977e3a3e9ede45ad92885a3297ea78e766979f9866c5a16 | 1 |
+| LicenseRef-6b0e609cf98f7abd39d3b81100fdb2bed24dcaee6656b500fcecb392db70dc60 | 1 |
+| LicenseRef-cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48 | 1 |
+| LicenseRef-3e640f444358d031690de4c8fb040fb866386460dd9c51f3ffb875bbfb2342e2 | 1 |
+| LicenseRef-3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf | 1 |
+
+</details>
+
+## docker-socket-proxy-0.3.0
+
+- Digest: `sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2`
+- Packages: 20
+- Distinct licence strings: 1
+
+### Requires review (20)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `.haproxy-rundeps` | 20240408.215935 | NOASSERTION |
+| `alpine-baselayout` | 3.2.0-r23 | NOASSERTION |
+| `alpine-baselayout-data` | 3.2.0-r23 | NOASSERTION |
+| `alpine-keys` | 2.4-r1 | NOASSERTION |
+| `apk-tools` | 2.12.9-r3 | NOASSERTION |
+| `busybox` | 1.35.0-r17 | NOASSERTION |
+| `ca-certificates` | 20240226-r0 | NOASSERTION |
+| `ca-certificates-bundle` | 20230506-r0 | NOASSERTION |
+| `ghcr.io/tecnativa/docker-socket-proxy` | sha256:9e4b9e7517a6b660f2cc903a19b257b1852d5b3344794e3ea334ff00ae677ac2 | NOASSERTION |
+| `haproxy` | 2.2.33 | NOASSERTION |
+| `libc-utils` | 0.7.2-r3 | NOASSERTION |
+| `libcrypto1.1` | 1.1.1w-r1 | NOASSERTION |
+| `libssl1.1` | 1.1.1w-r1 | NOASSERTION |
+| `lua5.3-libs` | 5.3.6-r3 | NOASSERTION |
+| `musl` | 1.2.3-r3 | NOASSERTION |
+| `musl-utils` | 1.2.3-r3 | NOASSERTION |
+| `pcre2` | 10.42-r0 | NOASSERTION |
+| `scanelf` | 1.3.4-r0 | NOASSERTION |
+| `ssl_client` | 1.35.0-r17 | NOASSERTION |
+| `zlib` | 1.2.12-r3 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 20 |
+
+</details>
 
 ## jupyternotebook-1.0.0-nvidia
 
@@ -1139,6 +1447,551 @@ attach to us. This is the inventory of what we are handing over.
 | LicenseRef-75b41b8de75b1596a239f6fa8e4caa409de4cf985cee2943d2a94b4e96a5197d | 1 |
 | LicenseRef-c58cb5a2d94f35f0e9b0f1a038d48b73477aa12782ff17328c21d8a86f5f99d5 | 1 |
 | LicenseRef-35f7f9792a4d64ef293878893d5cf07e09d2e5eb87fd17a4c0f47d66d4735c0c | 1 |
+
+</details>
+
+## keycloak-26.8.0
+
+- Digest: `sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741`
+- Packages: 565
+- Distinct licence strings: 7
+
+### Requires review (544)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `HdrHistogram` | 2.2.2 | NOASSERTION |
+| `LatencyUtils` | 2.0.3 | NOASSERTION |
+| `aesh` | 3.18.2 | NOASSERTION |
+| `agroal-api` | 3.2.1 | NOASSERTION |
+| `agroal-narayana` | 3.2.1 | NOASSERTION |
+| `agroal-pool` | 3.2.1 | NOASSERTION |
+| `alternatives` | 1.24-2.el9 | NOASSERTION |
+| `angus-activation` | 2.0.3 | NOASSERTION |
+| `angus-core` | 2.0.5 | NOASSERTION |
+| `angus-mail` | 2.0.5 | NOASSERTION |
+| `antlr4-runtime` | 4.13.2 | NOASSERTION |
+| `arc` | 3.40.1 | NOASSERTION |
+| `arc-processor` | 3.40.1 | NOASSERTION |
+| `arjuna` | 7.3.4.Final | NOASSERTION |
+| `asm` | 9.10.1 | NOASSERTION |
+| `asm-analysis` | 9.10.1 | NOASSERTION |
+| `asm-commons` | 9.10.1 | NOASSERTION |
+| `asm-tree` | 9.10.1 | NOASSERTION |
+| `asm-util` | 9.10.1 | NOASSERTION |
+| `basesystem` | 11-13.el9 | NOASSERTION |
+| `bash` | 5.1.8-9.el9 | NOASSERTION |
+| `brotli4j` | 1.23.0 | NOASSERTION |
+| `byte-buddy` | 1.18.8 | NOASSERTION |
+| `byte-buddy-agent` | 1.18.8 | NOASSERTION |
+| `ca-certificates` | 2025.2.80_v9.0.305-91.el9 | NOASSERTION |
+| `cache-api` | 1.1.1 | NOASSERTION |
+| `caffeine` | 3.2.4 | NOASSERTION |
+| `cdi` | 7.3.4.Final | NOASSERTION |
+| `classmate` | 1.7.1 | NOASSERTION |
+| `common` | 7.3.4.Final | NOASSERTION |
+| `commons-codec` | 1.22.1 | NOASSERTION |
+| `commons-collections4` | 4.5.0 | NOASSERTION |
+| `commons-compress` | 1.28.0 | NOASSERTION |
+| `commons-io` | 2.22.0 | NOASSERTION |
+| `commons-lang3` | 3.20.0 | NOASSERTION |
+| `commons-logging-jboss-logging` | 2.0.0.Final | NOASSERTION |
+| `config` | 1.4.7 | NOASSERTION |
+| `core` | 3.4.0 | NOASSERTION |
+| `coreutils-single` | 8.32-41.el9_8.1 | NOASSERTION |
+| `crac` | 1.5.0 | NOASSERTION |
+| `crypto-policies` | 20260224-1.gitea0f072.el9_8 | NOASSERTION |
+| `crypto-policies-scripts` | 20260224-1.gitea0f072.el9_8 | NOASSERTION |
+| `dbus-java-core` | 5.2.0 | NOASSERTION |
+| `dbus-java-transport-native-unixsocket` | 5.2.0 | NOASSERTION |
+| `error_prone_annotations` | 2.49.0 | NOASSERTION |
+| `expressly` | 6.0.0 | NOASSERTION |
+| `extender` | 1.0.1 | NOASSERTION |
+| `filesystem` | 3.16-5.el9 | NOASSERTION |
+| `findutils` | 1:4.8.0-7.el9 | NOASSERTION |
+| `freemarker` | 2.3.35 | NOASSERTION |
+| `function` | 1.0.0 | NOASSERTION |
+| `gizmo` | 1.10.1 | NOASSERTION |
+| `gizmo2` | 2.1.1 | NOASSERTION |
+| `glibc` | 2.34-283.el9_8 | NOASSERTION |
+| `glibc-common` | 2.34-283.el9_8 | NOASSERTION |
+| `glibc-langpack-en` | 2.34-283.el9_8 | NOASSERTION |
+| `grep` | 3.6-5.el9 | NOASSERTION |
+| `grpc-api` | 1.81.0 | NOASSERTION |
+| `grpc-context` | 1.81.0 | NOASSERTION |
+| `grpc-core` | 1.81.0 | NOASSERTION |
+| `grpc-netty` | 1.81.0 | NOASSERTION |
+| `grpc-protobuf` | 1.81.0 | NOASSERTION |
+| `grpc-protobuf-lite` | 1.81.0 | NOASSERTION |
+| `grpc-stub` | 1.81.0 | NOASSERTION |
+| `grpc-util` | 1.81.0 | NOASSERTION |
+| `gson` | 2.14.0 | NOASSERTION |
+| `guava` | 33.6.0-jre | NOASSERTION |
+| `h2` | 2.4.240 | NOASSERTION |
+| `hibernate-validator` | 9.1.3.Final | NOASSERTION |
+| `httpclient` | 4.5.14 | NOASSERTION |
+| `httpcore` | 4.4.16 | NOASSERTION |
+| `imap` | 2.0.5 | NOASSERTION |
+| `infinispan-api` | 16.0.15 | NOASSERTION |
+| `infinispan-cachestore-remote` | 16.0.15 | NOASSERTION |
+| `infinispan-client-hotrod` | 16.0.15 | NOASSERTION |
+| `infinispan-commons` | 16.0.15 | NOASSERTION |
+| `infinispan-core` | 16.0.15 | NOASSERTION |
+| `infinispan-counter-api` | 16.0.15 | NOASSERTION |
+| `infinispan-multimap` | 16.0.15 | NOASSERTION |
+| `istack-commons-runtime` | 3.0.10 | NOASSERTION |
+| `jackson-annotations` | 2.21 | NOASSERTION |
+| `jackson-core` | 2.21.7 | NOASSERTION |
+| `jackson-databind` | 2.21.7 | NOASSERTION |
+| `jackson-dataformat-cbor` | 2.21.7 | NOASSERTION |
+| `jackson-dataformat-yaml` | 2.21.7 | NOASSERTION |
+| `jackson-datatype-jdk8` | 2.21.7 | NOASSERTION |
+| `jackson-datatype-jsr310` | 2.21.7 | NOASSERTION |
+| `jackson-jakarta-rs-base` | 2.21.7 | NOASSERTION |
+| `jackson-jakarta-rs-yaml-provider` | 2.21.7 | NOASSERTION |
+| `jackson-module-jakarta-xmlbind-annotations` | 2.21.7 | NOASSERTION |
+| `jackson-module-parameter-names` | 2.21.7 | NOASSERTION |
+| `jakarta.activation-api` | 2.1.4 | NOASSERTION |
+| `jakarta.annotation-api` | 3.0.0 | NOASSERTION |
+| `jakarta.el-api` | 6.0.1 | NOASSERTION |
+| `jakarta.enterprise.cdi-api` | 4.1.0 | NOASSERTION |
+| `jakarta.enterprise.lang-model` | 4.1.0 | NOASSERTION |
+| `jakarta.inject-api` | 2.0.1 | NOASSERTION |
+| `jakarta.interceptor-api` | 2.2.0 | NOASSERTION |
+| `jakarta.json-api` | 2.1.3 | NOASSERTION |
+| `jakarta.mail-api` | 2.1.1 | NOASSERTION |
+| `jakarta.persistence-api` | 3.2.0 | NOASSERTION |
+| `jakarta.resource-api` | 2.1.0 | NOASSERTION |
+| `jakarta.servlet-api` | 6.0.0 | NOASSERTION |
+| `jakarta.transaction-api` | 2.0.1 | NOASSERTION |
+| `jakarta.validation-api` | 3.1.1 | NOASSERTION |
+| `jakarta.ws.rs-api` | 3.1.0 | NOASSERTION |
+| `jakarta.xml.bind-api` | 4.0.5 | NOASSERTION |
+| `jakarta.xml.soap-api` | 3.0.0 | NOASSERTION |
+| `jandex` | 3.6.0 | NOASSERTION |
+| `jandex-gizmo2` | 3.6.0 | NOASSERTION |
+| `java-21-openjdk-headless` | 1:21.0.12.1.1-1.2.el9 | NOASSERTION |
+| `java10-shim` | 20260101.1 | NOASSERTION |
+| `java8-shim` | 20260101.1 | NOASSERTION |
+| `javapackages-filesystem` | 6.4.0-1.el9 | NOASSERTION |
+| `javase` | 3.4.0 | NOASSERTION |
+| `jaxb-core` | 4.0.9 | NOASSERTION |
+| `jaxb-runtime` | 4.0.9 | NOASSERTION |
+| `jboss-logging` | 3.6.3.Final | NOASSERTION |
+| `jboss-logmanager` | 3.2.2.Final | NOASSERTION |
+| `jboss-transaction-spi` | 8.0.0.Final | NOASSERTION |
+| `jcache` | 3.2.4 | NOASSERTION |
+| `jctools-core` | 4.0.5 | NOASSERTION |
+| `jdbc` | 7.3.4.Final | NOASSERTION |
+| `jdk-classfile-backport` | 26 | NOASSERTION |
+| `jms` | 7.3.4.Final | NOASSERTION |
+| `jna` | 5.8.0 | Apache-2.0 AND LGPL-2.1-only AND LicenseRef-521bb271ac56e0e29a1b1b688b94af17d00d378fc8e63478d8c8b2a7c4a229d0 |
+| `jrt-fs` | 21.0.12.1 | NOASSERTION |
+| `jspecify` | 1.0.0 | NOASSERTION |
+| `jta` | 7.3.4.Final | NOASSERTION |
+| `jts-core` | 1.19.0 | NOASSERTION |
+| `keycloak-account-ui` | 26.8.0 | NOASSERTION |
+| `keycloak-admin-ui` | 26.8.0 | NOASSERTION |
+| `keycloak-admin-v2-api` | 26.8.0 | NOASSERTION |
+| `keycloak-admin-v2-services` | 26.8.0 | NOASSERTION |
+| `keycloak-authz-policy-common` | 26.8.0 | NOASSERTION |
+| `keycloak-authzen-services` | 26.8.0 | NOASSERTION |
+| `keycloak-common` | 26.8.0 | NOASSERTION |
+| `keycloak-config-api` | 26.8.0 | NOASSERTION |
+| `keycloak-core` | 26.8.0 | NOASSERTION |
+| `keycloak-crypto-default` | 26.8.0 | NOASSERTION |
+| `keycloak-crypto-fips1402` | 26.8.0 | NOASSERTION |
+| `keycloak-ipatuura-federation` | 26.8.0 | NOASSERTION |
+| `keycloak-kerberos-federation` | 26.8.0 | NOASSERTION |
+| `keycloak-ldap-federation` | 26.8.0 | NOASSERTION |
+| `keycloak-model-infinispan` | 26.8.0 | NOASSERTION |
+| `keycloak-model-jpa` | 26.8.0 | NOASSERTION |
+| `keycloak-model-storage` | 26.8.0 | NOASSERTION |
+| `keycloak-model-storage-private` | 26.8.0 | NOASSERTION |
+| `keycloak-model-storage-services` | 26.8.0 | NOASSERTION |
+| `keycloak-quarkus-server` | 26.8.0 | NOASSERTION |
+| `keycloak-quarkus-server-app` | 26.8.0 | NOASSERTION |
+| `keycloak-quarkus-server-deployment` | 26.8.0 | NOASSERTION |
+| `keycloak-rest-admin-ui-ext` | 26.8.0 | NOASSERTION |
+| `keycloak-saml-core` | 26.8.0 | NOASSERTION |
+| `keycloak-saml-core-public` | 26.8.0 | NOASSERTION |
+| `keycloak-scim-core` | 26.8.0 | NOASSERTION |
+| `keycloak-scim-model` | 26.8.0 | NOASSERTION |
+| `keycloak-scim-services` | 26.8.0 | NOASSERTION |
+| `keycloak-server-spi` | 26.8.0 | NOASSERTION |
+| `keycloak-server-spi-private` | 26.8.0 | NOASSERTION |
+| `keycloak-services` | 26.8.0 | NOASSERTION |
+| `keycloak-ssf-core` | 26.8.0 | NOASSERTION |
+| `keycloak-ssf-services` | 26.8.0 | NOASSERTION |
+| `keycloak-ssf-transmitter` | 26.8.0 | NOASSERTION |
+| `keycloak-sssd-federation` | 26.8.0 | NOASSERTION |
+| `keycloak-themes` | 26.8.0 | NOASSERTION |
+| `keycloak-themes-vendor` | 26.8.0 | NOASSERTION |
+| `libacl` | 2.4.0-1.el9_8 | NOASSERTION |
+| `libattr` | 2.6.0-1.el9_8 | NOASSERTION |
+| `libcap` | 2.48-10.el9_8.1 | NOASSERTION |
+| `libffi` | 3.4.2-8.el9 | NOASSERTION |
+| `libgcc` | 11.5.0-14.el9 | NOASSERTION |
+| `libselinux` | 3.6-3.el9 | NOASSERTION |
+| `libsepol` | 3.6-3.el9 | NOASSERTION |
+| `libsigsegv` | 2.13-4.el9 | NOASSERTION |
+| `libtasn1` | 4.16.0-10.el9_8 | NOASSERTION |
+| `liquibase-core` | 4.33.0 | NOASSERTION |
+| `lksctp-tools` | 1.0.19-3.el9_4 | NOASSERTION |
+| `logging-mailhandler` | 2.0.5 | NOASSERTION |
+| `mariadb-java-client` | 3.5.10 | NOASSERTION |
+| `microprofile-config-api` | 3.1.1 | NOASSERTION |
+| `microprofile-context-propagation-api` | 1.3 | NOASSERTION |
+| `microprofile-health-api` | 4.0.1 | NOASSERTION |
+| `microprofile-openapi-api` | 4.1.1 | NOASSERTION |
+| `mssql-jdbc` | 13.4.0 | NOASSERTION |
+| `mutiny` | 3.3.0 | NOASSERTION |
+| `mutiny-smallrye-context-propagation` | 3.3.0 | NOASSERTION |
+| `mutiny-zero-flow-adapters` | 1.2.1 | NOASSERTION |
+| `mysql-connector-j` | 9.7.0 | Apache-2.0 AND BSD-3-Clause AND EPL-1.0 AND GPL-2.0-only AND LGPL-2.1-only |
+| `narayana-jta` | 7.3.4.Final | NOASSERTION |
+| `narayana-jts-integration` | 7.3.4.Final | NOASSERTION |
+| `nashorn-core` | 15.4 | NOASSERTION |
+| `native-linux-x86_64` | 1.23.0 | NOASSERTION |
+| `nativeimage` | 25.0.4.1 | NOASSERTION |
+| `ncurses-base` | 6.2-12.20210508.el9 | NOASSERTION |
+| `ncurses-libs` | 6.2-12.20210508.el9 | NOASSERTION |
+| `netty-buffer` | 4.1.138.Final | NOASSERTION |
+| `netty-codec` | 4.1.138.Final | NOASSERTION |
+| `netty-codec-dns` | 4.1.138.Final | NOASSERTION |
+| `netty-codec-haproxy` | 4.1.138.Final | NOASSERTION |
+| `netty-codec-http` | 4.1.138.Final | NOASSERTION |
+| `netty-codec-http2` | 4.1.138.Final | NOASSERTION |
+| `netty-codec-socks` | 4.1.138.Final | NOASSERTION |
+| `netty-common` | 4.1.138.Final | NOASSERTION |
+| `netty-handler` | 4.1.138.Final | NOASSERTION |
+| `netty-handler-proxy` | 4.1.138.Final | NOASSERTION |
+| `netty-resolver` | 4.1.138.Final | NOASSERTION |
+| `netty-resolver-dns` | 4.1.138.Final | NOASSERTION |
+| `netty-tcnative-classes` | 2.0.84.Final | NOASSERTION |
+| `netty-transport` | 4.1.138.Final | NOASSERTION |
+| `netty-transport-classes-epoll` | 4.1.138.Final | NOASSERTION |
+| `netty-transport-native-epoll` | 4.1.138.Final | NOASSERTION |
+| `netty-transport-native-unix-common` | 4.1.138.Final | NOASSERTION |
+| `nspr` | 4.39.0-5.el9_6 | NOASSERTION |
+| `nss` | 3.124.0-5.el9_6 | NOASSERTION |
+| `nss-softokn` | 3.124.0-5.el9_6 | NOASSERTION |
+| `nss-softokn-freebl` | 3.124.0-5.el9_6 | NOASSERTION |
+| `nss-sysinit` | 3.124.0-5.el9_6 | NOASSERTION |
+| `nss-util` | 3.124.0-5.el9_6 | NOASSERTION |
+| `opencsv` | 5.11.2 | NOASSERTION |
+| `opentelemetry-apache-httpclient` | 4.3-2.28.1-alpha | NOASSERTION |
+| `opentelemetry-api` | 1.62.0 | NOASSERTION |
+| `opentelemetry-api-incubator` | 1.62.0-alpha | NOASSERTION |
+| `opentelemetry-common` | 1.62.0 | NOASSERTION |
+| `opentelemetry-context` | 1.62.0 | NOASSERTION |
+| `opentelemetry-exporter-common` | 1.62.0 | NOASSERTION |
+| `opentelemetry-exporter-otlp` | 1.62.0 | NOASSERTION |
+| `opentelemetry-exporter-otlp-common` | 1.62.0 | NOASSERTION |
+| `opentelemetry-instrumentation-annotations` | 2.28.1 | NOASSERTION |
+| `opentelemetry-instrumentation-annotations-support` | 2.28.1-alpha | NOASSERTION |
+| `opentelemetry-instrumentation-api` | 2.28.1 | NOASSERTION |
+| `opentelemetry-instrumentation-api-incubator` | 2.28.1-alpha | NOASSERTION |
+| `opentelemetry-jdbc` | 2.28.1-alpha | NOASSERTION |
+| `opentelemetry-micrometer` | 1.5-2.28.1-alpha | NOASSERTION |
+| `opentelemetry-runtime-telemetry` | 2.28.1-alpha | NOASSERTION |
+| `opentelemetry-sdk` | 1.62.0 | NOASSERTION |
+| `opentelemetry-sdk-common` | 1.62.0 | NOASSERTION |
+| `opentelemetry-sdk-extension-autoconfigure` | 1.62.0 | NOASSERTION |
+| `opentelemetry-sdk-extension-autoconfigure-spi` | 1.62.0 | NOASSERTION |
+| `opentelemetry-sdk-logs` | 1.62.0 | NOASSERTION |
+| `opentelemetry-sdk-metrics` | 1.62.0 | NOASSERTION |
+| `opentelemetry-sdk-trace` | 1.62.0 | NOASSERTION |
+| `opentelemetry-semconv` | 1.41.1 | NOASSERTION |
+| `opentelemetry-semconv-incubating` | 1.40.0-alpha | NOASSERTION |
+| `org.osgi.service.component.annotations` | 1.5.1 | NOASSERTION |
+| `osgi.annotation` | 8.1.0 | NOASSERTION |
+| `owasp-java-html-sanitizer` | 20260101.1 | NOASSERTION |
+| `p11-kit-trust` | 0.26.4-1.el9_8 | NOASSERTION |
+| `parsson` | 1.1.9 | NOASSERTION |
+| `pcre` | 8.44-4.el9 | NOASSERTION |
+| `pcre2` | 10.40-6.el9 | NOASSERTION |
+| `pcre2-syntax` | 10.40-6.el9 | NOASSERTION |
+| `perfmark-api` | 0.27.0 | NOASSERTION |
+| `picocli` | 4.7.7 | NOASSERTION |
+| `pop3` | 2.0.5 | NOASSERTION |
+| `postgresql` | 42.7.13 | NOASSERTION |
+| `promise` | 1.0.0 | NOASSERTION |
+| `proto-google-common-protos` | 2.71.0 | NOASSERTION |
+| `protobuf-java` | 4.35.0 | NOASSERTION |
+| `protostream` | 6.0.7 | NOASSERTION |
+| `protostream-types` | 6.0.7 | NOASSERTION |
+| `quarkus-agroal` | 3.40.1 | NOASSERTION |
+| `quarkus-agroal-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-agroal-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-arc` | 3.40.1 | NOASSERTION |
+| `quarkus-arc-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-arc-test-supplement` | 3.40.1 | NOASSERTION |
+| `quarkus-arc-test-supplement-decorator` | 3.40.1 | NOASSERTION |
+| `quarkus-assistant-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-assistant-dev` | 3.40.1 | NOASSERTION |
+| `quarkus-avro-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-bootstrap-app-model` | 3.40.1 | NOASSERTION |
+| `quarkus-bootstrap-core` | 3.40.1 | NOASSERTION |
+| `quarkus-bootstrap-json` | 3.40.1 | NOASSERTION |
+| `quarkus-bootstrap-runner` | 3.40.1 | NOASSERTION |
+| `quarkus-builder` | 3.40.1 | NOASSERTION |
+| `quarkus-caffeine` | 3.40.1 | NOASSERTION |
+| `quarkus-caffeine-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-class-change-agent` | 3.40.1 | NOASSERTION |
+| `quarkus-classloader-commons` | 3.40.1 | NOASSERTION |
+| `quarkus-core` | 3.40.1 | NOASSERTION |
+| `quarkus-core-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-credentials` | 3.40.1 | NOASSERTION |
+| `quarkus-credentials-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-datasource` | 3.40.1 | NOASSERTION |
+| `quarkus-datasource-common` | 3.40.1 | NOASSERTION |
+| `quarkus-datasource-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-datasource-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-development-mode-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-devservices` | 3.40.1 | NOASSERTION |
+| `quarkus-devui-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-fs-util` | 1.4.2 | NOASSERTION |
+| `quarkus-grpc-common` | 3.40.1 | NOASSERTION |
+| `quarkus-grpc-common-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-hibernate-orm` | 3.40.1 | NOASSERTION |
+| `quarkus-hibernate-orm-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-hibernate-orm-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-hibernate-validator` | 3.40.1 | NOASSERTION |
+| `quarkus-hibernate-validator-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-hibernate-validator-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-http-core` | 5.5.0 | NOASSERTION |
+| `quarkus-http-http-core` | 5.5.0 | NOASSERTION |
+| `quarkus-http-servlet` | 5.5.0 | NOASSERTION |
+| `quarkus-jackson` | 3.40.1 | NOASSERTION |
+| `quarkus-jackson-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jackson-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-jaxrs-spi-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-h2` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-h2-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-mariadb` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-mariadb-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-mssql` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-mssql-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-mysql` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-mysql-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-oracle` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-oracle-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-postgresql` | 3.40.1 | NOASSERTION |
+| `quarkus-jdbc-postgresql-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-jsonp` | 3.40.1 | NOASSERTION |
+| `quarkus-jsonp-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-kubernetes-service-binding-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-kubernetes-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-logging-json` | 3.40.1 | NOASSERTION |
+| `quarkus-logging-json-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-micrometer` | 3.40.1 | NOASSERTION |
+| `quarkus-micrometer-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-micrometer-opentelemetry` | 3.40.1 | NOASSERTION |
+| `quarkus-micrometer-opentelemetry-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-micrometer-registry-prometheus` | 3.40.1 | NOASSERTION |
+| `quarkus-micrometer-registry-prometheus-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-mutiny` | 3.40.1 | NOASSERTION |
+| `quarkus-mutiny-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-narayana-jta` | 3.40.1 | NOASSERTION |
+| `quarkus-narayana-jta-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-netty` | 3.40.1 | NOASSERTION |
+| `quarkus-netty-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-opentelemetry` | 3.40.1 | NOASSERTION |
+| `quarkus-opentelemetry-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-panache-common` | 3.40.1 | NOASSERTION |
+| `quarkus-panache-common-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-panache-hibernate-common` | 3.40.1 | NOASSERTION |
+| `quarkus-panache-hibernate-common-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-reactive-datasource-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-rest` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-common` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-common-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-jackson` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-jackson-common` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-jackson-common-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-jackson-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-server-spi-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-rest-spi-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-resteasy-common-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-resteasy-server-common-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-run` | 26.8.0 | NOASSERTION |
+| `quarkus-security` | 2.3.2 | NOASSERTION |
+| `quarkus-security-runtime-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-security-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-context-propagation` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-context-propagation-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-context-propagation-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-health` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-health-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-health-dev` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-health-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-openapi` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-openapi-common-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-openapi-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-openapi-dev` | 3.40.1 | NOASSERTION |
+| `quarkus-smallrye-openapi-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-swagger-ui` | 3.40.1 | NOASSERTION |
+| `quarkus-swagger-ui-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-tls-registry` | 3.40.1 | NOASSERTION |
+| `quarkus-tls-registry-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-tls-registry-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-tls-registry-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-transaction-annotations` | 3.40.1 | NOASSERTION |
+| `quarkus-undertow-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-value-registry` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-http` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-http-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-http-deployment-spi` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-latebound-mdc-provider` | 3.40.1 | NOASSERTION |
+| `quarkus-vertx-utils` | 3.40.1 | NOASSERTION |
+| `quarkus-virtual-threads` | 3.40.1 | NOASSERTION |
+| `quarkus-virtual-threads-deployment` | 3.40.1 | NOASSERTION |
+| `quarkus-websockets-next-spi` | 3.40.1 | NOASSERTION |
+| `quay.io/keycloak/keycloak` | sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741 | NOASSERTION |
+| `rdf-urdna` | 1.1 | NOASSERTION |
+| `reactive-streams` | 1.0.4 | NOASSERTION |
+| `readline` | 3.18.1 | NOASSERTION |
+| `readline-api` | 3.18.1 | NOASSERTION |
+| `redhat-release` | 9.8-1.0.el9 | NOASSERTION |
+| `resteasy-reactive` | 3.40.1 | NOASSERTION |
+| `resteasy-reactive-common` | 3.40.1 | NOASSERTION |
+| `resteasy-reactive-common-processor` | 3.40.1 | NOASSERTION |
+| `resteasy-reactive-common-types` | 3.40.1 | NOASSERTION |
+| `resteasy-reactive-jackson` | 3.40.1 | NOASSERTION |
+| `resteasy-reactive-processor` | 3.40.1 | NOASSERTION |
+| `resteasy-reactive-vertx` | 3.40.1 | NOASSERTION |
+| `saaj-impl` | 2.0.1 | NOASSERTION |
+| `sed` | 4.8-10.el9 | NOASSERTION |
+| `service` | 1.23.0 | NOASSERTION |
+| `setup` | 2.13.7-10.el9 | NOASSERTION |
+| `simpleclient` | 0.16.0 | NOASSERTION |
+| `simpleclient_common` | 0.16.0 | NOASSERTION |
+| `simpleclient_tracer_common` | 0.16.0 | NOASSERTION |
+| `simpleclient_tracer_otel` | 0.16.0 | NOASSERTION |
+| `simpleclient_tracer_otel_agent` | 0.16.0 | NOASSERTION |
+| `slf4j-api` | 2.0.18 | NOASSERTION |
+| `slf4j-jboss-logmanager` | 2.0.2.Final | NOASSERTION |
+| `smallrye-common-annotation` | 2.19.0 | NOASSERTION |
+| `smallrye-common-classloader` | 2.19.0 | NOASSERTION |
+| `smallrye-common-constraint` | 2.19.0 | NOASSERTION |
+| `smallrye-common-cpu` | 2.19.0 | NOASSERTION |
+| `smallrye-common-expression` | 2.19.0 | NOASSERTION |
+| `smallrye-common-function` | 2.19.0 | NOASSERTION |
+| `smallrye-common-io` | 2.19.0 | NOASSERTION |
+| `smallrye-common-net` | 2.19.0 | NOASSERTION |
+| `smallrye-common-os` | 2.19.0 | NOASSERTION |
+| `smallrye-common-process` | 2.19.0 | NOASSERTION |
+| `smallrye-common-ref` | 2.19.0 | NOASSERTION |
+| `smallrye-common-resource` | 2.19.0 | NOASSERTION |
+| `smallrye-common-search` | 2.19.0 | NOASSERTION |
+| `smallrye-common-vertx-context` | 2.19.0 | NOASSERTION |
+| `smallrye-config` | 3.17.2 | NOASSERTION |
+| `smallrye-config-common` | 3.17.2 | NOASSERTION |
+| `smallrye-config-core` | 3.17.2 | NOASSERTION |
+| `smallrye-config-source-keystore` | 3.17.2 | NOASSERTION |
+| `smallrye-config-validator` | 3.17.2 | NOASSERTION |
+| `smallrye-context-propagation` | 2.3.0 | NOASSERTION |
+| `smallrye-context-propagation-api` | 2.3.0 | NOASSERTION |
+| `smallrye-context-propagation-jta` | 2.3.0 | NOASSERTION |
+| `smallrye-context-propagation-storage` | 2.3.0 | NOASSERTION |
+| `smallrye-fault-tolerance-vertx` | 6.11.4 | NOASSERTION |
+| `smallrye-health` | 4.3.0 | NOASSERTION |
+| `smallrye-health-api` | 4.3.0 | NOASSERTION |
+| `smallrye-health-provided-checks` | 4.3.0 | NOASSERTION |
+| `smallrye-health-ui` | 4.3.0 | NOASSERTION |
+| `smallrye-mutiny-vertx-auth-common` | 3.23.1 | NOASSERTION |
+| `smallrye-mutiny-vertx-bridge-common` | 3.23.1 | NOASSERTION |
+| `smallrye-mutiny-vertx-core` | 3.23.1 | NOASSERTION |
+| `smallrye-mutiny-vertx-runtime` | 3.23.1 | NOASSERTION |
+| `smallrye-mutiny-vertx-uri-template` | 3.23.1 | NOASSERTION |
+| `smallrye-mutiny-vertx-web` | 3.23.1 | NOASSERTION |
+| `smallrye-mutiny-vertx-web-common` | 3.23.1 | NOASSERTION |
+| `smallrye-open-api-core` | 4.3.5 | NOASSERTION |
+| `smallrye-open-api-jaxrs` | 4.3.5 | NOASSERTION |
+| `smallrye-open-api-model` | 4.3.5 | NOASSERTION |
+| `smallrye-open-api-spring` | 4.3.5 | NOASSERTION |
+| `smallrye-open-api-ui` | 4.3.5 | NOASSERTION |
+| `smallrye-open-api-vertx` | 4.3.5 | NOASSERTION |
+| `smallrye-private-key-pem-parser` | 0.9.4 | NOASSERTION |
+| `smallrye-reactive-converter-api` | 3.0.3 | NOASSERTION |
+| `smallrye-reactive-converter-mutiny` | 3.0.3 | NOASSERTION |
+| `smtp` | 2.0.5 | NOASSERTION |
+| `snakeyaml` | 2.0 | NOASSERTION |
+| `snakeyaml-engine` | 2.6 | NOASSERTION |
+| `sqlite-libs` | 3.34.1-11.el9_8 | NOASSERTION |
+| `stax-ex` | 2.0.1 | NOASSERTION |
+| `terminal-api` | 3.18.1 | NOASSERTION |
+| `terminal-detect` | 3.18.1 | NOASSERTION |
+| `terminal-tty` | 3.18.1 | NOASSERTION |
+| `titanium-json-ld` | 1.3.3 | NOASSERTION |
+| `txoj` | 7.3.4.Final | NOASSERTION |
+| `tzdata` | 2026e-1.el9_8 | NOASSERTION |
+| `tzdata-java` | 2026e-1.el9_8 | NOASSERTION |
+| `uap-java` | 1.6.1 | NOASSERTION |
+| `vertx-auth-common` | 4.5.34 | NOASSERTION |
+| `vertx-bridge-common` | 4.5.34 | NOASSERTION |
+| `vertx-codegen` | 4.5.34 | NOASSERTION |
+| `vertx-core` | 4.5.34 | NOASSERTION |
+| `vertx-grpc` | 4.5.34 | NOASSERTION |
+| `vertx-grpc-client` | 4.5.34 | NOASSERTION |
+| `vertx-grpc-common` | 4.5.34 | NOASSERTION |
+| `vertx-grpc-server` | 4.5.34 | NOASSERTION |
+| `vertx-uri-template` | 4.5.34 | NOASSERTION |
+| `vertx-web` | 4.5.34 | NOASSERTION |
+| `vertx-web-client` | 4.5.34 | NOASSERTION |
+| `vertx-web-common` | 4.5.34 | NOASSERTION |
+| `webauthn4j-core` | 0.30.3.RELEASE | NOASSERTION |
+| `webauthn4j-util` | 0.30.3.RELEASE | NOASSERTION |
+| `wildfly-common` | 1.5.4.Final-format-001 | NOASSERTION |
+| `wildfly-elytron-asn1` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-auth` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-auth-server` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-base` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-credential` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-http` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-keystore` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-mechanism` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-mechanism-digest` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-mechanism-gssapi` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-mechanism-oauth2` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-mechanism-scram` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-password-impl` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-permission` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-provider-util` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-digest` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-external` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-gs2` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-gssapi` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-oauth2` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-plain` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-sasl-scram` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-security-manager-action` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-ssl` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-util` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-x500` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-x500-cert` | 2.9.2.SP1 | NOASSERTION |
+| `wildfly-elytron-x500-cert-util` | 2.9.2.SP1 | NOASSERTION |
+| `word` | 25.0.4.1 | NOASSERTION |
+| `xmlsec` | 3.0.6 | NOASSERTION |
+| `zlib` | 1.2.11-40.el9 | NOASSERTION |
+
+<details><summary>Licence distribution</summary>
+
+| Licence | Count |
+| --- | --- |
+| NOASSERTION | 542 |
+| Apache-2.0 | 15 |
+| MIT | 4 |
+| Apache-2.0 AND LGPL-2.1-only AND LicenseRef-521bb271ac56e0e29a1b1b688b94af17d00d378fc8e63478d8c8b2a7c4a229d0 | 1 |
+| Apache-2.0 AND BSD-3-Clause AND MIT | 1 |
+| Apache-2.0 AND BSD-3-Clause AND EPL-1.0 AND GPL-2.0-only AND LGPL-2.1-only | 1 |
+| BSD-3-Clause | 1 |
 
 </details>
 

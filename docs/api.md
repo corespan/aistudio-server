@@ -12,7 +12,8 @@ All request and response bodies are JSON. All timestamps are UTC ISO-8601.
 
 ### `GET /health`
 
-Liveness and readiness probe. Returns database connectivity status.
+Service overview for humans and the UI: always 200, the body says whether the database is reachable.
+Probes use the two routes below it.
 
 **Response**
 ```json
@@ -22,6 +23,16 @@ Liveness and readiness probe. Returns database connectivity status.
 }
 ```
 `status` is `"healthy"` when the database is reachable, `"degraded"` otherwise.
+
+### `GET /health/live`
+
+Liveness: `{"status": "alive"}` whenever the process serves requests. It checks nothing else, so a
+database outage never gets a healthy API restarted.
+
+### `GET /health/ready`
+
+Readiness: `200 {"status": "ready", "database": "ok"}` when PostgreSQL answers, else
+`503 {"status": "not_ready", "database": "unreachable"}`. The compose `api` healthcheck uses it.
 
 ---
 
@@ -53,6 +64,7 @@ Start a new LLM benchmark run. The server SSHes into each node and runs the work
 | `model_name` | string | ✓ | HuggingFace repo ID, e.g. `meta-llama/Meta-Llama-3-8B-Instruct` |
 | `node_ips` | string[] | ✓ | GPU node IP addresses to run on |
 | `config` | object | ✓ | Benchmark parameters — see table below |
+| `created_by` | string | | Who is starting the run, as the caller reports it (max 256 chars). The MCP server sends the JWT `sub` and lets only that user or an admin stop the run. Not authenticated by this API. |
 
 **Config fields**
 
@@ -88,9 +100,12 @@ Poll the status of a running or completed benchmark.
   "state": "running",
   "model_name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
   "node_ips": ["10.0.x.x"],
-  "created_at": "2026-08-10T10:00:00Z"
+  "created_at": "2026-08-10T10:00:00Z",
+  "created_by": "alice"
 }
 ```
+
+`created_by` is `null` when the start request gave none.
 
 `state` values: `queued` → `running` → `completed` | `failed`
 
@@ -267,9 +282,13 @@ Launch a Jupyter Lab instance on a GPU node.
 ```json
 {
   "node_ip": "10.0.0.12",
-  "gpu_type": "T4"
+  "gpu_type": "T4",
+  "created_by": "alice"
 }
 ```
+
+`created_by` is optional, as for `POST /api/v1/benchmarks/start`; the instance's status route and
+`GET /api/v1/jupyter/instances` return it.
 
 **Response `200`**
 ```json

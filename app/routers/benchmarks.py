@@ -48,6 +48,7 @@ async def start_benchmark(
     workload = Workload(
         workload_id=task_id,
         model_name=request.model_name,
+        created_by=request.created_by,
         workload_config=request.config,
         state="CREATED",
     )
@@ -98,6 +99,7 @@ async def get_benchmark_status(
         "workload_id": workload.workload_id,
         "state": workload.state,
         "error_message": workload.error_message,
+        "created_by": workload.created_by,
         "updated_at": workload.updated_at,
     }
 

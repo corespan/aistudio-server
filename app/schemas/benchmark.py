@@ -46,6 +46,12 @@ class BenchmarkStartRequest(BaseModel):
     # E.g. {"concurrency": 8, "input_tokens": 512, "output_tokens": 512}
     config: Dict[str, Any] = Field(default_factory=dict, description="Benchmark parameters")
 
+    created_by: Optional[str] = Field(
+        None, max_length=256,
+        description="Who is starting the run, as the caller reports it (the MCP server "
+                    "sends the JWT sub). Not authenticated by this API.",
+    )
+
 
 class BenchmarkStartResponse(BaseModel):
     status: str

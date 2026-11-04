@@ -97,6 +97,17 @@ class Workload(Base):
         comment="User-submitted benchmark configuration from the start request.",
     )
 
+    # Who asked for this workload, as the caller says. The REST API has no
+    # authentication, so this is only as trustworthy as whoever set it: the MCP
+    # server sets it from a verified JWT and lets only this user (or an admin)
+    # stop the workload; a direct REST caller may leave it empty or write anything.
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(256),
+        nullable=True,
+        index=True,
+        comment="Who started the workload, as the caller reports it (MCP: the JWT sub).",
+    )
+
     # ── State Machine ─────────────────────────────────────────────────────────
     state: Mapped[str] = mapped_column(
         workload_state_enum,

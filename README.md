@@ -24,6 +24,7 @@ require you to request access from their publisher — see
 | [docs/workloads.md](./docs/workloads.md) | LLM inference & Jupyter workload internals, AI-assistant setup, adding new workload types |
 | [docs/models.md](./docs/models.md) | `catalog.json`, adding models, gated vs. ungated, licence obligations |
 | [docs/development.md](./docs/development.md) | Local dev setup, running tests, linting, contribution workflow |
+| [docs/mcp-server.md](./docs/mcp-server.md) | The MCP tool server behind agentgateway: setup, roles, connecting Claude Code and other MCP clients |
 
 ---
 
@@ -52,15 +53,15 @@ cp .env.example .env
 make setup
 ```
 
-`make setup` vendors the demo-ui frontend assets, builds containers, runs DB
-migrations, and seeds the workload catalog in one shot.
+`make setup` builds containers, runs DB migrations, and seeds the workload
+catalog in one shot.
 
 ```bash
 curl http://localhost:8002/health
 # → {"status":"healthy","database":"ok"}
 ```
 
-Interactive API docs: **http://localhost:8002/docs**. Demo UI: **http://localhost:3000**.
+Interactive API docs: **http://localhost:8002/docs**. The UI lives in the separate aistudio app repository.
 
 For the full walkthrough — including running without `make`, preparing a GPU
 node, and starting your first benchmark — see
@@ -83,13 +84,22 @@ make shell     # Python shell inside the API container
 make spec      # Export OpenAPI spec to openapi.json
 ```
 
+MCP server, behind agentgateway — see [docs/mcp-server.md](./docs/mcp-server.md):
+
+```bash
+make mcp-init                 # Make the gateway's signing key (once)
+make mcp-up                   # Start everything plus agentgateway + the MCP server
+make mcp-token ROLE=operator  # Print a JWT for an MCP client (viewer | operator | admin)
+make mcp-check                # Smoke-test every role through the gateway
+make mcp-test                 # Run the MCP server's tests
+```
+
 Licence compliance — see [Licensing](#licensing):
 
 ```bash
-make compliance     # Run every check CI runs: licence files, pins, inventory, CDN refs
+make compliance     # Run every check CI runs: licence files, pins, inventory
 make deps-lock      # Re-pin requirements.txt from requirements.in (after editing .in)
 make third-party    # Regenerate THIRD-PARTY-NOTICES.md from the pinned set
-make vendor-assets  # Re-vendor demo-ui fonts and Chart.js from npm
 make sbom           # Inventory the workload images (needs syft + registry access)
 make check-models   # Report gate status and licence for every model referenced
 make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
@@ -102,12 +112,18 @@ make check-node-env NODE=<host>   # Confirm HF_TOKEN reaches a GPU node
 | Container | Internal | External | Purpose |
 |-----------|----------|----------|---------|
 | `api` | 8001 | **8002** | FastAPI REST + SSE |
-| `postgres` | 5432 | **5433** | PostgreSQL |
-| `rabbitmq` (AMQP) | 5672 | **5672** | Celery broker |
-| `rabbitmq` (UI) | 15672 | **15672** | RabbitMQ admin |
-| `pgadmin` | 80 | **5050** | DB admin |
-| `demo-ui` | 80 | **3000** | Benchmark dashboard |
+| `postgres` | 5432 | **127.0.0.1:5433** | PostgreSQL |
+| `rabbitmq` (AMQP) | 5672 | **127.0.0.1:5672** | Celery broker |
+| `rabbitmq` (UI) | 15672 | **127.0.0.1:15672** | RabbitMQ admin |
 | `worker` | — | — | No port; connects outbound only |
+| `agentgateway` (profile `mcp`) | 8050 | **8050** (HTTPS) | MCP front door: TLS, JWT check, role → tool rules |
+| `aistudio-mcp` (profile `mcp`) | 8081 | — | MCP tools; reached only through agentgateway |
+| `keycloak` (profile `mcp`) | 8080 | **127.0.0.1:8180** (admin console) | MCP users and logins; login pages via agentgateway |
+
+Postgres and RabbitMQ run with default passwords, so they listen on the host's loopback only. From
+another machine, tunnel in, e.g. `ssh -L 15672:localhost:15672 <host>`, then open
+http://localhost:15672. With the `mcp` profile, Keycloak keeps its data in the same Postgres, in its
+own `keycloak` database and role.
 
 Architecture, component responsibilities, and the workload lifecycle are covered in [docs/architecture.md](./docs/architecture.md).
 
@@ -154,7 +170,7 @@ are trademarks of Corespan Systems, Inc.
 ### Everything else
 
 The Apache-2.0 grant covers CoreSpan's own source. It does not extend to the
-software and weights this tool pulls in at run time. Three separate inventories
+software and weights this tool pulls in at run time. Separate inventories
 cover those:
 
 | What | Where | Covers |
@@ -162,7 +178,8 @@ cover those:
 | Python dependencies | [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) | Every package in `requirements.txt`, with the three reciprocal licences called out |
 | Models and datasets | [MODEL-LICENSES.md](./MODEL-LICENSES.md) | Per-model terms, which models are gated, how to obtain access |
 | Workload images | `sbom/` — run `make sbom` | Contents of the distributed containers, including the CUDA EULA question |
-| Frontend assets | [demo-ui/vendor/NOTICE](./demo-ui/vendor/NOTICE) | Self-hosted fonts (OFL-1.1) and Chart.js (MIT) |
+| MCP server dependencies (optional, profile `mcp`) | [mcp-server/THIRD-PARTY-NOTICES.md](./mcp-server/THIRD-PARTY-NOTICES.md) | Every package in `mcp-server/requirements.txt`, with its reciprocal licences called out |
+| MCP profile images | `sbom/` — run `make sbom-mcp` | aistudio-mcp (built on your host), plus the upstream agentgateway and docker-socket-proxy images it runs with |
 
 **If you plan to run gated models** — all the Meta Llama entries in
 `catalog.json` — read [MODEL-LICENSES.md](./MODEL-LICENSES.md) first. You must
@@ -177,8 +194,9 @@ python3 scripts/check_model_access.py
 ### Verifying compliance yourself
 
 ```bash
-make compliance        # licence files, pinned deps, inventory freshness, no CDN refs
+make compliance        # licence files, pinned deps, inventory freshness
 make sbom              # workload image inventory (needs syft + registry access)
+make sbom-mcp          # MCP profile image inventory (needs only docker)
 make check-models      # gate status and licence for every model referenced
 ```
 

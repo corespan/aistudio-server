@@ -1,0 +1,28 @@
+# Secrets and local venv
+.env
+.venv/
+venv/
+
+# VCS + Python caches
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Docs / dev-only
+*.md
+
+# Tests
+tests/
+pytest.ini
+requirements-dev.txt
+
+# Keys and local secrets never go into the image (COPY . .)
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.env.*
+!.env.example

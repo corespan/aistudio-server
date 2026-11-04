@@ -1,0 +1,191 @@
+# agentgateway: the MCP front door. MCP clients log in to Keycloak directly (OAuth, PKCE); the gateway
+# verifies the Keycloak token on every request and passes it through, so aistudio-mcp verifies it again.
+# ${MCP_PUBLIC_URL} comes from docker-compose.yml. Admin UI and config dump: loopback only.
+config:
+  adminAddr: 127.0.0.1:15000
+binds:
+- port: 8050
+  listeners:
+  # HTTPS only; mint.py tls issues the cert from the local CA in tls/ (make mcp-init / mcp-up).
+  - protocol: HTTPS
+    tls:
+      cert: /config/tls/cert.pem
+      key: /config/tls/key.pem
+    routes:
+    - matches:
+      - path:
+          pathPrefix: /mcp/aistudio
+      - path:
+          exact: /.well-known/oauth-protected-resource/mcp/aistudio
+      backends:
+      - mcp:
+          targets:
+          - name: aistudio
+            mcp:
+              host: http://aistudio-mcp:8081/mcp
+      policies:
+        # Browser clients on any origin (no cookies: a page needs the token itself). aistudio-mcp's
+        # own Origin check (DNS rebinding) knows only its compose name, so the gateway drops Origin.
+        cors:
+          allowOrigins:
+          - '*'
+          allowMethods:
+          - GET
+          - POST
+          - DELETE
+          - OPTIONS
+          allowHeaders:
+          - authorization
+          - content-type
+          - accept
+          - mcp-session-id
+          - mcp-protocol-version
+          - last-event-id
+          exposeHeaders:
+          - mcp-session-id
+          - www-authenticate
+          maxAge: 600s
+        requestHeaderModifier:
+          remove:
+          - origin
+        # Keycloak tokens (ES256, aud aistudio-mcp). Keycloak itself is the authorization server clients
+        # are sent to, so its issuer is the one they check (RFC 9207); no gateway adapter in between.
+        mcpAuthentication:
+          mode: strict
+          issuer: ${MCP_PUBLIC_URL}/realms/aistudio
+          audiences:
+          - aistudio-mcp
+          jwks:
+            url: http://keycloak:8080/realms/aistudio/protocol/openid-connect/certs
+          resourceMetadata:
+            resource: ${MCP_PUBLIC_URL}/mcp/aistudio
+            scopesSupported:
+            - openid
+            bearerMethodsSupported:
+            - header
+        backendAuth:
+          passthrough: {}
+        mcpAuthorization:
+          # From the MCP server's policy, never by hand (mcp-server/tests/test_manifest.py fails on drift):
+          #   cd mcp-server && python -m app.manifest ../gateway/config.yaml
+          rules:
+          # BEGIN generated: python -m app.manifest <this file> (from aistudio mcp-server app/policy.py)
+          - "jwt.roles.aistudio in ['viewer', 'operator', 'admin'] && mcp.tool.name in ['workload_history', 'throughput_compare', 'check_service_health', 'platform_catalog', 'list_benchmarks', 'get_benchmark', 'summary', 'model_config', 'get_task_status', 'get_task_logs']"
+          - "jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['start_workload', 'start_jupyter', 'stop_jupyter', 'delete_run_results']"
+          - "jwt.roles.aistudio in ['admin'] && mcp.tool.name in ['timeline', 'list_containers', 'docker_logs', 'inspect_container', 'container_diff', 'read_file', 'list_dir', 'grep_logs', 'git_log', 'git_show', 'network_check', 'list_listening_ports', 'tcpdump_capture', 'check_tls_cert', 'check_clock_skew', 'frontend_check', 'queue_status', 'check_ssh_connectivity', 'check_node_docker', 'node_docker_logs', 'node_exec']"
+          # END generated
+    # Discovery at the RFC 8414 / OIDC paths MCP clients derive from the issuer, served by Keycloak.
+    - matches:
+      - path:
+          exact: /.well-known/oauth-authorization-server/realms/aistudio
+      backends:
+      - host: keycloak:8080
+      policies:
+        # Browser clients (MCP Inspector) call these cross-origin. The gateway answers CORS itself and
+        # drops Origin, which Keycloak refuses on self-registration and checks per client on tokens.
+        cors:
+          allowOrigins:
+          - '*'
+          allowMethods:
+          - GET
+          - POST
+          - OPTIONS
+          allowHeaders:
+          - content-type
+          - authorization
+          - mcp-protocol-version
+          maxAge: 600s
+        requestHeaderModifier:
+          set:
+            x-forwarded-proto: https
+          remove:
+          - origin
+          - x-forwarded-host
+          - x-forwarded-port
+        # The address that connected, not what the caller claims (Keycloak logs it with each login).
+        transformations:
+          request:
+            set:
+              x-forwarded-for: source.address
+        urlRewrite:
+          path:
+            full: /realms/aistudio/.well-known/oauth-authorization-server
+    - matches:
+      - path:
+          exact: /.well-known/openid-configuration/realms/aistudio
+      backends:
+      - host: keycloak:8080
+      policies:
+        # Browser clients (MCP Inspector) call these cross-origin. The gateway answers CORS itself and
+        # drops Origin, which Keycloak refuses on self-registration and checks per client on tokens.
+        cors:
+          allowOrigins:
+          - '*'
+          allowMethods:
+          - GET
+          - POST
+          - OPTIONS
+          allowHeaders:
+          - content-type
+          - authorization
+          - mcp-protocol-version
+          maxAge: 600s
+        requestHeaderModifier:
+          set:
+            x-forwarded-proto: https
+          remove:
+          - origin
+          - x-forwarded-host
+          - x-forwarded-port
+        # The address that connected, not what the caller claims (Keycloak logs it with each login).
+        transformations:
+          request:
+            set:
+              x-forwarded-for: source.address
+        urlRewrite:
+          path:
+            full: /realms/aistudio/.well-known/openid-configuration
+    # Only what an MCP login needs, in realm aistudio: not /admin, not the master realm, and not
+    # clients-registrations/default (it takes claim mappers; kc.py setup refuses them there too).
+    - matches:
+      - path:
+          pathPrefix: /realms/aistudio/protocol/openid-connect/
+      - path:
+          pathPrefix: /realms/aistudio/login-actions/
+      - path:
+          pathPrefix: /realms/aistudio/.well-known/
+      - path:
+          exact: /realms/aistudio/clients-registrations/openid-connect
+      - path:
+          pathPrefix: /realms/aistudio/account
+      - path:
+          pathPrefix: /resources/
+      backends:
+      - host: keycloak:8080
+      policies:
+        # Browser clients (MCP Inspector) call these cross-origin. The gateway answers CORS itself and
+        # drops Origin, which Keycloak refuses on self-registration and checks per client on tokens.
+        cors:
+          allowOrigins:
+          - '*'
+          allowMethods:
+          - GET
+          - POST
+          - OPTIONS
+          allowHeaders:
+          - content-type
+          - authorization
+          - mcp-protocol-version
+          maxAge: 600s
+        requestHeaderModifier:
+          set:
+            x-forwarded-proto: https
+          remove:
+          - origin
+          - x-forwarded-host
+          - x-forwarded-port
+        # The address that connected, not what the caller claims (Keycloak logs it with each login).
+        transformations:
+          request:
+            set:
+              x-forwarded-for: source.address

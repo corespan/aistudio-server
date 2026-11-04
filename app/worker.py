@@ -42,6 +42,12 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_soft_time_limit=1500,
     task_time_limit=1800,
+    # RabbitMQ 4 refuses transient non-exclusive queues, which Celery's remote-control (pidbox) and
+    # event queues are by default: the broker drops the connection and the worker restart-loops.
+    # Exclusive they are allowed, and each belongs to one worker connection anyway. compose runs
+    # 3.13 today; this keeps a broker upgrade from breaking the worker.
+    control_queue_exclusive=True,
+    event_queue_exclusive=True,
 )
 
 

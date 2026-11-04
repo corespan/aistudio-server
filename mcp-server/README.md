@@ -1,0 +1,53 @@
+# AI Studio MCP tool server
+
+35 tools for an AI Studio deployment: benchmark results, tasks and Jupyter from the REST API,
+container logs and inspection, GPU-node probes over SSH, and network and TLS checks. 31 only
+read; `start_workload`, `start_jupyter`, `stop_jupyter` and `delete_run_results` act, and exist only with
+`MCP_WRITES_ENABLED=true`.
+
+Tools only: no model, no reasoning loop; the MCP client supplies those. It is reached **only
+through agentgateway**, with a token from the user's Keycloak login. Setup, roles, connecting a client and
+the safety gates: [docs/mcp-server.md](../docs/mcp-server.md).
+
+## Run with Compose (the normal way)
+
+From the repository root:
+
+```bash
+make mcp-init && make mcp-up && make mcp-check
+```
+
+## Run on its own
+
+```bash
+cp .env.example .env      # then edit; unknown keys are rejected at startup
+pip install -r requirements.txt
+python -m app.mcp_server  # streamable HTTP on MCP_HOST:MCP_PORT, /mcp
+```
+
+```bash
+curl localhost:8081/healthz        # {"status":"ok"}, no token needed
+curl -i -X POST localhost:8081/mcp # 401: every other path needs a JWT (MCP_JWKS_URL or MCP_JWKS_FILE)
+```
+
+Healthy log: `mcp.built tools=31 writes=False` (35 with `MCP_WRITES_ENABLED=true`), then `mcp.serving`.
+
+## The role rules
+
+agentgateway's role → tool rules are generated from this server's manifest (`app/policy.py`), so
+they cannot drift from what it enforces:
+
+```bash
+python -m app.manifest ../gateway/config.yaml   # regenerate the block between the markers
+python -m app.manifest --check ../gateway/config.yaml
+```
+
+The block lives in `gateway/config.yaml`, the gateway's own config.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt && pytest -q
+```
+
+No network, database or Docker needed. The tests use a throwaway ES256 key for the JWTs.
