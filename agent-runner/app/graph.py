@@ -27,6 +27,7 @@ class Runtime:
     token: str
     sub: str = ""
     user: str = ""          # the username: model and workflow allow-lists
+    conversation: str | None = None     # its conversation: chat agents keep a workspace per one
     budget: agent.Budget = field(default_factory=agent.Budget)
     agents: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(settings.max_parallel_agents))

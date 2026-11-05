@@ -27,5 +27,6 @@ def tools_for(harness: Harness, user_tools: list[dict]) -> list[dict]:
 
 
 def available(user_tools: list[dict]) -> dict[str, Harness]:
-    """Harnesses this caller can use: those left with at least one tool."""
-    return {n: h for n, h in load().items() if tools_for(h, user_tools)}
+    """The langgraph harnesses this caller can use (what the planner is offered): those left with
+    at least one tool. claude-code agents never: they spend one person's subscription."""
+    return {n: h for n, h in load().items() if h.engine == "langgraph" and tools_for(h, user_tools)}

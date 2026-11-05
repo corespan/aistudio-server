@@ -15,10 +15,12 @@ def test_the_shipped_lock_file_is_up_to_date():
     # What CI checks: someone changed a pack and didn't run `make registry`.
     assert registry.main(["registry", "check"]) == 0
     reg = registry.load()
-    assert set(reg.agents) == {"analyst", "assistant", "diagnostics", "coder", "reviewer"}
+    assert set(reg.agents) == {"analyst", "assistant", "diagnostics", "coder", "reviewer",
+                               "analyst-claude", "assistant-claude", "diagnostics-claude"}
     assert reg.agents["coder"].engine == "claude-code" and reg.repos == ["corespan/aistudio-server"]
     assert set(reg.connectors) == {"aistudio", "sandbox"}
-    assert set(reg.models) == {"claude-coder"}
+    assert set(reg.models) == {"claude-coder", "claude-chat"}
+    assert reg.models["claude-chat"].model == "claude-sonnet-5-5"
 
 
 def test_each_connector_renders_a_gateway_route_and_an_audience():
@@ -54,6 +56,10 @@ def test_the_https_port_has_only_what_mcp_clients_outside_need():
     assert "/mcp/aistudio" in prefixes and "/.well-known/oauth-protected-resource/mcp/aistudio" in prefixes
     assert "/realms/aistudio/protocol/openid-connect/" in prefixes
     assert not {"/llm", "/github/", "/mcp/sandbox"} & prefixes
+    # The assistant panel: agent-runner, the token passed on untouched for the runner to check.
+    [runner] = [r for r in outside["routes"] if r["matches"][0]["path"].get("pathPrefix") == "/assistant/"]
+    assert runner["backends"] == [{"host": "agent-runner:8060"}] and runner["policies"] == {
+        "urlRewrite": {"path": {"prefix": "/"}}}
     mcp = outside["routes"][0]["policies"]["mcpAuthentication"]
     assert mcp["audiences"] == ["aistudio-mcp"] and mcp["resourceMetadata"]["resource"] == "${MCP_PUBLIC_URL}/mcp/aistudio"
 
@@ -71,6 +77,22 @@ def test_an_anthropic_model_renders_the_sandbox_gateway_for_its_users_only():
     assert pol["localRateLimit"][0]["maxTokens"] == 60
     # The token is substituted by agentgateway from its own env, never rendered into the file.
     assert pol["requestHeaderModifier"]["set"]["authorization"] == "Bearer ${CLAUDE_CODE_OAUTH_TOKEN}"
+
+
+def test_sandboxes_reach_only_the_tools_the_claude_agents_name():
+    files = {p.name: t for p, t in registry.render(registry.build(Path(settings.platform_dir))).items()}
+    routes = yaml.safe_load(files["sandbox.yaml"])["binds"][0]["listeners"][0]["routes"]
+    [route] = [r for r in routes if r["matches"][0]["path"].get("pathPrefix") == "/mcp/aistudio"]
+    assert route["policies"]["jwtAuth"]["mode"] == "strict"
+    assert route["policies"]["backendAuth"] == {"passthrough": {}}
+    reg = registry.load()
+    named = sorted({t.split("/")[1] for h in reg.agents.values() if h.engine == "claude-code" for t in h.tools})
+    connector = reg.connectors["aistudio"]
+    # Each of the connector's role rules, narrowed to the subscription's users and the named tools.
+    assert route["policies"]["mcpAuthorization"]["rules"] == [
+        f"({r}) && jwt.preferred_username in ['rsingh'] && mcp.tool.name in {named!r}" for r in connector.rules]
+    assert "start_workload" not in named and "delete_run_results" not in named
+    assert not any(r["matches"][0]["path"].get("pathPrefix") == "/mcp/sandbox" for r in routes)
 
 
 def test_each_repo_gets_clone_routes_and_nothing_that_could_push():

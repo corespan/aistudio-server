@@ -26,6 +26,37 @@
         ]
       }
     },
+    "analyst-claude": {
+      "source": "packs/aistudio/agents/analyst-claude.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 300,
+          "steps": 8,
+          "tokens": 400000
+        },
+        "claude": {
+          "allowed_tools": [
+            "Bash(python3 *)"
+          ],
+          "max_turns": 20,
+          "workspace": "none"
+        },
+        "engine": "claude-code",
+        "kind": "agent",
+        "model": "claude-chat",
+        "name": "analyst-claude",
+        "purpose": "Benchmark numbers: find, compare and explain benchmark runs and their throughput and latency, what models and nodes can be run, and the default config for a model. Can run a short Python program in a no-network sandbox to compute statistics over the data it fetched.",
+        "tools": [
+          "aistudio/list_benchmarks",
+          "aistudio/get_benchmark",
+          "aistudio/summary",
+          "aistudio/throughput_compare",
+          "aistudio/workload_history",
+          "aistudio/platform_catalog",
+          "aistudio/model_config"
+        ]
+      }
+    },
     "assistant": {
       "source": "packs/aistudio/agents/assistant.yaml",
       "spec": {
@@ -39,6 +70,36 @@
         "kind": "agent",
         "model": "worker",
         "name": "assistant",
+        "purpose": "General questions about the platform and its runs that need a few lookups and no deep dive: status of a task, what ran recently, whether the services are up.",
+        "tools": [
+          "aistudio/list_benchmarks",
+          "aistudio/get_benchmark",
+          "aistudio/summary",
+          "aistudio/workload_history",
+          "aistudio/platform_catalog",
+          "aistudio/model_config",
+          "aistudio/get_task_status",
+          "aistudio/check_service_health"
+        ]
+      }
+    },
+    "assistant-claude": {
+      "source": "packs/aistudio/agents/assistant-claude.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 180,
+          "steps": 8,
+          "tokens": 200000
+        },
+        "claude": {
+          "allowed_tools": [],
+          "max_turns": 10,
+          "workspace": "none"
+        },
+        "engine": "claude-code",
+        "kind": "agent",
+        "model": "claude-chat",
+        "name": "assistant-claude",
         "purpose": "General questions about the platform and its runs that need a few lookups and no deep dive: status of a task, what ran recently, whether the services are up.",
         "tools": [
           "aistudio/list_benchmarks",
@@ -72,7 +133,8 @@
             "Bash(python -m pytest *)",
             "Bash(with-postgres *)"
           ],
-          "max_turns": 40
+          "max_turns": 40,
+          "workspace": "full"
         },
         "engine": "claude-code",
         "kind": "agent",
@@ -124,6 +186,56 @@
         ]
       }
     },
+    "diagnostics-claude": {
+      "source": "packs/aistudio/agents/diagnostics-claude.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 420,
+          "steps": 8,
+          "tokens": 600000
+        },
+        "claude": {
+          "allowed_tools": [
+            "Read",
+            "Glob",
+            "Grep"
+          ],
+          "max_turns": 30,
+          "workspace": "shallow"
+        },
+        "engine": "claude-code",
+        "kind": "agent",
+        "model": "claude-chat",
+        "name": "diagnostics-claude",
+        "purpose": "Why something failed or is slow: a run's lifecycle and logs, service health, the queue, the containers, files and network on this host, and the GPU nodes over SSH.",
+        "tools": [
+          "aistudio/workload_history",
+          "aistudio/get_task_status",
+          "aistudio/get_task_logs",
+          "aistudio/check_service_health",
+          "aistudio/queue_status",
+          "aistudio/timeline",
+          "aistudio/list_containers",
+          "aistudio/docker_logs",
+          "aistudio/inspect_container",
+          "aistudio/container_diff",
+          "aistudio/read_file",
+          "aistudio/list_dir",
+          "aistudio/grep_logs",
+          "aistudio/git_log",
+          "aistudio/git_show",
+          "aistudio/network_check",
+          "aistudio/list_listening_ports",
+          "aistudio/check_tls_cert",
+          "aistudio/check_clock_skew",
+          "aistudio/frontend_check",
+          "aistudio/check_ssh_connectivity",
+          "aistudio/check_node_docker",
+          "aistudio/node_docker_logs",
+          "aistudio/node_exec"
+        ]
+      }
+    },
     "reviewer": {
       "source": "packs/devflow/agents/reviewer.yaml",
       "spec": {
@@ -141,7 +253,8 @@
             "Bash(git log *)",
             "Bash(git show *)"
           ],
-          "max_turns": 15
+          "max_turns": 15,
+          "workspace": "full"
         },
         "engine": "claude-code",
         "kind": "agent",
@@ -185,8 +298,20 @@
       }
     }
   },
-  "hash": "6d3f49c84eb2668f1b29d8740908575ed00e31ef5d72a9fcbde3d1d02de2dc78",
+  "hash": "d6a55cb7f387824cc0aedbfcc8cbd40b3919f6d23d083679d6eb7e2b73d441a9",
   "model": {
+    "claude-chat": {
+      "source": "packs/aistudio/models/claude-chat.yaml",
+      "spec": {
+        "kind": "model",
+        "model": "claude-sonnet-5-5",
+        "name": "claude-chat",
+        "provider": "anthropic",
+        "users": [
+          "rsingh"
+        ]
+      }
+    },
     "claude-coder": {
       "source": "packs/devflow/models/claude-coder.yaml",
       "spec": {

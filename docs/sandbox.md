@@ -58,7 +58,8 @@ step runs at a time per user (it spends that user's Claude subscription), two in
 |---|---|
 | Image | `aistudio-workspace:local` (`sandbox-mcp/workspace/Dockerfile`, 1.3 GB): Node, a pinned Claude Code, git, make, Python, the main app's test dependencies (on `PATH`) and agent-runner's (`/opt/runner-venv`), and PostgreSQL 15 with `with-postgres <command>`, which starts a throwaway database for one check. `make mcp-up` builds it |
 | Runtime | `runsc`, as the node user (1000), no capabilities, `no-new-privileges` |
-| Network | `aistudio-sandbox-egress`, an internal network where agentgateway-sandbox (`172.30.51.10`) is the only other thing. It serves `/llm/anthropic` and read-only git for `platform.yaml`'s `repos`, nothing else ([agent-runner.md](agent-runner.md#the-anthropic-route)). gVisor can't use Docker's DNS, so the address comes in as a hosts entry |
+| Kinds | `workspace_open` with a `repo` clones it; with `depth`, only that many commits (not with `base`); with `repo` `""`, an empty `/work` and no container at all. `workspace_claude` with `keep: false` saves nothing it leaves (read-only agents), so every such step starts from the same snapshot |
+| Network | `aistudio-sandbox-egress`, an internal network where agentgateway-sandbox (`172.30.51.10`) is the only other thing. It serves `/llm/anthropic`, read-only git for `platform.yaml`'s `repos`, and `/mcp/<name>` limited to the tools the claude-code agents name ([agent-runner.md](agent-runner.md#chat-agents-on-claude)), nothing else. gVisor can't use Docker's DNS, so the address comes in as a hosts entry |
 | Limits | 2 CPUs, 2 GB, 512 processes, `timeout_seconds` up to 900, then killed |
 | Env | an explicit allowlist (`workspace.ENV`), checked by a test: nothing from sandbox-mcp's own environment. The caller's JWT goes only to the clone and the Claude step, never to a check running the repo's code |
 | Afterwards | the container is removed, also when anything failed |

@@ -197,3 +197,16 @@ async def test_naming_a_harness_skips_the_planner(fake_llm, fake_mcp):
     assert not [c for c in calls if c[0] in ("planner", "summarizer")]
     assert of(events, "plan")[0]["plan"]["tasks"][0]["agent"] == "assistant"
     assert of(events, "message")[0]["text"] == "it is up"
+
+
+async def test_a_quiet_stream_gets_a_ping_so_proxies_keep_it_open(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.config import settings
+    monkeypatch.setattr(settings, "stream_ping_seconds", 0.01)
+    run = SimpleNamespace(events=[], status="running", streams=set(), detached_at=0)
+    stream = RunManager(run_graph.build(InMemorySaver()), RunLog()).stream(run)
+    assert await anext(stream) == ": ping\n\n"
+    [q] = run.streams
+    q.put_nowait({"seq": 1, "type": "done", "status": "succeeded"})
+    assert "done" in await anext(stream)

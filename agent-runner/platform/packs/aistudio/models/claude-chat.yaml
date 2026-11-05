@@ -1,0 +1,6 @@
+kind: model
+name: claude-chat
+provider: anthropic          # agentgateway :8051/llm/anthropic adds the subscription token
+model: claude-sonnet-5-5     # chat: quicker and lighter on your limits than the coding model
+# Your subscription, so only you. Anyone else: switch the route to an API key first.
+users: [rsingh]

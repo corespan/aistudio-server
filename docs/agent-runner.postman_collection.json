@@ -1,0 +1,778 @@
+{
+  "info": {
+    "name": "AIStudio agent-runner",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "agent-runner, the AI Assistant backend (docs/agent-runner.md), through agentgateway's HTTPS port at /assistant/.\n\nLogin: the collection's OAuth 2.0 (Keycloak, realm aistudio, public client aistudio-panel, code + PKCE). Set host, then Authorization > Get New Access Token. The callback http://localhost:5555/callback is caught by Postman's login window; Keycloak accepts it because the panel client allows http://localhost:* while PANEL_REDIRECT_URIS is unset (add it if you set that). Tokens last 1 hour.\n\nTLS: the gateway's cert is from the local CA (secrets/tls/ca.pem). Add it under Settings > Certificates, or turn off SSL verification for this host.\n\nRun ids and conversation ids are saved into collection variables by the requests that create them."
+  },
+  "auth": {
+    "type": "oauth2",
+    "oauth2": [
+      {
+        "key": "grant_type",
+        "value": "authorization_code_with_pkce",
+        "type": "string"
+      },
+      {
+        "key": "authUrl",
+        "value": "{{keycloak}}/protocol/openid-connect/auth",
+        "type": "string"
+      },
+      {
+        "key": "accessTokenUrl",
+        "value": "{{keycloak}}/protocol/openid-connect/token",
+        "type": "string"
+      },
+      {
+        "key": "clientId",
+        "value": "aistudio-panel",
+        "type": "string"
+      },
+      {
+        "key": "scope",
+        "value": "openid",
+        "type": "string"
+      },
+      {
+        "key": "redirect_uri",
+        "value": "http://localhost:5555/callback",
+        "type": "string"
+      },
+      {
+        "key": "challengeAlgorithm",
+        "value": "S256",
+        "type": "string"
+      },
+      {
+        "key": "client_authentication",
+        "value": "body",
+        "type": "string"
+      },
+      {
+        "key": "addTokenTo",
+        "value": "header",
+        "type": "string"
+      },
+      {
+        "key": "tokenName",
+        "value": "aistudio",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "host",
+      "value": "10.6.11.13:8050"
+    },
+    {
+      "key": "base_url",
+      "value": "https://{{host}}/assistant"
+    },
+    {
+      "key": "keycloak",
+      "value": "https://{{host}}/realms/aistudio"
+    },
+    {
+      "key": "conversation_id",
+      "value": ""
+    },
+    {
+      "key": "run_id",
+      "value": ""
+    },
+    {
+      "key": "last_event_id",
+      "value": "0"
+    },
+    {
+      "key": "app_url",
+      "value": "http://10.6.12.17:8443"
+    },
+    {
+      "key": "task_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Service",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/healthz",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            },
+            "description": "No token. The registry hash and the harnesses loaded.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Contract (JSON schemas)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contract",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contract"
+              ]
+            },
+            "description": "No token. JSON schemas of the request bodies, plans, harnesses, packs, and the event types.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Harnesses I can use",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/harnesses",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "harnesses"
+              ]
+            },
+            "description": "The agents left with at least one tool after your role (viewer, operator, admin)."
+          }
+        },
+        {
+          "name": "My Claude usage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usage?by=day",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "by",
+                  "value": "day"
+                }
+              ]
+            },
+            "description": "Totals since `since` (ISO time, default 7 days ago) by day, run or agent, and what is left in the 5-hour and 24-hour windows."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat (the panel)",
+      "item": [
+        {
+          "name": "New conversation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/conversations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations"
+              ]
+            },
+            "description": "Saves its id as {{conversation_id}}. Each POST /runs with that id is a turn.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Benchmarks this week\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json(); if (b.id) pm.collectionVariables.set('conversation_id', b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My conversations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations"
+              ]
+            },
+            "description": "Newest first. Only yours."
+          }
+        },
+        {
+          "name": "Conversation turns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}"
+              ]
+            },
+            "description": "Each turn: message, answer, status and panel context."
+          }
+        },
+        {
+          "name": "Ask (a chat turn)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs"
+              ]
+            },
+            "description": "The planner picks the agents. Answers with an event stream (text/event-stream): `id: <seq>` and `data: {\"type\": ...}` per event: run, plan, task_queued, agent_started, step_started, step_result, agent_done, message, error, done. `: ping` comments every 15 s keep a quiet stream open. A run with no stream attached for 30 s is cancelled. The run id is saved as {{run_id}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Why did the last benchmark on this node fail?\",\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"context\": {\n    \"page\": \"benchmarks\",\n    \"node\": \"node-1\",\n    \"run_id\": null,\n    \"model\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ask one agent directly",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs"
+              ]
+            },
+            "description": "Skips planning: one task for this harness (analyst, assistant, diagnostics). Answers with an event stream (text/event-stream): `id: <seq>` and `data: {\"type\": ...}` per event: run, plan, task_queued, agent_started, step_started, step_result, agent_done, message, error, done. `: ping` comments every 15 s keep a quiet stream open. A run with no stream attached for 30 s is cancelled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Is everything healthy?\",\n  \"harness\": \"assistant\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ask Claude (your subscription)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs"
+              ]
+            },
+            "description": "A chat agent on Claude Code and Claude Sonnet 5.5, on the subscription's own user only (403 for anyone else): assistant-claude, analyst-claude or diagnostics-claude. No planner and no vLLM: the agent's reply is the answer. Each turn opens a workspace first (a few seconds) and counts against your Claude limits. Answers with an event stream (text/event-stream): `id: <seq>` and `data: {\"type\": ...}` per event: run, plan, task_queued, agent_started, step_started, step_result, agent_done, message, error, done. `: ping` comments every 15 s keep a quiet stream open. A run with no stream attached for 30 s is cancelled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Are the services healthy right now?\",\n  \"harness\": \"assistant-claude\",\n  \"conversation_id\": \"{{conversation_id}}\",\n  \"context\": {\n    \"page\": \"benchmarks\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reattach to a run",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Last-Event-ID",
+                "value": "{{last_event_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/runs/{{run_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs",
+                "{{run_id}}"
+              ]
+            },
+            "description": "Events after Last-Event-ID, then live ones. 410 when the run already ended (its answer is in the conversation), 404 for anyone else's run."
+          }
+        },
+        {
+          "name": "Cancel a run",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/runs/{{run_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs",
+                "{{run_id}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Delete conversation",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "conversations",
+                "{{conversation_id}}"
+              ]
+            },
+            "description": "Hidden from you for good; its runs and events stay as the audit log."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Coding workflows (Claude; listed users only)",
+      "item": [
+        {
+          "name": "Workflows I can start",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/workflows",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "workflows"
+              ]
+            },
+            "description": "Empty unless your username is in a workflow's users."
+          }
+        },
+        {
+          "name": "code-change",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/workflows/code-change/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "workflows",
+                "code-change",
+                "runs"
+              ]
+            },
+            "description": "Plan, code, test, review, then stops at the approval gate. Answers with an event stream (text/event-stream): `id: <seq>` and `data: {\"type\": ...}` per event: run, plan, task_queued, agent_started, step_started, step_result, agent_done, message, error, done. `: ping` comments every 15 s keep a quiet stream open. A run with no stream attached for 30 s is cancelled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"task\": \"Add a /healthz endpoint to the main API with a test\",\n  \"branch\": \"agent/healthz\",\n  \"reviewers\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "code-review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/workflows/code-review/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "workflows",
+                "code-review",
+                "runs"
+              ]
+            },
+            "description": "Reviews the PR, stops at the gate; approve posts the review.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pr\": 9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "bug-hunt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/workflows/bug-hunt/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "workflows",
+                "bug-hunt",
+                "runs"
+              ]
+            },
+            "description": "Finds bugs, stops at the triage gate (approve with `drop` to skip some), fixes, reviews, stops at the write gate.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"task\": \"app/utils/\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "pr-followup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/workflows/pr-followup/runs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "workflows",
+                "pr-followup",
+                "runs"
+              ]
+            },
+            "description": "Addresses trusted reviewers' comments and failed checks on one of the agent's PRs; pushes to its agent/ branch after approval.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pr\": 9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const m = pm.response.text().match(/\"run_id\":\\s*\"([^\"]+)\"/); if (m) pm.collectionVariables.set('run_id', m[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve the gate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/runs/{{run_id}}/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs",
+                "{{run_id}}",
+                "approve"
+              ]
+            },
+            "description": "Goes on past the gate and streams the rest. `drop`: findings (by number) not to post or fix. 409 when the run isn't waiting.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"drop\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Reject the gate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/runs/{{run_id}}/reject",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "runs",
+                "{{run_id}}",
+                "reject"
+              ]
+            },
+            "description": "Ends the run; the workspace is closed and nothing is written.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Not needed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Benchmarks (main app, not agent-runner)",
+      "description": "The assistant's agents are read-only: they never start a benchmark. The panel starts one on the main API, then can ask the assistant about it with context.run_id = task_id. Note: this API has no login of its own.",
+      "item": [
+        {
+          "name": "Start a benchmark",
+          "auth": {
+            "type": "noauth"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('task_id', pm.response.json().task_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{app_url}}/api/v1/benchmarks/start",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model_name\": \"llama3-8b-instruct\",\n  \"node_ips\": [\"10.6.12.17\"],\n  \"config\": {\n    \"dataset_path\": \"/data/sharegpt.json\",\n    \"concurrency\": 8,\n    \"input_tokens\": 512,\n    \"output_tokens\": 512\n  }\n}"
+            },
+            "description": "config.dataset_path is required: an absolute path to a ShareGPT JSON file on the node."
+          }
+        },
+        {
+          "name": "Benchmark status",
+          "auth": {
+            "type": "noauth"
+          },
+          "request": {
+            "method": "GET",
+            "url": "{{app_url}}/api/v1/benchmarks/{{task_id}}/status"
+          }
+        },
+        {
+          "name": "Benchmark logs (streams)",
+          "auth": {
+            "type": "noauth"
+          },
+          "request": {
+            "method": "GET",
+            "url": "{{app_url}}/api/v1/benchmarks/{{task_id}}/logs/stream",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

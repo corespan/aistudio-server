@@ -224,6 +224,45 @@ def test_refs_that_could_be_options_or_ranges_are_refused(ref):
         workspace.open_(FakeDocker(), "rsingh", "jwt", "corespan/aistudio-server", ref)
 
 
+def test_a_workspace_without_a_repo_starts_no_container_and_a_read_only_step_keeps_nothing():
+    docker = FakeDocker({"stdout": b"", "snapshot": tgz({"work/scratch.py": b"x"})})
+    ws = workspace.open_(docker, "rsingh", "jwt", "", "")
+    assert ws["snapshot"] == 0 and ws["repo"] == "" and docker.created == []      # no clone, no container
+    r = workspace.claude(docker, "rsingh", "jwt", ws["id"], "x", "claude-sonnet-5-5", ["Read"], 5, 60, keep=False)
+    assert r["snapshot"] == 0                       # nothing saved: the next turn starts the same
+    assert "tar -C / -czf" not in docker.created[0].command[-1]       # and no time spent packing it
+
+
+def test_a_shallow_clone_and_its_limits():
+    docker = FakeDocker({"stdout": SHA.encode(), "snapshot": tgz({"work/a": b""})})
+    workspace.open_(docker, "rsingh", "jwt", "corespan/aistudio-server", "master", depth=1)
+    assert "git clone -q --depth 1 " in docker.created[0].command[-1]
+    assert "git fetch -q --depth 1 origin" in docker.created[0].command[-1]
+    with pytest.raises(workspace.Refused, match="depth"):           # a merge base needs history
+        workspace.open_(FakeDocker(), "rsingh", "jwt", "corespan/aistudio-server", "pull/9/head", "master", depth=1)
+    with pytest.raises(workspace.Refused, match="depth"):
+        workspace.open_(FakeDocker(), "rsingh", "jwt", "corespan/aistudio-server", "master", depth=0)
+
+
+def test_claude_code_reaches_only_the_named_mcp_servers_through_the_sandbox_gateway():
+    ws = opened()
+    docker = FakeDocker({"stdout": b"", "snapshot": tgz({"work/a.py": b"v0"})}, {"stdout": b""})
+    workspace.claude(docker, "rsingh", "jwt", ws["id"], "x", "claude-sonnet-5-5",
+                     ["Read", "mcp__aistudio__summary"], 5, 60, mcp=["aistudio"])
+    box = docker.created[0]
+    config = json.loads(files_in(box.archives[1][1])["mcp.json"])
+    assert config == {"mcpServers": {"aistudio": {
+        "type": "http", "url": "http://agentgateway-sandbox:8051/mcp/aistudio",
+        "headers": {"Authorization": "Bearer jwt"}}}}
+    assert "--strict-mcp-config" in box.command[-1]          # never a .mcp.json from the repo
+    # Without mcp: an empty config, so Claude Code has no MCP server at all.
+    workspace.claude(docker, "rsingh", "jwt", ws["id"], "x", "claude-opus-5-5", ["Read"], 5, 60)
+    assert json.loads(files_in(docker.created[1].archives[1][1])["mcp.json"]) == {"mcpServers": {}}
+    with pytest.raises(workspace.Refused, match="mcp"):
+        workspace.claude(docker, "rsingh", "jwt", ws["id"], "x", "claude-opus-5-5", ["Read"], 5, 60,
+                         mcp=["../llm"])
+
+
 @pytest.mark.parametrize("tools", [[], ["Bash(rm -rf /)\nRead"], ["Read; curl"]])
 def test_tool_rules_are_checked(tools):
     ws = opened()

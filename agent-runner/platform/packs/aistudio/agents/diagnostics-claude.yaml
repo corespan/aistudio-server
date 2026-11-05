@@ -1,0 +1,39 @@
+kind: agent
+name: diagnostics-claude
+engine: claude-code
+# diagnostics's job and tools, on Claude Code and your subscription: only you, and only by name
+# (POST /runs with harness: diagnostics-claude). Reads only.
+purpose: >-
+  Why something failed or is slow: a run's lifecycle and logs, service health, the queue, the
+  containers, files and network on this host, and the GPU nodes over SSH.
+model: claude-chat
+tools:
+  - aistudio/workload_history
+  - aistudio/get_task_status
+  - aistudio/get_task_logs
+  - aistudio/check_service_health
+  - aistudio/queue_status
+  - aistudio/timeline
+  - aistudio/list_containers
+  - aistudio/docker_logs
+  - aistudio/inspect_container
+  - aistudio/container_diff
+  - aistudio/read_file
+  - aistudio/list_dir
+  - aistudio/grep_logs
+  - aistudio/git_log
+  - aistudio/git_show
+  - aistudio/network_check
+  - aistudio/list_listening_ports
+  - aistudio/check_tls_cert
+  - aistudio/check_clock_skew
+  - aistudio/frontend_check
+  - aistudio/check_ssh_connectivity
+  - aistudio/check_node_docker
+  - aistudio/node_docker_logs
+  - aistudio/node_exec
+claude:
+  allowed_tools: [Read, Glob, Grep]   # the code, to read what a log line points at
+  workspace: shallow                  # the latest commit only: a quick clone
+  max_turns: 30
+budgets: { tokens: 600000, seconds: 420 }

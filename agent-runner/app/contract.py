@@ -34,9 +34,13 @@ class Budgets(BaseModel):
 class ClaudeSpec(BaseModel):
     """How a claude-code agent runs Claude Code in its workspace."""
     model_config = ConfigDict(extra="forbid")
-    # Claude Code permission rules, such as Read or "Bash(git diff *)": its only tools.
-    allowed_tools: list[str] = Field(min_length=1, max_length=30)
+    # Claude Code permission rules, such as Read or "Bash(git diff *)": its only tools, with the
+    # agent's MCP tools (a chat agent may have only those).
+    allowed_tools: list[str] = Field(default_factory=list, max_length=30)
     max_turns: int = Field(30, ge=1, le=200)
+    # What the step starts in: none, an empty folder (no clone); shallow, the repo's latest commit;
+    # full, the whole history (the coding agents: diffs and merge bases need it).
+    workspace: Literal["none", "shallow", "full"] = "full"
 
 
 class Harness(BaseModel):
@@ -44,7 +48,8 @@ class Harness(BaseModel):
 
     engine langgraph: the runner's tool loop on vLLM, over the caller's MCP tools.
     engine claude-code: Claude Code in a workspace sandbox (sandbox-mcp), on an anthropic model
-    file; never offered to the planner, only started by name (and by workflows, later).
+    file; never offered to the planner, only started by name and by workflows. Its ``tools`` (exact
+    connector/tool names) reach Claude Code as MCP tools, through agentgateway-sandbox.
     """
     model_config = ConfigDict(extra="forbid")
     kind: Literal["agent"] = "agent"
@@ -59,8 +64,12 @@ class Harness(BaseModel):
 
     @model_validator(mode="after")
     def _engine(self) -> "Harness":
-        if self.engine == "claude-code" and (self.claude is None or self.tools):
-            raise ValueError("a claude-code agent has a claude: block and no MCP tools")
+        if self.engine == "claude-code" and self.claude is None:
+            raise ValueError("a claude-code agent has a claude: block")
+        if self.engine == "claude-code" and any("*" in t or "?" in t or "[" in t for t in self.tools):
+            raise ValueError("a claude-code agent names each MCP tool exactly: the sandbox gateway allows only those")
+        if self.engine == "claude-code" and not 1 <= len(self.claude.allowed_tools) + len(self.tools) <= 30:
+            raise ValueError("a claude-code agent has 1 to 30 tools, MCP ones included")
         if self.engine == "langgraph" and (self.claude is not None or not self.tools):
             raise ValueError("a langgraph agent lists tools and has no claude: block")
         return self

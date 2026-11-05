@@ -55,3 +55,7 @@ def test_harnesses_are_filtered_by_the_callers_tools(fake_mcp, signer):
         r = client.get("/harnesses", headers={"Authorization": f"Bearer {signer()}"})
         assert {h["name"] for h in r.json()} == {"analyst", "assistant"}
         assert all(h["tools"] == ["summary"] for h in r.json())
+        # The Claude chat agents: listed only for the subscription's user.
+        r = client.get("/harnesses", headers={"Authorization": f"Bearer {signer('rsingh', 'viewer')}"})
+        assert {h["name"] for h in r.json()} == {"analyst", "assistant", "analyst-claude", "assistant-claude"}
+        assert {h["engine"] for h in r.json() if h["name"].endswith("-claude")} == {"claude-code"}

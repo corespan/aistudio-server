@@ -31,6 +31,7 @@ class Run:
     workflow: str | None = None
     started: float = field(default_factory=time.monotonic)
     user: str = ""          # the username, for allow-lists; sub owns the run
+    conversation_id: str | None = None
 
 
 class TooManyRuns(Exception):
@@ -72,7 +73,8 @@ class RunManager:
                      conversation_id: str | None = None) -> Run:
         if self.active(ident.sub) >= settings.max_runs_per_user:
             raise TooManyRuns(f"at most {settings.max_runs_per_user} active runs per user")
-        run = Run(id="run-" + secrets.token_hex(8), sub=ident.sub, workflow=workflow, user=ident.user)
+        run = Run(id="run-" + secrets.token_hex(8), sub=ident.sub, workflow=workflow, user=ident.user,
+                  conversation_id=conversation_id)
         await self.runlog.start(run.id, ident.sub, message, conversation_id, inputs.get("context") or None)
         self._launch(run, ident.token, inputs)
         return run
@@ -104,7 +106,8 @@ class RunManager:
 
     def _launch(self, run: Run, token: str, inputs) -> None:
         self.runs[run.id] = run
-        run_graph.RUNTIME[run.id] = run_graph.Runtime(token=token, sub=run.sub, user=run.user)
+        run_graph.RUNTIME[run.id] = run_graph.Runtime(token=token, sub=run.sub, user=run.user,
+                                                      conversation=run.conversation_id)
         run.task = asyncio.create_task(self._drive(run, inputs))
         asyncio.create_task(self._watch(run))
 
@@ -189,7 +192,12 @@ class RunManager:
             if run.status != "running" and run.events and run.events[-1]["type"] == "done":
                 return
             while True:
-                event = await q.get()
+                try:
+                    event = await asyncio.wait_for(q.get(), settings.stream_ping_seconds)
+                except TimeoutError:
+                    # A Claude step can be quiet for minutes; a comment keeps proxies from closing the stream.
+                    yield ": ping\n\n"
+                    continue
                 if event["seq"] <= sent:
                     continue
                 sent = event["seq"]

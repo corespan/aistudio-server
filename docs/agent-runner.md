@@ -6,17 +6,24 @@ built on [LangGraph](https://github.com/langchain-ai/langgraph) and runs in the 
 profile beside agentgateway and the MCP server.
 
 ```
-panel ──Keycloak token──> agent-runner :8060 ──same token──> agentgateway :8052 ──> /mcp/aistudio  (platform tools)
-  │                            │                            (inside only)    ├──> /mcp/sandbox   (sandbox_run, workspaces)
-  └─ logs in to Keycloak       │                                             ├──> /llm           (vLLM)
-     (realm aistudio)          │                                             └──> /github        (after approval)
-                               └── Postgres: agent_runner database (checkpoints, run log, conversations, usage)
+panel ──Keycloak token──> agentgateway :8050 /assistant/ (HTTPS) ──> agent-runner :8060 ──same token──> agentgateway :8052 ──> /mcp/aistudio  (platform tools)
+  │                                                                       │                            (inside only)    ├──> /mcp/sandbox   (sandbox_run, workspaces)
+  └─ logs in to Keycloak                                                  │                                             ├──> /llm           (vLLM)
+     (realm aistudio)                                                     │                                             └──> /github        (after approval)
+                                                                          └── Postgres: agent_runner database (checkpoints, run log, conversations, usage)
 ```
 
 It holds no keys. Every tool call and every LLM call carries the caller's own Keycloak token
 through agentgateway, so no agent can do more than the caller could, however many run at once.
 agentgateway's `:8052` listener is for the runner inside the compose network and is never
 published; `:8050` is the HTTPS door for MCP clients outside ([mcp-server.md](mcp-server.md)).
+
+A browser panel reaches the runner at `https://<MCP_PUBLIC_HOST>:8050/assistant/` (the same
+paths as below, behind that prefix): HTTPS from the gateway's certificate, the token passed on
+untouched for the runner to check, CORS answered by the runner (`CORS_ORIGINS`), and the event
+stream forwarded as it comes. `:8060` stays for local tools and `curl` on the host. Every
+endpoint, ready to import into Postman, Insomnia or Bruno:
+[agent-runner.postman_collection.json](agent-runner.postman_collection.json).
 
 Each agent opens one MCP session per connector in the registry (see [Packs](#packs)), at
 `GATEWAY_URL/mcp/<connector>`, and calls each tool on the connector that listed it. A connector
@@ -149,6 +156,52 @@ is not retried, since it spends the subscription.
 Each line of Claude Code's stream becomes a run event (`step_started` / `step_result` per tool
 call), a usage row per turn, and a span: `agent:coder` with a generation per turn and a tool
 span per call ([Traces](#traces)).
+
+### Chat agents on Claude
+
+The `aistudio` pack has the three chat agents again on Claude Code, for a subscription's own user
+while there is no API key or vLLM: `analyst-claude`, `assistant-claude` and `diagnostics-claude`.
+Each has its langgraph twin's purpose and platform tools and the model file `claude-chat`
+(Claude Sonnet 5.5, `users: [rsingh]`). The analyst also has `Bash(python3 *)` for statistics,
+and diagnostics the repo's Read, Glob and Grep, to read the code a log line points at. The panel sends `{"harness": "assistant-claude", ...}` with a turn;
+`GET /harnesses` lists them, with `engine: claude-code`, only for that user.
+
+```yaml
+kind: agent
+name: assistant-claude
+engine: claude-code
+model: claude-chat
+tools: [aistudio/summary, aistudio/check_service_health, ...]   # exact names, no wildcards
+claude:
+  allowed_tools: []          # Claude Code's own tools: none, only the platform tools above
+  workspace: none            # none: an empty folder | shallow: the latest commit | full (default)
+  max_turns: 10
+budgets: { tokens: 200000, seconds: 180 }
+```
+
+A claude-code agent's `tools` reach Claude Code as MCP tools (`mcp__aistudio__summary`): the
+step's MCP config names only its connectors, at `agentgateway-sandbox:8051/mcp/<name>` with the
+caller's token (`--strict-mcp-config`, so a `.mcp.json` in the repo adds nothing). That route
+allows only the tools some claude-code agent names, only for the subscription's users, and still
+the connector's role rules; aistudio-mcp checks the token again. So nothing else running in a
+workspace, such as a repo's tests in a coding workflow, can reach more than the chat agents can,
+and `start_workload` or `delete_run_results` not at all.
+
+The question goes to one agent, with the conversation and panel context, and its reply is the
+answer: no planner, which runs on vLLM. Turns count against the same Claude limits as the
+workflows ([Usage and limits](#usage-and-limits)).
+
+An agent that can't edit (no Edit, Write, MultiEdit or NotebookEdit) costs one container per turn:
+
+- Its workspace is what `claude.workspace` asks for. `none` opens no container at all, and
+  `shallow` clones only the latest commit. The coding agents keep `full`, since diffs and merge
+  bases need the history.
+- The tree a step leaves isn't saved (`keep: false`), so there's no snapshot to pack, and no
+  diff step.
+- In a conversation, the workspace stays open for the next turn of the same agent, and only the
+  first turn opens one. It's kept in the runner's memory: after a restart, or once sandbox-mcp's
+  TTL (`SANDBOX_WORKSPACE_TTL_HOURS`, 24) has deleted it, the next turn opens a new one. Without a
+  conversation, it's closed after the turn.
 
 ## Workflows
 
@@ -319,6 +372,9 @@ used, left, and when its oldest usage drops out.
 
 ## Setup
 
+The chat needs a model: vLLM (step 1) for everyone, or, with neither vLLM nor an API key, your
+own Claude subscription for you alone (step 1b).
+
 1. Point the gateway at an OpenAI-compatible LLM in `.env`:
 
    ```bash
@@ -329,6 +385,15 @@ used, left, and when its oldest usage drops out.
 
    The model needs tool calling (vLLM: `--enable-auto-tool-choice` and the model's
    `--tool-call-parser`) and JSON-schema output for the plan.
+
+1b. Or the Claude chat agents ([Chat agents on Claude](#chat-agents-on-claude)):
+   - Run `claude setup-token` on your own machine.
+   - Put the token in `.env` yourself as `CLAUDE_CODE_OAUTH_TOKEN=`, with no line breaks: `make mcp-up` checks.
+   - Make sure your Keycloak username is in `users` of
+     `agent-runner/platform/packs/aistudio/models/claude-chat.yaml`, then run `make registry`.
+   - Give yourself the operator or admin role (the workspace tools need it).
+   - The panel sends `"harness": "assistant-claude"` (or `analyst-claude`, `diagnostics-claude`)
+     with each turn. `make mcp-up` also builds the workspace image they run in.
 
 2. Start the profile: `make mcp-up`. The runner creates its `agent_runner` database on first
    start.
@@ -454,7 +519,9 @@ curl -N http://localhost:8060/runs -H "Authorization: Bearer $T" \
   -d '{"message": "Which model had the best throughput on T4, and are the services healthy?"}'
 ```
 
-Runs are live: one with no stream attached for `STREAM_GRACE_SECONDS` is cancelled.
+Runs are live: one with no stream attached for `STREAM_GRACE_SECONDS` is cancelled. A quiet
+stream gets a `: ping` comment every `STREAM_PING_SECONDS` (15), so proxies keep it open while
+a Claude step works.
 
 ## Limits
 

@@ -1,0 +1,23 @@
+kind: agent
+name: assistant-claude
+engine: claude-code
+# assistant's job and tools, on Claude Code and your subscription: only you, and only by name
+# (POST /runs with harness: assistant-claude). Reads only.
+purpose: >-
+  General questions about the platform and its runs that need a few lookups and no deep dive:
+  status of a task, what ran recently, whether the services are up.
+model: claude-chat
+tools:
+  - aistudio/list_benchmarks
+  - aistudio/get_benchmark
+  - aistudio/summary
+  - aistudio/workload_history
+  - aistudio/platform_catalog
+  - aistudio/model_config
+  - aistudio/get_task_status
+  - aistudio/check_service_health
+claude:
+  allowed_tools: []                   # the platform tools only
+  workspace: none                     # no code, so no clone
+  max_turns: 10
+budgets: { tokens: 200000, seconds: 180 }

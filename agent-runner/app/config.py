@@ -72,6 +72,7 @@ class Settings(BaseSettings):
 
     # Runs are live: one with no stream attached for this long is cancelled.
     stream_grace_seconds: int = 30
+    stream_ping_seconds: float = 15   # an SSE comment on a quiet stream
 
     # Caps on text that reaches a model: one tool result, one task output passed to another agent.
     # A lower tool cap reads faster on slow hardware but can cut off the rows a question needs.

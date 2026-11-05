@@ -1,0 +1,23 @@
+kind: agent
+name: analyst-claude
+engine: claude-code
+# analyst's job and tools, on Claude Code and your subscription: only you, and only by name
+# (POST /runs with harness: analyst-claude). Reads only.
+purpose: >-
+  Benchmark numbers: find, compare and explain benchmark runs and their throughput and latency,
+  what models and nodes can be run, and the default config for a model. Can run a short Python
+  program in a no-network sandbox to compute statistics over the data it fetched.
+model: claude-chat
+tools:
+  - aistudio/list_benchmarks
+  - aistudio/get_benchmark
+  - aistudio/summary
+  - aistudio/throughput_compare
+  - aistudio/workload_history
+  - aistudio/platform_catalog
+  - aistudio/model_config
+claude:
+  allowed_tools: ["Bash(python3 *)"]   # statistics over what the tools returned
+  workspace: none                     # no code: the platform tools are its data
+  max_turns: 20
+budgets: { tokens: 400000, seconds: 300 }

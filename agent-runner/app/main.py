@@ -239,12 +239,15 @@ async def get_usage(since: datetime | None = None, by: Literal["day", "run", "ag
 
 @app.get("/harnesses")
 async def list_harnesses(who: Identity = Depends(caller)):
-    """The harnesses this caller can start: those left with a tool after the caller's role."""
+    """The harnesses this caller can start: those left with a tool after the caller's role, and
+    the claude-code chat agents on a subscription that is the caller's."""
     async with mcp.session(who.token, "harnesses") as s:
         tools = await mcp.list_tools(s)
-    return [{"name": n, "purpose": h.purpose,
+    mine = {n: h for n, h in harnesses.load().items()
+            if h.engine == "claude-code" and h.tools and claude.allowed(h, who.user) and harnesses.tools_for(h, tools)}
+    return [{"name": n, "purpose": h.purpose, "engine": h.engine,
              "tools": [t["name"] for t in harnesses.tools_for(h, tools)]}
-            for n, h in harnesses.available(tools).items()]
+            for n, h in {**harnesses.available(tools), **mine}.items()]
 
 
 @app.get("/contract")

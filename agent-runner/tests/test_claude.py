@@ -42,6 +42,7 @@ RESULT = {"type": "result", "result": "Added the line.", "is_error": False, "num
 @pytest.fixture(autouse=True)
 def fresh_usage(monkeypatch):
     monkeypatch.setattr(usage, "store", usage.Usage())
+    monkeypatch.setattr(claude, "_kept", {})
 
 
 @pytest.fixture
@@ -142,6 +143,88 @@ def test_a_used_up_window_refuses_new_runs_with_when_it_frees(signer, monkeypatc
         assert u["totals"][0]["agent"] == "coder" and u["windows"]["day"]["left"] == 0
 
 
+async def test_a_claude_chat_agent_gets_its_platform_tools_its_job_and_no_empty_diff(sandbox):
+    fake_mcp, _ = sandbox
+    fake_mcp["answers"]["workspace_diff"] = lambda a: json.dumps({"files": [], "diff": "", "truncated": False})
+    runs = RunManager(run_graph.build(InMemorySaver()), RunLog())
+    run = await runs.start(RSINGH, "best throughput on T4?", "analyst-claude")
+    events = []
+    async with asyncio.timeout(10):
+        async for line in runs.stream(run):
+            events.append(json.loads(line.split("data: ", 1)[1]))
+    assert events[-1]["status"] == "ok"
+    h = harnesses.load()["analyst-claude"]
+    [args] = called(fake_mcp, "workspace_claude")
+    assert args["model"] == "claude-sonnet-5-5" and args["mcp"] == ["aistudio"]
+    assert args["tools"] == h.claude.allowed_tools + [f"mcp__aistudio__{t.split('/')[1]}" for t in h.tools]
+    assert "mcp__aistudio__summary" in args["tools"] and "You are the analyst-claude agent" in args["prompt"]
+    assert args["prompt"].index("You are the") < args["prompt"].index("best throughput on T4?")
+    # Nothing changed in the checkout: the answer alone.
+    assert [e for e in events if e["type"] == "message"][-1]["text"] == "Added the line."
+    # A coder step gets no MCP server.
+    assert claude.connectors(harnesses.load()["coder"]) == []
+
+
+async def ask(harness: str, conversation: str | None = None, message: str = "status?") -> list[dict]:
+    log = RunLog()
+    if conversation:      # the in-memory run log keeps turns only for a conversation it has
+        log.mem_convs[conversation] = {"id": conversation, "sub": RSINGH.sub, "title": "", "deleted": False,
+                                       "turns": []}
+    runs = RunManager(run_graph.build(InMemorySaver()), log)
+    run = await runs.start(RSINGH, message, harness, conversation)
+    events = []
+    async with asyncio.timeout(10):
+        async for line in runs.stream(run):
+            events.append(json.loads(line.split("data: ", 1)[1]))
+    return events
+
+
+async def test_a_chat_agent_keeps_one_workspace_per_conversation_and_takes_no_diff(sandbox):
+    fake_mcp, _ = sandbox
+    for _ in range(2):
+        assert (await ask("assistant-claude", "conv-0123456789abcdef"))[-1]["status"] == "ok"
+    # One open for both turns, with no repo (assistant-claude has workspace: none); never a diff
+    # or a close; neither step keeps its tree.
+    assert called(fake_mcp, "workspace_open") == [{"repo": "", "ref": ""}]
+    assert called(fake_mcp, "workspace_diff") == [] and called(fake_mcp, "workspace_close") == []
+    steps = called(fake_mcp, "workspace_claude")
+    assert len(steps) == 2 and {s["workspace_id"] for s in steps} == {"ws1"} and not any(s["keep"] for s in steps)
+    # Another conversation, or another agent, gets its own.
+    await ask("assistant-claude", "conv-fedcba9876543210")
+    await ask("diagnostics-claude", "conv-0123456789abcdef")
+    assert called(fake_mcp, "workspace_open")[1:] == [
+        {"repo": "", "ref": ""}, {"repo": "corespan/aistudio-server", "ref": "master", "depth": 1}]
+
+
+async def test_without_a_conversation_the_workspace_is_closed_after_the_turn(sandbox):
+    fake_mcp, _ = sandbox
+    await ask("analyst-claude")
+    assert len(called(fake_mcp, "workspace_open")) == 1 and called(fake_mcp, "workspace_close") == [{"workspace_id": "ws1"}]
+    assert called(fake_mcp, "workspace_diff") == []
+
+
+async def test_a_kept_workspace_past_its_ttl_is_opened_again(sandbox):
+    fake_mcp, _ = sandbox
+    await ask("assistant-claude", "conv-0123456789abcdef")
+    step = fake_mcp["answers"]["workspace_claude"]
+    calls = []
+
+    async def gone_once(args, progress):
+        calls.append(args["workspace_id"])
+        if len(calls) == 1:
+            return "Refused: unknown workspace (closed, or expired after 24h)"
+        return await step(args, progress)
+    fake_mcp["answers"]["workspace_claude"] = gone_once
+    assert (await ask("assistant-claude", "conv-0123456789abcdef"))[-1]["status"] == "ok"
+    assert len(called(fake_mcp, "workspace_open")) == 2 and len(calls) == 2
+
+
+def test_a_coding_agent_still_gets_a_full_clone_its_diff_and_a_kept_tree():
+    coder = harnesses.load()["coder"]
+    assert claude.edits(coder) and coder.claude.workspace == "full"
+    assert not any(claude.edits(harnesses.load()[n]) for n in ("analyst-claude", "assistant-claude", "diagnostics-claude"))
+
+
 def test_someone_elses_subscription_is_refused(signer):
     with TestClient(app) as client:
         r = client.post("/runs", json={"message": "x", "harness": "coder"},
@@ -170,7 +253,10 @@ async def test_one_claude_step_runs_at_a_time(sandbox):
 
 
 def test_claude_code_agents_are_never_offered_to_the_planner(fake_mcp):
-    assert not {"coder", "reviewer"} & set(harnesses.available(fake_mcp["tools"]))
+    offered = set(harnesses.available(fake_mcp["tools"]))
+    assert {"analyst", "diagnostics"} <= offered            # the caller has these tools
+    # Not even the chat agents, which list the same platform tools: they spend one subscription.
+    assert not {"coder", "reviewer", "analyst-claude", "diagnostics-claude"} & offered
 
 
 class FakeObs:

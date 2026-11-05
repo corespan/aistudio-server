@@ -104,8 +104,8 @@ corespan/aistudio-server#8). It replaces the earlier idea of a stateless chat pr
 UI actions: it runs agents that look things up and answer, and changes nothing.
 
 ```
-panel ──Keycloak token──> agent-runner :8060 ──same token──> agentgateway :8052 (inside) ──> /mcp/aistudio, /mcp/sandbox
-                  │  LangGraph: plan → agents (parallel) → answer                       └──> /llm (vLLM)
+panel ──HTTPS :8050/assistant/──> agent-runner :8060 ──same token──> agentgateway :8052 (inside) ──> /mcp/aistudio, /mcp/sandbox
+                  │  LangGraph: plan → agents (parallel) → answer                               └──> /llm (vLLM)
                   └─ Postgres: checkpoints, run log, conversations
 ```
 

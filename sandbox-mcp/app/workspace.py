@@ -34,6 +34,7 @@ REPO = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
 REF = re.compile(r"^(?!-)[A-Za-z0-9._/-]{1,200}$")           # branch, tag, sha, pull/<n>/head
 TOOL = re.compile(r"^[A-Za-z_]+(\([^()\n]{1,200}\))?$")      # Read, Bash(git diff *)
 MODEL = re.compile(r"^[a-z0-9.-]{1,64}$")
+CONNECTOR = re.compile(r"^[a-z0-9-]{1,40}$")         # an MCP server at GATEWAY/mcp/<name>
 ID = re.compile(r"^[0-9a-f]{16}$")
 # Every variable a workspace container can get; nothing outside this set, ever (tests check it).
 # The JWT goes only to the clone and the Claude step, not to checks running the repo's own code.
@@ -223,16 +224,36 @@ def _latest(ws_id: str, meta: dict) -> bytes:
 
 # --- the five steps ----------------------------------------------------------------------------
 
-def open_(client, owner: str, token: str, repo: str, ref: str, base: str | None = None) -> dict:
+def _empty() -> bytes:
+    """Snapshot 0 of a workspace with no repo: an archive with nothing in it."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz"):
+        pass
+    return buf.getvalue()
+
+
+def open_(client, owner: str, token: str, repo: str, ref: str, base: str | None = None,
+          depth: int | None = None) -> dict:
     """Clone ``repo`` at ``ref`` through the gateway. The diff base is ``ref`` itself, or its
-    merge base with ``base`` (a PR head against its target branch)."""
+    merge base with ``base`` (a PR head against its target branch).
+
+    ``repo`` empty: an empty /work and no container at all (chat agents that need no code).
+    ``depth``: a shallow clone of that many commits; not with ``base``, which needs history."""
+    if not repo:
+        sweep()
+        ws_id = secrets.token_hex(8)
+        meta = {"owner": owner, "repo": "", "ref": "", "base": "", "created": time.time()}
+        return {"id": ws_id, "repo": "", "ref": "", "base": "", "snapshot": _save(ws_id, meta, _empty())}
     if not REPO.match(repo):
         raise Refused("repo must be owner/name")
+    if depth is not None and (base or not 1 <= depth <= 1000):
+        raise Refused("depth: 1 to 1000 commits, and only without base")
     for r in (ref, base) if base else (ref,):
         if not REF.match(r) or ".." in r:
             raise Refused(f"ref {r!r}: a branch, tag, commit or pull/<n>/head")
     sweep()
-    script = ('git clone -q "$WS_URL" /work && git fetch -q origin "$WS_REF" '
+    shallow = f" --depth {int(depth)}" if depth else ""
+    script = (f'git clone -q{shallow} "$WS_URL" /work && git fetch -q{shallow} origin "$WS_REF" '
               '&& git checkout -q -B work FETCH_HEAD '
               '&& git config user.name agent && git config user.email agent@aistudio.invalid '
               '&& if [ -n "$WS_BASE" ]; then git fetch -q origin "$WS_BASE" && git merge-base FETCH_HEAD HEAD; '
@@ -256,8 +277,14 @@ def weighted(usage: dict) -> float:
 
 def claude(client, owner: str, token: str, ws_id: str, prompt: str, model: str, tools: list[str],
            max_turns: int, seconds: int, on_line: Callable[[str], None] | None = None,
-           max_weighted: int | None = None) -> dict:
+           max_weighted: int | None = None, mcp: list[str] | None = None, keep: bool = True) -> dict:
     """One headless Claude Code run on the latest snapshot; the tree it leaves is the next one.
+
+    ``mcp``: MCP servers Claude Code connects to, each at agentgateway-sandbox's /mcp/<name> with
+    the caller's token; that route allows only the tools the agents name. ``tools`` says which
+    of them this step may call (mcp__<name>__<tool>). ``keep`` False: the tree it leaves is not
+    saved (a read-only agent), so the next step starts from the same snapshot, and no time goes
+    on packing it.
 
     ``max_weighted``: the runner's cap for this step. Past it the container is killed mid-run,
     nothing is saved, and the result says budget_exceeded.
@@ -271,8 +298,16 @@ def claude(client, owner: str, token: str, ws_id: str, prompt: str, model: str, 
         raise Refused("tools: 1 to 30 Claude Code tool rules, such as Read or Bash(git diff *)")
     if not 1 <= max_turns <= 200:
         raise Refused("max_turns must be 1 to 200")
+    mcp = mcp or []
+    if len(mcp) > 5 or not all(CONNECTOR.match(c) for c in mcp):
+        raise Refused("mcp: up to 5 connector names, such as aistudio")
+    # Only these servers: --strict-mcp-config ignores any .mcp.json in the repo.
+    servers = {c: {"type": "http", "url": f"{GATEWAY}/mcp/{c}", "headers": {"Authorization": f"Bearer {token}"}}
+               for c in mcp}
+    files = {"prompt.txt": prompt, "tools.txt": "\n".join(tools), "mcp.json": json.dumps({"mcpServers": servers})}
     script = ('mapfile -t T < /tmp/tools.txt; claude -p --output-format stream-json --verbose '
-              '--model "$WS_MODEL" --max-turns "$WS_TURNS" --allowedTools "${T[@]}" < /tmp/prompt.txt')
+              '--model "$WS_MODEL" --max-turns "$WS_TURNS" --mcp-config /tmp/mcp.json --strict-mcp-config '
+              '--allowedTools "${T[@]}" < /tmp/prompt.txt')
     turns: dict = {}      # message id -> its usage; streamed parts of one message repeat the id
     used = [0.0]
 
@@ -291,8 +326,8 @@ def claude(client, owner: str, token: str, ws_id: str, prompt: str, model: str, 
         return False
 
     step = _run(client, script, env(token, model=model, turns=str(max_turns)), seconds,
-                restore=_latest(ws_id, meta), files={"prompt.txt": prompt, "tools.txt": "\n".join(tools)},
-                save=True, on_line=watch)
+                restore=_latest(ws_id, meta), files=files,
+                save=keep, on_line=watch)
     over = max_weighted is not None and used[0] > max_weighted
     result = None
     for line in reversed(step.stdout.splitlines()):

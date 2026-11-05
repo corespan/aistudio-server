@@ -4,7 +4,8 @@
 # other route out). Its own container because agentgateway can't bind a listener to one network:
 # on the main gateway, sandboxes could also reach /mcp/* and /llm. /llm/anthropic checks the
 # Keycloak token and its user, then swaps it for your Claude subscription token, which only this
-# container holds.
+# container holds. /mcp/<name>: only the tools the claude-code agents name (packs/*/agents/*.yaml),
+# for the same users, with the token passed on so the MCP server checks it again.
 config:
   adminAddr: 127.0.0.1:15000
 binds:
@@ -52,6 +53,24 @@ binds:
             anthropic-beta: oauth-2025-04-20
           remove:
           - x-api-key
+    - matches:
+      - path:
+          pathPrefix: /mcp/aistudio
+      backends:
+      - mcp:
+          targets:
+          - name: aistudio
+            mcp:
+              host: http://aistudio-mcp:8081/mcp
+      policies:
+        jwtAuth: *id001
+        backendAuth:
+          passthrough: {}
+        mcpAuthorization:
+          rules:
+          - (jwt.roles.aistudio in ['viewer', 'operator', 'admin'] && mcp.tool.name in ['workload_history', 'throughput_compare', 'check_service_health', 'platform_catalog', 'list_benchmarks', 'get_benchmark', 'summary', 'model_config', 'get_task_status', 'get_task_logs']) && jwt.preferred_username in ['rsingh'] && mcp.tool.name in ['check_clock_skew', 'check_node_docker', 'check_service_health', 'check_ssh_connectivity', 'check_tls_cert', 'container_diff', 'docker_logs', 'frontend_check', 'get_benchmark', 'get_task_logs', 'get_task_status', 'git_log', 'git_show', 'grep_logs', 'inspect_container', 'list_benchmarks', 'list_containers', 'list_dir', 'list_listening_ports', 'model_config', 'network_check', 'node_docker_logs', 'node_exec', 'platform_catalog', 'queue_status', 'read_file', 'summary', 'throughput_compare', 'timeline', 'workload_history']
+          - (jwt.roles.aistudio in ['operator', 'admin'] && mcp.tool.name in ['start_workload', 'start_jupyter', 'stop_jupyter', 'delete_run_results']) && jwt.preferred_username in ['rsingh'] && mcp.tool.name in ['check_clock_skew', 'check_node_docker', 'check_service_health', 'check_ssh_connectivity', 'check_tls_cert', 'container_diff', 'docker_logs', 'frontend_check', 'get_benchmark', 'get_task_logs', 'get_task_status', 'git_log', 'git_show', 'grep_logs', 'inspect_container', 'list_benchmarks', 'list_containers', 'list_dir', 'list_listening_ports', 'model_config', 'network_check', 'node_docker_logs', 'node_exec', 'platform_catalog', 'queue_status', 'read_file', 'summary', 'throughput_compare', 'timeline', 'workload_history']
+          - (jwt.roles.aistudio in ['admin'] && mcp.tool.name in ['timeline', 'list_containers', 'docker_logs', 'inspect_container', 'container_diff', 'read_file', 'list_dir', 'grep_logs', 'git_log', 'git_show', 'network_check', 'list_listening_ports', 'tcpdump_capture', 'check_tls_cert', 'check_clock_skew', 'frontend_check', 'queue_status', 'check_ssh_connectivity', 'check_node_docker', 'node_docker_logs', 'node_exec']) && jwt.preferred_username in ['rsingh'] && mcp.tool.name in ['check_clock_skew', 'check_node_docker', 'check_service_health', 'check_ssh_connectivity', 'check_tls_cert', 'container_diff', 'docker_logs', 'frontend_check', 'get_benchmark', 'get_task_logs', 'get_task_status', 'git_log', 'git_show', 'grep_logs', 'inspect_container', 'list_benchmarks', 'list_containers', 'list_dir', 'list_listening_ports', 'model_config', 'network_check', 'node_docker_logs', 'node_exec', 'platform_catalog', 'queue_status', 'read_file', 'summary', 'throughput_compare', 'timeline', 'workload_history']
     - matches:
       - path:
           exact: /git/corespan/aistudio-server.git/info/refs
