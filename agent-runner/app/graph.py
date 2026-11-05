@@ -78,8 +78,12 @@ def _run_id(config) -> str:
 
 # ── planning ────────────────────────────────────────────────────────────────
 
-def validate(plan: dict, agents: dict) -> str | None:
-    """Why this plan can't run, or None. Every rule is checked here, not trusted to the model."""
+def validate(plan: dict, agents: dict, planned: bool = True) -> str | None:
+    """Why this plan can't run, or None. Every rule is checked here, not trusted to the model.
+
+    ``planned=False``: the runner built the plan itself (a harness named in the request). Its one
+    task is the user's message plus the context and history framing, each already capped, so the
+    2000-character limit on what a planner model writes doesn't apply."""
     tasks = plan.get("tasks") or []
     if not tasks:
         return "the plan has no tasks"
@@ -92,7 +96,7 @@ def validate(plan: dict, agents: dict) -> str | None:
     for t in tasks:
         if t["agent"] not in agents:
             return f"task {t['id']}: unknown agent {t['agent']!r}; use one of {sorted(agents)}"
-        if not t["task"].strip() or len(t["task"]) > 2000:
+        if not t["task"].strip() or (planned and len(t["task"]) > 2000):
             return f"task {t['id']}: the task text is empty or too long"
         # Needs only point backwards, so the graph can't have a cycle.
         bad = [n for n in t.get("needs") or [] if n not in earlier]
@@ -157,7 +161,8 @@ async def plan_node(state: RunState, config) -> dict:
 async def validate_node(state: RunState) -> dict:
     emit = get_stream_writer()
     plan = state.get("plan")
-    error = state.get("error") if plan is None else validate(plan, state["agents"])
+    error = (state.get("error") if plan is None
+             else validate(plan, state["agents"], planned=not state.get("harness")))
     if error:
         emit({"type": "error", "detail": f"plan rejected: {error}"})
         return {"error": error, "plan": None, "replans": state.get("replans", 0) + 1}

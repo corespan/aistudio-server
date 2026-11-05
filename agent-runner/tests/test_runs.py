@@ -199,6 +199,19 @@ async def test_naming_a_harness_skips_the_planner(fake_llm, fake_mcp):
     assert of(events, "message")[0]["text"] == "it is up"
 
 
+async def test_a_named_harness_runs_a_task_longer_than_a_planner_may_write(fake_llm, fake_mcp):
+    # A follow-up turn: the message plus the conversation so far is well over 2000 characters.
+    scripts, _ = fake_llm
+    scripts["worker"] = lambda m: "done"
+    events = await run_to_end("compare these runs " + "x" * 3000, harness="assistant")
+    assert not of(events, "error")
+    assert of(events, "message")[0]["text"] == "done"
+    # What a planner model writes is still capped.
+    plan = {"tasks": [{"id": "t1", "agent": "assistant", "task": "x" * 2001, "needs": []}]}
+    assert "too long" in run_graph.validate(plan, {"assistant": ""})
+    assert run_graph.validate(plan, {"assistant": ""}, planned=False) is None
+
+
 async def test_a_quiet_stream_gets_a_ping_so_proxies_keep_it_open(monkeypatch):
     from types import SimpleNamespace
 
