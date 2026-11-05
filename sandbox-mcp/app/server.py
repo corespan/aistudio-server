@@ -136,8 +136,8 @@ async def workspace_open(repo: str, ref: str = "master", base: str | None = None
 async def workspace_claude(workspace_id: str, prompt: str, model: str, tools: list[str], max_turns: int = 30,
                            timeout_seconds: int = 900, max_weighted_tokens: int | None = None,
                            mcp: list[str] | None = None, keep: bool = True,
-                           ctx: Context | None = None) -> str:
-    """Run Claude Code headless on the workspace's latest snapshot and keep the tree it leaves as the next snapshot. Each stream-json line goes out as a progress notification; returns the final result event, exit code and snapshot number (JSON). Past max_weighted_tokens (input + cache writes + output + 0.1 x cache reads) the step is stopped and budget_exceeded is true. mcp: MCP servers (connector names) Claude Code reaches through the sandbox gateway; tools says which of their tools it may call (mcp__<name>__<tool>). keep false: the tree it leaves is not saved (read-only agents)."""
+                           panel: list[dict] | None = None, ctx: Context | None = None) -> str:
+    """Run Claude Code headless on the workspace's latest snapshot and keep the tree it leaves as the next snapshot. Each stream-json line goes out as a progress notification; returns the final result event, exit code and snapshot number (JSON). Past max_weighted_tokens (input + cache writes + output + 0.1 x cache reads) the step is stopped and budget_exceeded is true. mcp: MCP servers (connector names) Claude Code reaches through the sandbox gateway; tools says which of their tools it may call (mcp__<name>__<tool>). keep false: the tree it leaves is not saved (read-only agents). panel: browser panel tools ({name, description, inputSchema}) served as the local MCP server `panel`, which only acknowledges calls (mcp__panel__<name>)."""
     lines = iter(range(1, 10**9))
 
     def on_line(line: str) -> None:
@@ -146,7 +146,7 @@ async def workspace_claude(workspace_id: str, prompt: str, model: str, tools: li
             anyio.from_thread.run(ctx.report_progress, next(lines), None, line[:100_000])
     return await _step(ctx, lambda sub, token: workspace.claude(
         _ws_client(), sub, token, workspace_id, prompt, model, tools, max_turns, timeout_seconds, on_line,
-        max_weighted_tokens, mcp, keep))
+        max_weighted_tokens, mcp, keep, panel))
 
 
 async def workspace_exec(workspace_id: str, command: str, timeout_seconds: int = 600,

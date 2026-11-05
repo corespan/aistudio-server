@@ -34,6 +34,8 @@ REPO = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
 REF = re.compile(r"^(?!-)[A-Za-z0-9._/-]{1,200}$")           # branch, tag, sha, pull/<n>/head
 TOOL = re.compile(r"^[A-Za-z_]+(\([^()\n]{1,200}\))?$")      # Read, Bash(git diff *)
 MODEL = re.compile(r"^[a-z0-9.-]{1,64}$")
+PANEL_TOOL = re.compile(r"^[a-z][a-z0-9_]{0,63}$")                # a panel tool: filter_benchmarks
+PANEL_SERVER = (Path(__file__).parent / "panel_server.py").read_text(encoding="utf-8")
 CONNECTOR = re.compile(r"^[a-z0-9-]{1,40}$")         # an MCP server at GATEWAY/mcp/<name>
 ID = re.compile(r"^[0-9a-f]{16}$")
 # Every variable a workspace container can get; nothing outside this set, ever (tests check it).
@@ -277,7 +279,8 @@ def weighted(usage: dict) -> float:
 
 def claude(client, owner: str, token: str, ws_id: str, prompt: str, model: str, tools: list[str],
            max_turns: int, seconds: int, on_line: Callable[[str], None] | None = None,
-           max_weighted: int | None = None, mcp: list[str] | None = None, keep: bool = True) -> dict:
+           max_weighted: int | None = None, mcp: list[str] | None = None, keep: bool = True,
+           panel: list[dict] | None = None) -> dict:
     """One headless Claude Code run on the latest snapshot; the tree it leaves is the next one.
 
     ``mcp``: MCP servers Claude Code connects to, each at agentgateway-sandbox's /mcp/<name> with
@@ -288,6 +291,9 @@ def claude(client, owner: str, token: str, ws_id: str, prompt: str, model: str, 
 
     ``max_weighted``: the runner's cap for this step. Past it the container is killed mid-run,
     nothing is saved, and the result says budget_exceeded.
+
+    ``panel``: panel tools ({name, description, inputSchema}) offered as the local MCP server
+    `panel` (panel_server.py), which only acknowledges calls; the runner sends them to the browser.
     """
     meta = _meta(ws_id, owner)
     if not prompt.strip() or len(prompt) > 100_000:
@@ -304,7 +310,21 @@ def claude(client, owner: str, token: str, ws_id: str, prompt: str, model: str, 
     # Only these servers: --strict-mcp-config ignores any .mcp.json in the repo.
     servers = {c: {"type": "http", "url": f"{GATEWAY}/mcp/{c}", "headers": {"Authorization": f"Bearer {token}"}}
                for c in mcp}
-    files = {"prompt.txt": prompt, "tools.txt": "\n".join(tools), "mcp.json": json.dumps({"mcpServers": servers})}
+    files = {"prompt.txt": prompt, "tools.txt": "\n".join(tools)}
+    if panel:
+        if "panel" in mcp:
+            raise Refused("mcp: panel is the local panel server, not a gateway connector")
+        if len(panel) > 30 or not all(isinstance(t, dict) and PANEL_TOOL.match(str(t.get("name")))
+                                      and isinstance(t.get("description"), str)
+                                      and isinstance(t.get("inputSchema"), dict) for t in panel):
+            raise Refused("panel: up to 30 tools, each {name, description, inputSchema}")
+        panel_json = json.dumps([{k: t[k] for k in ("name", "description", "inputSchema")} for t in panel])
+        if len(panel_json) > 50_000:
+            raise Refused("panel: the tool list is over 50000 characters")
+        servers["panel"] = {"type": "stdio", "command": "/opt/runner-venv/bin/python",
+                            "args": ["/tmp/panel.py", "/tmp/panel.json"]}
+        files |= {"panel.py": PANEL_SERVER, "panel.json": panel_json}
+    files["mcp.json"] = json.dumps({"mcpServers": servers})
     script = ('mapfile -t T < /tmp/tools.txt; claude -p --output-format stream-json --verbose '
               '--model "$WS_MODEL" --max-turns "$WS_TURNS" --mcp-config /tmp/mcp.json --strict-mcp-config '
               '--allowedTools "${T[@]}" < /tmp/prompt.txt')

@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from functools import lru_cache
 from pathlib import Path
 
@@ -31,6 +33,9 @@ from app.contract import Connector, Harness, Model, Pack, Platform, Workflow
 # kind -> model. pack.yaml is read on its own; later kinds are added here as they are built.
 KINDS = {"agent": Harness, "connector": Connector, "model": Model, "workflow": Workflow}
 LOCK = "registry.lock.json"
+# Panel tools (panel/<name>): the browser runs them, so they are a contract file, not a connector.
+PANEL = "panel-tools.json"
+PANEL_TOOL = re.compile(r"^[a-z][a-z0-9_]{0,63}$")   # sandbox-mcp checks the same
 # Keycloak (realm aistudio, gateway/keycloak/) issues every token; MCP_PUBLIC_URL comes from compose.
 ISSUER = "${MCP_PUBLIC_URL}/realms/aistudio"
 JWKS = {"url": "http://keycloak:8080/realms/aistudio/protocol/openid-connect/certs"}
@@ -109,6 +114,7 @@ class Registry:
     models: dict[str, Model]
     repos: list[str]
     workflows: dict[str, Workflow]
+    panel: dict[str, dict]          # panel tool name -> {description, inputSchema}
 
 
 def _yaml(path: Path):
@@ -127,6 +133,8 @@ def build(root: Path) -> dict:
     except (OSError, yaml.YAMLError, ValidationError) as exc:
         raise Invalid(f"platform.yaml: {exc}") from exc
     body: dict = {"platform": platform.model_dump(), "packs": {}, **{k: {} for k in KINDS}}
+    body["panel"], panel_errors = _panel(root / PANEL)
+    errors += panel_errors
 
     for name in platform.packs:
         folder = root / "packs" / name
@@ -167,6 +175,9 @@ def build(root: Path) -> dict:
             connector, _, tool = pattern.partition("/")
             if not tool:
                 errors.append(f"{entry['source']}: tool {pattern!r} must be connector/tool")
+            elif connector == "panel":
+                if not any(fnmatchcase(name, tool) for name in body["panel"]):
+                    errors.append(f"{entry['source']}: tool {pattern!r} is not in {PANEL}")
             elif connector not in body["connector"]:
                 errors.append(f"{entry['source']}: tool {pattern!r} names connector {connector!r}, "
                               f"which no enabled pack has")
@@ -175,6 +186,27 @@ def build(root: Path) -> dict:
     if errors:
         raise Invalid("\n".join(errors))
     return {"hash": _hash(body), **body}
+
+
+def _panel(path: Path) -> tuple[dict, list[str]]:
+    """panel-tools.json's tools by short name, and what's wrong with it. No file: no panel tools."""
+    if not path.exists():
+        return {}, []
+    try:
+        tools = json.loads(path.read_text(encoding="utf-8"))["tools"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return {}, [f"{PANEL}: {exc}"]
+    out, errors = {}, []
+    for t in tools:
+        name = str(t.get("name", "")).removeprefix("panel/")
+        schema = t.get("inputSchema")
+        if not (t.get("name", "").startswith("panel/") and PANEL_TOOL.match(name)
+                and isinstance(t.get("description"), str) and isinstance(schema, dict)
+                and schema.get("type") == "object"):
+            errors.append(f"{PANEL}: {t.get('name')!r} needs a panel/<name>, a description and an object inputSchema")
+            continue
+        out[name] = {"description": t["description"], "inputSchema": schema}
+    return out, errors
 
 
 def _workflow_problems(wf: dict, body: dict) -> list[str]:
@@ -347,7 +379,8 @@ def render(body: dict) -> dict[Path, str]:
             if e["spec"]["engine"] == "claude-code":
                 for pattern in e["spec"]["tools"]:
                     connector, _, tool = pattern.partition("/")
-                    wanted.setdefault(connector, set()).add(tool)
+                    if connector != "panel":        # the panel runs in the browser: no route
+                        wanted.setdefault(connector, set()).add(tool)
         mcp_routes = [_sandbox_mcp(n, connectors[n], sorted(t), users) for n, t in sorted(wanted.items())]
         sandbox = {"config": {"adminAddr": "127.0.0.1:15000"},
                    "binds": [{"port": 8051, "listeners": [{"routes": [_anthropic(users)] + mcp_routes + [
@@ -369,7 +402,8 @@ def load() -> Registry:
         connectors={n: Connector.model_validate(e["spec"]) for n, e in body["connector"].items()},
         models={n: Model.model_validate(e["spec"]) for n, e in body["model"].items()},
         repos=body["platform"]["repos"],
-        workflows={n: Workflow.model_validate(e["spec"]) for n, e in body["workflow"].items()})
+        workflows={n: Workflow.model_validate(e["spec"]) for n, e in body["workflow"].items()},
+        panel=body.get("panel", {}))
 
 
 def main(argv: list[str]) -> int:

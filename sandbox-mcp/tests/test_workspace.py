@@ -7,6 +7,7 @@ import json
 import re
 import tarfile
 import time
+from pathlib import Path
 
 import pytest
 
@@ -261,6 +262,44 @@ def test_claude_code_reaches_only_the_named_mcp_servers_through_the_sandbox_gate
     with pytest.raises(workspace.Refused, match="mcp"):
         workspace.claude(docker, "rsingh", "jwt", ws["id"], "x", "claude-opus-5-5", ["Read"], 5, 60,
                          mcp=["../llm"])
+
+
+PANEL = [{"name": "filter_benchmarks", "description": "Filter the table.",
+          "inputSchema": {"type": "object", "properties": {"model": {"type": "string"}}}}]
+
+
+def test_panel_tools_come_from_a_local_server_that_only_acknowledges():
+    ws = opened()
+    docker = FakeDocker({"stdout": b"", "snapshot": tgz({"work/a.py": b"v0"})})
+    workspace.claude(docker, "rsingh", "jwt", ws["id"], "x", "claude-sonnet-5-5",
+                     ["mcp__aistudio__summary", "mcp__panel__filter_benchmarks"], 5, 60,
+                     mcp=["aistudio"], panel=PANEL)
+    files = files_in(docker.created[0].archives[1][1])
+    servers = json.loads(files["mcp.json"])["mcpServers"]
+    assert servers["panel"] == {"type": "stdio", "command": "/opt/runner-venv/bin/python",
+                                "args": ["/tmp/panel.py", "/tmp/panel.json"]}
+    assert set(servers) == {"aistudio", "panel"}             # no gateway route for the panel
+    assert json.loads(files["panel.json"]) == PANEL
+    assert files["panel.py"].decode() == workspace.PANEL_SERVER
+    for bad in ([{"name": "../x", "description": "", "inputSchema": {}}], [{"name": "x"}]):
+        with pytest.raises(workspace.Refused, match="panel"):
+            workspace.claude(FakeDocker(), "rsingh", "jwt", ws["id"], "x", "claude-opus-5-5", ["Read"], 5, 60,
+                             panel=bad)
+
+
+async def test_the_panel_server_lists_its_tools_and_acknowledges_a_call(tmp_path):
+    import sys
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    (tmp_path / "panel.json").write_text(json.dumps(PANEL), encoding="utf-8")
+    server = StdioServerParameters(command=sys.executable, args=[
+        str(Path(workspace.__file__).parent / "panel_server.py"), str(tmp_path / "panel.json")])
+    async with stdio_client(server) as (read, write), ClientSession(read, write) as s:
+        await s.initialize()
+        assert [t.name for t in (await s.list_tools()).tools] == ["filter_benchmarks"]
+        result = await s.call_tool("filter_benchmarks", {"model": "llama"})
+        assert "Sent to the user's panel: filter_benchmarks" in result.content[0].text
 
 
 @pytest.mark.parametrize("tools", [[], ["Bash(rm -rf /)\nRead"], ["Read; curl"]])

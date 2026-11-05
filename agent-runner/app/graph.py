@@ -243,7 +243,7 @@ async def task_node(arg: dict, config) -> dict:
                 break
             try:
                 async with asyncio.timeout(h.budgets.seconds), mcp.session(rt.token, run_id) as s:
-                    tools = harnesses.tools_for(h, await mcp.list_tools(s))
+                    tools = harnesses.tools_for(h, await mcp.list_tools(s)) + harnesses.panel_tools(h)
                     output = await agent.run(h, tools, s, rt.budget, emit, t["task"], arg["inputs"],
                                              rt.token)
                 result = {"status": "ok", "output": output}

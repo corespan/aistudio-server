@@ -1,0 +1,465 @@
+{
+  "connector": "panel",
+  "version": "2026-11-05.2",
+  "runs_in": "browser",
+  "notes": [
+    "Panel tools: what an agent may ask the AI Studio panel (the browser) to do. MCP tool format: name, description, inputSchema.",
+    "The panel keeps the same list (aistudio-app: Benchmarking/src/features/coremind/tools/panel-tools.json) and runs each tool; its tests check every one here has a client tool.",
+    "None of them writes or deletes: they navigate, filter, open logs and prefill forms or confirmations, and the user clicks. Real writes go through the backend's MCP tools, with approval.",
+    "Kept browser-only, never offered to an agent: fill_input and click_element (with a click they could start or delete), set_style (could hide or fake parts of the page), list_fields (only serves those)."
+  ],
+  "tools": [
+    {
+      "name": "panel/navigate",
+      "description": "Go to a section of the app.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "Section to open.",
+            "enum": [
+              "benchmarks",
+              "jupyter",
+              "blogs",
+              "about"
+            ]
+          }
+        },
+        "required": [
+          "section"
+        ]
+      },
+      "x-status": "existing",
+      "x-backend": "Every page shows data from aistudio-server (/api/v1/*)."
+    },
+    {
+      "name": "panel/go_back",
+      "description": "Go back to the previous page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "existing",
+      "x-backend": "—"
+    },
+    {
+      "name": "panel/filter_benchmarks",
+      "description": "Filter the Benchmarks table and chart. Pass only the filters to set; omitted ones are cleared.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model name, e.g. llama-3-8b-instruct."
+          },
+          "gpu_type": {
+            "type": "string",
+            "description": "GPU type, e.g. H100."
+          },
+          "node_ip": {
+            "type": "string",
+            "description": "Node IP."
+          },
+          "precision": {
+            "type": "string",
+            "description": "e.g. fp16, bf16, fp8."
+          },
+          "concurrency": {
+            "type": "string",
+            "description": "Concurrency level, e.g. 64."
+          },
+          "input_tokens": {
+            "type": "string",
+            "description": "Input token count."
+          },
+          "output_tokens": {
+            "type": "string",
+            "description": "Output token count."
+          }
+        }
+      },
+      "x-status": "new",
+      "x-backend": "GET /api/v1/benchmarks accepts model, gpu_type, node_ip, precision, concurrency, input_tokens, output_tokens. After the agent finds runs (list_benchmarks), it can show the same rows on the page.",
+      "x-frontend": "useBenchmarkFiltersStore.setFilters(); navigate to Benchmarks first."
+    },
+    {
+      "name": "panel/reset_filters",
+      "description": "Clear all benchmark table filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "existing",
+      "x-backend": "Clears the GET /api/v1/benchmarks filters."
+    },
+    {
+      "name": "panel/set_benchmark_type",
+      "description": "Switch the benchmark chart metric.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Metric to chart.",
+            "enum": [
+              "Throughput",
+              "TTFT",
+              "TPOT"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "x-status": "existing",
+      "x-backend": "Chooses which metric the chart plots (throughput / TTFT / TPOT)."
+    },
+    {
+      "name": "panel/show_benchmarks_as",
+      "description": "Switch the Benchmarks results between the chart and the table.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string",
+            "description": "Which view.",
+            "enum": [
+              "chart",
+              "table"
+            ]
+          }
+        },
+        "required": [
+          "view"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "Same data (GET /api/v1/benchmarks); lets the agent point at exact rows.",
+      "x-frontend": "Set the Chart/Table toggle on the Benchmarks page."
+    },
+    {
+      "name": "panel/show_run",
+      "description": "Show one benchmark run on the Benchmarks page: filter the table to it and open the table view.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "description": "Run id, e.g. wl-20261104-a51f22."
+          }
+        },
+        "required": [
+          "run_id"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "GET /api/v1/benchmarks?run_id= and GET /api/v1/benchmarks/{run_id}. The agent names runs by id in its answers (compare, diagnose).",
+      "x-frontend": "Navigate to Benchmarks, filter by run_id (add run_id to the filters store), switch to table."
+    },
+    {
+      "name": "panel/view_run_progress",
+      "description": "Open the progress drawer for a running or finished benchmark and stream its logs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id of the run, e.g. wl-20261105-1a2b3c."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model name, for the drawer title."
+          },
+          "node_ip": {
+            "type": "string",
+            "description": "Node IP, for the drawer title."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "GET /api/v1/benchmarks/{task_id}/logs/stream (SSE) and /status. Follows start_workload, or \"why did my run fail?\".",
+      "x-frontend": "useRunStreamsStore.viewRun({ taskId, model, nodeIp })."
+    },
+    {
+      "name": "panel/start_benchmark",
+      "description": "Open the Start Benchmark wizard.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "existing",
+      "x-backend": "Opens the wizard that ends in POST /api/v1/benchmarks/start."
+    },
+    {
+      "name": "panel/prefill_benchmark",
+      "description": "Open the Start Benchmark wizard with the node, model and optional settings already filled in, and go to the review step. It never starts the run: the user clicks Start.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "node_ip": {
+            "type": "string",
+            "description": "Node IP to run on."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model name from the catalog."
+          },
+          "concurrency": {
+            "type": "string",
+            "description": "Optional concurrency override."
+          },
+          "max_model_len": {
+            "type": "string",
+            "description": "Optional max model length."
+          },
+          "gpu_count": {
+            "type": "string",
+            "description": "Optional GPU count."
+          }
+        },
+        "required": [
+          "node_ip",
+          "model"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "POST /api/v1/benchmarks/start needs model_name + node_ips + config; GET /api/v1/models/config gives the defaults. One call instead of several set_benchmark_field calls (fewer tokens).",
+      "x-frontend": "openStartBenchmarkWizard(), then the wizard bridge: setField for each value, next() to the review step."
+    },
+    {
+      "name": "panel/set_benchmark_field",
+      "description": "Fill one field of the Start Benchmark wizard, opening the wizard if needed. Use for \"add node ip 10.0.0.12\", \"select model llama\", \"add model\" (no value lists the choices), or a model configuration key once that step is shown.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Which field: \"nodeIp\", \"model\", or a model configuration key."
+          },
+          "value": {
+            "type": "string",
+            "description": "The value to put in it. Empty to ask for options."
+          }
+        },
+        "required": [
+          "field"
+        ]
+      },
+      "x-status": "existing",
+      "x-backend": "Fills one wizard field (node IP, model, config)."
+    },
+    {
+      "name": "panel/wizard_next",
+      "description": "Go to the next step of the open Start Benchmark wizard, after checking the current step. Never starts the run.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "existing",
+      "x-backend": "Moves the wizard on (validates; never starts the run)."
+    },
+    {
+      "name": "panel/prefill_jupyter_launch",
+      "description": "Open the Launch Jupyter page with the node IP filled in. It never launches: the user clicks Launch.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "node_ip": {
+            "type": "string",
+            "description": "Node IP to launch Jupyter on."
+          }
+        },
+        "required": [
+          "node_ip"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "POST /api/v1/jupyter/launch needs node_ip.",
+      "x-frontend": "Navigate to Launch Jupyter and set the form's nodeIp field."
+    },
+    {
+      "name": "panel/view_jupyter_progress",
+      "description": "Show the live launch logs of a Jupyter instance.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Jupyter task id, e.g. jup-20261105-d4e5f6."
+          },
+          "node_ip": {
+            "type": "string",
+            "description": "Node IP, for the title."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "GET /api/v1/jupyter/instances/{task_id}/logs/stream (SSE) and /status. Follows start_jupyter.",
+      "x-frontend": "useJupyterRunStore.startRun({ taskId, nodeIp })."
+    },
+    {
+      "name": "panel/open_notebook",
+      "description": "Open a READY Jupyter notebook in a new browser tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Jupyter task id."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "GET /api/v1/jupyter/instances returns jupyter_url for READY instances.",
+      "x-frontend": "Look up the instance in the cached list (or refetch) and window.open(jupyter_url)."
+    },
+    {
+      "name": "panel/open_jupyter_assistant",
+      "description": "Open the always-on Jupyter Lab with the Jupyter AI assistant.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "new",
+      "x-backend": "GET /api/v1/jupyter/assistant returns { url, configured }.",
+      "x-frontend": "Fetch the URL, window.open it; say so if not configured."
+    },
+    {
+      "name": "panel/confirm_delete_run",
+      "description": "Ask the user to confirm deleting a benchmark run's results. Opens the same confirmation dialog as the Delete button; nothing is deleted unless the user confirms.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "description": "Run id."
+          }
+        },
+        "required": [
+          "run_id"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "DELETE /api/v1/benchmarks/{run_id}. A destructive action stays a human click (the backend's own rule: destructive needs approval).",
+      "x-frontend": "Open the DeleteRunButton's confirm modal for that run."
+    },
+    {
+      "name": "panel/confirm_delete_jupyter",
+      "description": "Ask the user to confirm stopping and deleting a Jupyter instance. Nothing happens unless the user confirms.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Jupyter task id."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "x-status": "new",
+      "x-backend": "DELETE /api/v1/jupyter/instances/{task_id}.",
+      "x-frontend": "Open the DeleteJupyterInstanceButton's confirm modal for that instance."
+    },
+    {
+      "name": "panel/open_blog_post",
+      "description": "Open the blog post that best matches a topic.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Topic or title words, e.g. \"pcie topology\"."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "x-status": "existing",
+      "x-backend": "Frontend content; no backend."
+    },
+    {
+      "name": "panel/set_color_scheme",
+      "description": "Switch between light and dark mode.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scheme": {
+            "type": "string",
+            "description": "Scheme to apply.",
+            "enum": [
+              "light",
+              "dark",
+              "toggle"
+            ]
+          }
+        },
+        "required": [
+          "scheme"
+        ]
+      },
+      "x-status": "existing",
+      "x-backend": "Frontend only."
+    },
+    {
+      "name": "panel/set_theme",
+      "description": "Customise the whole app theme. Pass only what should change; \"default\" restores a field.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "primaryColor": {
+            "type": "string",
+            "description": "Accent colour: a Mantine palette (teal, grape...) or any CSS colour."
+          },
+          "fontFamily": {
+            "type": "string",
+            "description": "Font family, e.g. \"Roboto\"."
+          },
+          "radius": {
+            "type": "string",
+            "description": "Corner radius: 0, xs, sm, md, lg, xl or a length."
+          },
+          "textScale": {
+            "type": "string",
+            "description": "Text size multiplier (e.g. \"1.1\"), or \"up\" / \"down\" to step it."
+          }
+        }
+      },
+      "x-status": "existing",
+      "x-backend": "Frontend only."
+    },
+    {
+      "name": "panel/reset_theme",
+      "description": "Restore the default theme (colour, font, corners, text size).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "existing",
+      "x-backend": "Frontend only."
+    },
+    {
+      "name": "panel/reset_styles",
+      "description": "Undo every style change CoreMind has made.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "x-status": "existing",
+      "x-backend": "Frontend only."
+    }
+  ]
+}

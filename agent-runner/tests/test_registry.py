@@ -86,13 +86,28 @@ def test_sandboxes_reach_only_the_tools_the_claude_agents_name():
     assert route["policies"]["jwtAuth"]["mode"] == "strict"
     assert route["policies"]["backendAuth"] == {"passthrough": {}}
     reg = registry.load()
-    named = sorted({t.split("/")[1] for h in reg.agents.values() if h.engine == "claude-code" for t in h.tools})
+    named = sorted({t.split("/")[1] for h in reg.agents.values() if h.engine == "claude-code" for t in h.tools
+                    if not t.startswith("panel/")})          # the panel runs in the browser: no route
     connector = reg.connectors["aistudio"]
     # Each of the connector's role rules, narrowed to the subscription's users and the named tools.
     assert route["policies"]["mcpAuthorization"]["rules"] == [
         f"({r}) && jwt.preferred_username in ['rsingh'] && mcp.tool.name in {named!r}" for r in connector.rules]
     assert "start_workload" not in named and "delete_run_results" not in named
     assert not any(r["matches"][0]["path"].get("pathPrefix") == "/mcp/sandbox" for r in routes)
+
+
+def test_panel_tools_come_from_the_contract_and_an_unknown_one_is_refused(tmp_path):
+    import shutil
+    reg = registry.load()
+    assert "filter_benchmarks" in reg.panel and "click_element" not in reg.panel   # browser-only
+    assert reg.panel["show_run"]["inputSchema"]["required"] == ["run_id"]
+    root = tmp_path / "platform"
+    shutil.copytree(settings.platform_dir, root)
+    path = root / "packs" / "aistudio" / "agents" / "analyst.yaml"
+    path.write_text(path.read_text(encoding="utf-8").replace("panel/show_run", "panel/click_element"),
+                    encoding="utf-8")
+    with pytest.raises(registry.Invalid, match="panel/click_element.*panel-tools.json"):
+        registry.build(root)
 
 
 def test_each_repo_gets_clone_routes_and_nothing_that_could_push():

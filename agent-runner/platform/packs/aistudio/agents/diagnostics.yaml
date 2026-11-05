@@ -29,4 +29,8 @@ tools:
   - aistudio/check_node_docker
   - aistudio/node_docker_logs
   - aistudio/node_exec
+  # On the user's screen (panel-tools.json): the browser runs these; none writes.
+  - panel/show_run
+  - panel/view_run_progress
+  - panel/view_jupyter_progress
 budgets: { steps: 8, tokens: 80000, seconds: 300 }

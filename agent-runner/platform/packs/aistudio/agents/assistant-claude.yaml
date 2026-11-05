@@ -16,6 +16,19 @@ tools:
   - aistudio/model_config
   - aistudio/get_task_status
   - aistudio/check_service_health
+  # On the user's screen (panel-tools.json): the browser runs these; none writes.
+  - panel/navigate
+  - panel/filter_benchmarks
+  - panel/show_run
+  - panel/view_run_progress
+  - panel/start_benchmark
+  - panel/prefill_benchmark
+  - panel/prefill_jupyter_launch
+  - panel/view_jupyter_progress
+  - panel/open_notebook
+  - panel/open_jupyter_assistant
+  - panel/confirm_delete_run
+  - panel/confirm_delete_jupyter
 claude:
   allowed_tools: []                   # the platform tools only
   workspace: none                     # no code, so no clone

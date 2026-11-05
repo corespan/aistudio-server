@@ -24,6 +24,8 @@ from app.prompts import AGENT
 _MAX_SPIN = 3
 
 _FINAL = "Your tool budget for this task is used up. Answer now with what you have found."
+# What a panel tool returns to the model: the browser runs it, and it changes only what the user sees.
+PANEL_DONE = "Sent to the user's panel: {tool}. The panel shows it; say what the user will see."
 
 
 @dataclass
@@ -61,6 +63,7 @@ def build(harness: Harness, tools: list[dict], session, budget: Budget, emit: Ca
     model = llm.chat(harness.model, token)
     bound = model.bind_tools([_schema(t) for t in tools])
     names = {t["name"] for t in tools}
+    panel = {t["name"]: t["tool"] for t in tools if t.get("connector") == "panel"}
     seen: set[str] = set()
     # Leave time for one last call to answer, so running out of time ends in an answer, as running
     # out of steps does, not in a timed-out task.
@@ -78,6 +81,10 @@ def build(harness: Harness, tools: list[dict], session, budget: Budget, emit: Ca
         return {"messages": [await llm.ainvoke(bound, state["messages"], budget)]}
 
     async def run_one(tc: dict) -> str:
+        if tc["name"] in panel:
+            # The panel checks the arguments against the same schema before it runs anything.
+            emit("panel", tool=panel[tc["name"]], args=tc["args"])
+            return PANEL_DONE.format(tool=panel[tc["name"]])
         emit("step_started", tool=tc["name"], args=tc["args"])
         try:
             result = await mcp.call_tool(session, tc["name"], tc["args"])

@@ -32,6 +32,10 @@ tools:
   - aistudio/check_node_docker
   - aistudio/node_docker_logs
   - aistudio/node_exec
+  # On the user's screen (panel-tools.json): the browser runs these; none writes.
+  - panel/show_run
+  - panel/view_run_progress
+  - panel/view_jupyter_progress
 claude:
   allowed_tools: [Read, Glob, Grep]   # the code, to read what a log line points at
   workspace: shallow                  # the latest commit only: a quick clone

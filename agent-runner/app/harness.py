@@ -26,6 +26,16 @@ def tools_for(harness: Harness, user_tools: list[dict]) -> list[dict]:
             if allowed(t) and any(fnmatchcase(f"{t['connector']}/{t['tool']}", p) for p in harness.tools)]
 
 
+def panel_tools(harness: Harness) -> list[dict]:
+    """The panel tools (panel/<name>) this harness lists, from panel-tools.json. The browser runs
+    them; none writes anything, so a role doesn't narrow them."""
+    panel = registry.load().panel
+    names = [n for p in harness.tools if p.startswith("panel/") for n in sorted(panel)
+             if fnmatchcase(f"panel/{n}", p)]
+    return [{"name": f"panel__{n}", "connector": "panel", "tool": n, **panel[n]}
+            for n in dict.fromkeys(names)]          # in the harness's order, each once
+
+
 def available(user_tools: list[dict]) -> dict[str, Harness]:
     """The langgraph harnesses this caller can use (what the planner is offered): those left with
     at least one tool. claude-code agents never: they spend one person's subscription."""

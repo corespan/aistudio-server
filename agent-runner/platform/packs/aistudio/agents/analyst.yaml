@@ -14,4 +14,11 @@ tools:
   - aistudio/platform_catalog
   - aistudio/model_config
   - sandbox/sandbox_run
+  # On the user's screen (panel-tools.json): the browser runs these; none writes.
+  - panel/navigate
+  - panel/filter_benchmarks
+  - panel/reset_filters
+  - panel/set_benchmark_type
+  - panel/show_benchmarks_as
+  - panel/show_run
 budgets: { steps: 6, tokens: 60000, seconds: 300 }

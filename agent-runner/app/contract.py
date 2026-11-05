@@ -228,7 +228,7 @@ class ConversationRequest(BaseModel):
 
 # Stream events. Each carries "type"; task events also carry "task" and "agent".
 EVENTS = ("run", "plan", "task_queued", "agent_started", "step_started", "step_result",
-          "agent_done", "message", "error", "done")
+          "agent_done", "panel", "message", "error", "done")
 
 
 def json_schema() -> dict:

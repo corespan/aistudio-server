@@ -22,7 +22,13 @@
           "aistudio/workload_history",
           "aistudio/platform_catalog",
           "aistudio/model_config",
-          "sandbox/sandbox_run"
+          "sandbox/sandbox_run",
+          "panel/navigate",
+          "panel/filter_benchmarks",
+          "panel/reset_filters",
+          "panel/set_benchmark_type",
+          "panel/show_benchmarks_as",
+          "panel/show_run"
         ]
       }
     },
@@ -53,7 +59,13 @@
           "aistudio/throughput_compare",
           "aistudio/workload_history",
           "aistudio/platform_catalog",
-          "aistudio/model_config"
+          "aistudio/model_config",
+          "panel/navigate",
+          "panel/filter_benchmarks",
+          "panel/reset_filters",
+          "panel/set_benchmark_type",
+          "panel/show_benchmarks_as",
+          "panel/show_run"
         ]
       }
     },
@@ -79,7 +91,19 @@
           "aistudio/platform_catalog",
           "aistudio/model_config",
           "aistudio/get_task_status",
-          "aistudio/check_service_health"
+          "aistudio/check_service_health",
+          "panel/navigate",
+          "panel/filter_benchmarks",
+          "panel/show_run",
+          "panel/view_run_progress",
+          "panel/start_benchmark",
+          "panel/prefill_benchmark",
+          "panel/prefill_jupyter_launch",
+          "panel/view_jupyter_progress",
+          "panel/open_notebook",
+          "panel/open_jupyter_assistant",
+          "panel/confirm_delete_run",
+          "panel/confirm_delete_jupyter"
         ]
       }
     },
@@ -109,7 +133,19 @@
           "aistudio/platform_catalog",
           "aistudio/model_config",
           "aistudio/get_task_status",
-          "aistudio/check_service_health"
+          "aistudio/check_service_health",
+          "panel/navigate",
+          "panel/filter_benchmarks",
+          "panel/show_run",
+          "panel/view_run_progress",
+          "panel/start_benchmark",
+          "panel/prefill_benchmark",
+          "panel/prefill_jupyter_launch",
+          "panel/view_jupyter_progress",
+          "panel/open_notebook",
+          "panel/open_jupyter_assistant",
+          "panel/confirm_delete_run",
+          "panel/confirm_delete_jupyter"
         ]
       }
     },
@@ -182,7 +218,10 @@
           "aistudio/check_ssh_connectivity",
           "aistudio/check_node_docker",
           "aistudio/node_docker_logs",
-          "aistudio/node_exec"
+          "aistudio/node_exec",
+          "panel/show_run",
+          "panel/view_run_progress",
+          "panel/view_jupyter_progress"
         ]
       }
     },
@@ -232,7 +271,10 @@
           "aistudio/check_ssh_connectivity",
           "aistudio/check_node_docker",
           "aistudio/node_docker_logs",
-          "aistudio/node_exec"
+          "aistudio/node_exec",
+          "panel/show_run",
+          "panel/view_run_progress",
+          "panel/view_jupyter_progress"
         ]
       }
     },
@@ -298,7 +340,7 @@
       }
     }
   },
-  "hash": "d6a55cb7f387824cc0aedbfcc8cbd40b3919f6d23d083679d6eb7e2b73d441a9",
+  "hash": "c048530c71ae2346bb7dcbd4f8599fa1df01bdede983549a93496f2126ff8cc1",
   "model": {
     "claude-chat": {
       "source": "packs/aistudio/models/claude-chat.yaml",
@@ -348,6 +390,380 @@
       "name": "devflow",
       "requires": [],
       "version": "0.1.0"
+    }
+  },
+  "panel": {
+    "confirm_delete_jupyter": {
+      "description": "Ask the user to confirm stopping and deleting a Jupyter instance. Nothing happens unless the user confirms.",
+      "inputSchema": {
+        "properties": {
+          "task_id": {
+            "description": "Jupyter task id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    "confirm_delete_run": {
+      "description": "Ask the user to confirm deleting a benchmark run's results. Opens the same confirmation dialog as the Delete button; nothing is deleted unless the user confirms.",
+      "inputSchema": {
+        "properties": {
+          "run_id": {
+            "description": "Run id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "type": "object"
+      }
+    },
+    "filter_benchmarks": {
+      "description": "Filter the Benchmarks table and chart. Pass only the filters to set; omitted ones are cleared.",
+      "inputSchema": {
+        "properties": {
+          "concurrency": {
+            "description": "Concurrency level, e.g. 64.",
+            "type": "string"
+          },
+          "gpu_type": {
+            "description": "GPU type, e.g. H100.",
+            "type": "string"
+          },
+          "input_tokens": {
+            "description": "Input token count.",
+            "type": "string"
+          },
+          "model": {
+            "description": "Model name, e.g. llama-3-8b-instruct.",
+            "type": "string"
+          },
+          "node_ip": {
+            "description": "Node IP.",
+            "type": "string"
+          },
+          "output_tokens": {
+            "description": "Output token count.",
+            "type": "string"
+          },
+          "precision": {
+            "description": "e.g. fp16, bf16, fp8.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "go_back": {
+      "description": "Go back to the previous page.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "navigate": {
+      "description": "Go to a section of the app.",
+      "inputSchema": {
+        "properties": {
+          "section": {
+            "description": "Section to open.",
+            "enum": [
+              "benchmarks",
+              "jupyter",
+              "blogs",
+              "about"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "section"
+        ],
+        "type": "object"
+      }
+    },
+    "open_blog_post": {
+      "description": "Open the blog post that best matches a topic.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "Topic or title words, e.g. \"pcie topology\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "open_jupyter_assistant": {
+      "description": "Open the always-on Jupyter Lab with the Jupyter AI assistant.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "open_notebook": {
+      "description": "Open a READY Jupyter notebook in a new browser tab.",
+      "inputSchema": {
+        "properties": {
+          "task_id": {
+            "description": "Jupyter task id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    "prefill_benchmark": {
+      "description": "Open the Start Benchmark wizard with the node, model and optional settings already filled in, and go to the review step. It never starts the run: the user clicks Start.",
+      "inputSchema": {
+        "properties": {
+          "concurrency": {
+            "description": "Optional concurrency override.",
+            "type": "string"
+          },
+          "gpu_count": {
+            "description": "Optional GPU count.",
+            "type": "string"
+          },
+          "max_model_len": {
+            "description": "Optional max model length.",
+            "type": "string"
+          },
+          "model": {
+            "description": "Model name from the catalog.",
+            "type": "string"
+          },
+          "node_ip": {
+            "description": "Node IP to run on.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_ip",
+          "model"
+        ],
+        "type": "object"
+      }
+    },
+    "prefill_jupyter_launch": {
+      "description": "Open the Launch Jupyter page with the node IP filled in. It never launches: the user clicks Launch.",
+      "inputSchema": {
+        "properties": {
+          "node_ip": {
+            "description": "Node IP to launch Jupyter on.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_ip"
+        ],
+        "type": "object"
+      }
+    },
+    "reset_filters": {
+      "description": "Clear all benchmark table filters.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "reset_styles": {
+      "description": "Undo every style change CoreMind has made.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "reset_theme": {
+      "description": "Restore the default theme (colour, font, corners, text size).",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "set_benchmark_field": {
+      "description": "Fill one field of the Start Benchmark wizard, opening the wizard if needed. Use for \"add node ip 10.0.0.12\", \"select model llama\", \"add model\" (no value lists the choices), or a model configuration key once that step is shown.",
+      "inputSchema": {
+        "properties": {
+          "field": {
+            "description": "Which field: \"nodeIp\", \"model\", or a model configuration key.",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value to put in it. Empty to ask for options.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      }
+    },
+    "set_benchmark_type": {
+      "description": "Switch the benchmark chart metric.",
+      "inputSchema": {
+        "properties": {
+          "type": {
+            "description": "Metric to chart.",
+            "enum": [
+              "Throughput",
+              "TTFT",
+              "TPOT"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      }
+    },
+    "set_color_scheme": {
+      "description": "Switch between light and dark mode.",
+      "inputSchema": {
+        "properties": {
+          "scheme": {
+            "description": "Scheme to apply.",
+            "enum": [
+              "light",
+              "dark",
+              "toggle"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheme"
+        ],
+        "type": "object"
+      }
+    },
+    "set_theme": {
+      "description": "Customise the whole app theme. Pass only what should change; \"default\" restores a field.",
+      "inputSchema": {
+        "properties": {
+          "fontFamily": {
+            "description": "Font family, e.g. \"Roboto\".",
+            "type": "string"
+          },
+          "primaryColor": {
+            "description": "Accent colour: a Mantine palette (teal, grape...) or any CSS colour.",
+            "type": "string"
+          },
+          "radius": {
+            "description": "Corner radius: 0, xs, sm, md, lg, xl or a length.",
+            "type": "string"
+          },
+          "textScale": {
+            "description": "Text size multiplier (e.g. \"1.1\"), or \"up\" / \"down\" to step it.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "show_benchmarks_as": {
+      "description": "Switch the Benchmarks results between the chart and the table.",
+      "inputSchema": {
+        "properties": {
+          "view": {
+            "description": "Which view.",
+            "enum": [
+              "chart",
+              "table"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "type": "object"
+      }
+    },
+    "show_run": {
+      "description": "Show one benchmark run on the Benchmarks page: filter the table to it and open the table view.",
+      "inputSchema": {
+        "properties": {
+          "run_id": {
+            "description": "Run id, e.g. wl-20261104-a51f22.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "type": "object"
+      }
+    },
+    "start_benchmark": {
+      "description": "Open the Start Benchmark wizard.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "view_jupyter_progress": {
+      "description": "Show the live launch logs of a Jupyter instance.",
+      "inputSchema": {
+        "properties": {
+          "node_ip": {
+            "description": "Node IP, for the title.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Jupyter task id, e.g. jup-20261105-d4e5f6.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    "view_run_progress": {
+      "description": "Open the progress drawer for a running or finished benchmark and stream its logs.",
+      "inputSchema": {
+        "properties": {
+          "model": {
+            "description": "Model name, for the drawer title.",
+            "type": "string"
+          },
+          "node_ip": {
+            "description": "Node IP, for the drawer title.",
+            "type": "string"
+          },
+          "task_id": {
+            "description": "Task id of the run, e.g. wl-20261105-1a2b3c.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    "wizard_next": {
+      "description": "Go to the next step of the open Start Benchmark wizard, after checking the current step. Never starts the run.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      }
     }
   },
   "platform": {

@@ -63,6 +63,25 @@ def sandbox(fake_mcp):
     return fake_mcp, state
 
 
+async def test_a_claude_panel_call_goes_to_the_browser_and_is_not_a_step(sandbox):
+    fake_mcp, state = sandbox
+    state["stream"] = [
+        turn("m1", [{"type": "tool_use", "id": "tu1", "name": "mcp__panel__show_run",
+                     "input": {"run_id": "wl-1"}}], 30),
+        json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "tu1", "content": "Sent to the user's panel: show_run."}]}}),
+        turn("m2", [{"type": "text", "text": "done"}], 20)]
+    runs = RunManager(run_graph.build(InMemorySaver()), RunLog())
+    run = await runs.start(RSINGH, "show me wl-1", "analyst-claude")
+    events = []
+    async with asyncio.timeout(10):
+        async for line in runs.stream(run):
+            events.append(json.loads(line.split("data: ", 1)[1]))
+    assert [(e["tool"], e["args"]) for e in events if e["type"] == "panel"] == [("show_run", {"run_id": "wl-1"})]
+    assert not [e for e in events if e["type"] in ("step_started", "step_result")]
+    assert events[-1]["status"] == "ok"
+
+
 async def run_coder(message="add a line", who=RSINGH) -> list[dict]:
     runs = RunManager(run_graph.build(InMemorySaver()), RunLog())
     run = await runs.start(who, message, "coder")
@@ -156,7 +175,12 @@ async def test_a_claude_chat_agent_gets_its_platform_tools_its_job_and_no_empty_
     h = harnesses.load()["analyst-claude"]
     [args] = called(fake_mcp, "workspace_claude")
     assert args["model"] == "claude-sonnet-5-5" and args["mcp"] == ["aistudio"]
-    assert args["tools"] == h.claude.allowed_tools + [f"mcp__aistudio__{t.split('/')[1]}" for t in h.tools]
+    assert args["tools"] == h.claude.allowed_tools + [
+        f"mcp__{t.split('/')[0]}__{t.split('/')[1]}" for t in h.tools]
+    # Its panel tools come from sandbox-mcp's local panel server, not the gateway.
+    assert "mcp__panel__filter_benchmarks" in args["tools"]
+    assert [t["name"] for t in args["panel"]] == [t.split("/")[1] for t in h.tools if t.startswith("panel/")]
+    assert "Panel tools" in args["prompt"] and '"type": "line"' in args["prompt"]
     assert "mcp__aistudio__summary" in args["tools"] and "You are the analyst-claude agent" in args["prompt"]
     assert args["prompt"].index("You are the") < args["prompt"].index("best throughput on T4?")
     # Nothing changed in the checkout: the answer alone.

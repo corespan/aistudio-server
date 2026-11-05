@@ -1,7 +1,7 @@
 """One agent's loop, and which tools it is given."""
 from __future__ import annotations
 
-from app import agent, harness
+from app import agent, harness, registry
 from app.contract import Budgets, Harness
 from tests.conftest import TOOLS, call, tool_results
 
@@ -68,6 +68,20 @@ async def test_a_tool_outside_the_agents_set_is_refused(fake_llm, fake_mcp):
     assert fake_mcp["calls"] == []
 
 
+async def test_a_panel_tool_goes_to_the_browser_not_to_an_mcp_server(fake_llm, fake_mcp):
+    scripts, _ = fake_llm
+    scripts["worker"] = lambda m: ("shown" if tool_results(m)
+                                   else call("panel__filter_benchmarks", {"gpu_type": "H100"}))
+    h = Harness(name="analyst", purpose="p", tools=["aistudio/summary", "panel/filter_benchmarks"])
+    tools = harness.tools_for(h, TOOLS) + harness.panel_tools(h)
+    assert [t["name"] for t in harness.panel_tools(h)] == ["panel__filter_benchmarks"]
+    events = []
+    answer = await agent.run(h, tools, None, agent.Budget(), lambda kind, **d: events.append((kind, d)), "t", {})
+    assert answer == "shown"
+    assert events == [("panel", {"tool": "filter_benchmarks", "args": {"gpu_type": "H100"}})]
+    assert fake_mcp["calls"] == []          # nothing reached a server
+
+
 def test_tools_only_shrink_and_writes_are_never_bound():
     everything = Harness(name="x", purpose="p", tools=["*/*"])
     names = [t["name"] for t in harness.tools_for(everything, TOOLS)]
@@ -93,7 +107,11 @@ def test_the_shipped_harnesses_load_and_list_only_read_tools():
     server = (Path(__file__).resolve().parents[2] / "sandbox-mcp" / "app" / "server.py").read_text()
     tiers.update((n, "read") for n in re.findall(r'"(\w+)": ToolAnnotations\(readOnlyHint=True', server))
     assert "sandbox_run" in tiers
+    panel = registry.load().panel
     for h in harness.load().values():
         for pattern in h.tools:
-            name = pattern.partition("/")[2]
+            connector, _, name = pattern.partition("/")
+            if connector == "panel":        # the browser runs these; none writes (panel-tools.json)
+                assert name in panel, f"{h.name}: {pattern} is not in panel-tools.json"
+                continue
             assert tiers.get(name) in ("read", "host"), f"{h.name}: {pattern} is not a read tool"
