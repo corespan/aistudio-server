@@ -1,0 +1,14 @@
+kind: agent
+name: planner-claude
+engine: claude-code
+# Plans and summarizes runs with no agent named ("Auto") when there is no vLLM: config
+# planner_engine. On your subscription, so only you. Never offered as an agent: no tools.
+purpose: >-
+  Splits a request into tasks for the Claude chat agents, and writes one answer from their
+  reports.
+model: claude-chat
+claude:
+  allowed_tools: [Read]               # it needs none; the sandbox takes at least one rule
+  workspace: none
+  max_turns: 2
+budgets: { tokens: 80000, seconds: 120 }

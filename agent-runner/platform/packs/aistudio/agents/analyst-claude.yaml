@@ -23,6 +23,8 @@ tools:
   - panel/set_benchmark_type
   - panel/show_benchmarks_as
   - panel/show_run
+  - panel/compare_runs
+  - panel/export_benchmarks_csv
 claude:
   allowed_tools: ["Bash(python3 *)"]   # statistics over what the tools returned
   workspace: none                     # no code: the platform tools are its data

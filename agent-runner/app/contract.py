@@ -59,6 +59,9 @@ class Harness(BaseModel):
     model: str = "worker"   # logical model name; claude-code: a model file's name
     # connector/tool, fnmatch patterns allowed in the tool part; intersected with the caller's tools
     tools: list[str] = []
+    # connector/tool of writes the agent may ask for. Never called by the agent: it asks, the run
+    # stops at an Approve/Reject card, and the runner makes the call with the approver's token.
+    writes: list[str] = []
     claude: ClaudeSpec | None = None
     budgets: Budgets = Budgets()
 
@@ -68,8 +71,8 @@ class Harness(BaseModel):
             raise ValueError("a claude-code agent has a claude: block")
         if self.engine == "claude-code" and any("*" in t or "?" in t or "[" in t for t in self.tools):
             raise ValueError("a claude-code agent names each MCP tool exactly: the sandbox gateway allows only those")
-        if self.engine == "claude-code" and not 1 <= len(self.claude.allowed_tools) + len(self.tools) <= 30:
-            raise ValueError("a claude-code agent has 1 to 30 tools, MCP ones included")
+        if self.engine == "claude-code" and not 1 <= len(self.claude.allowed_tools) + len(self.tools) + len(self.writes) <= 30:
+            raise ValueError("a claude-code agent has 1 to 30 tools, MCP ones and writes included")
         if self.engine == "langgraph" and (self.claude is not None or not self.tools):
             raise ValueError("a langgraph agent lists tools and has no claude: block")
         return self
@@ -228,7 +231,7 @@ class ConversationRequest(BaseModel):
 
 # Stream events. Each carries "type"; task events also carry "task" and "agent".
 EVENTS = ("run", "plan", "task_queued", "agent_started", "step_started", "step_result",
-          "agent_done", "panel", "message", "error", "done")
+          "agent_done", "panel", "approval", "message", "error", "done")
 
 
 def json_schema() -> dict:

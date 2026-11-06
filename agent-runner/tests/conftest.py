@@ -99,9 +99,13 @@ def fake_mcp(monkeypatch):
         yield {"token": token}
 
     async def list_tools(s):
+        s["listed"] = True
         return state["tools"]
 
     async def call_tool(s, name, args, progress=None, cap=-1):
+        # As the real one: a session routes a tool's name only after list_tools.
+        if s is not None and not s.get("listed"):
+            raise KeyError(name)
         state["calls"].append((name, args))
         answer = state["answers"].get(name, f"{name} ok")
         # An answer function that takes two arguments also gets the progress callback.

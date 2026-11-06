@@ -28,8 +28,11 @@
           "panel/reset_filters",
           "panel/set_benchmark_type",
           "panel/show_benchmarks_as",
-          "panel/show_run"
-        ]
+          "panel/show_run",
+          "panel/compare_runs",
+          "panel/export_benchmarks_csv"
+        ],
+        "writes": []
       }
     },
     "analyst-claude": {
@@ -65,8 +68,11 @@
           "panel/reset_filters",
           "panel/set_benchmark_type",
           "panel/show_benchmarks_as",
-          "panel/show_run"
-        ]
+          "panel/show_run",
+          "panel/compare_runs",
+          "panel/export_benchmarks_csv"
+        ],
+        "writes": []
       }
     },
     "assistant": {
@@ -103,7 +109,15 @@
           "panel/open_notebook",
           "panel/open_jupyter_assistant",
           "panel/confirm_delete_run",
-          "panel/confirm_delete_jupyter"
+          "panel/confirm_delete_jupyter",
+          "panel/compare_runs",
+          "panel/show_health_status"
+        ],
+        "writes": [
+          "aistudio/start_workload",
+          "aistudio/start_jupyter",
+          "aistudio/stop_jupyter",
+          "aistudio/delete_run_results"
         ]
       }
     },
@@ -145,7 +159,15 @@
           "panel/open_notebook",
           "panel/open_jupyter_assistant",
           "panel/confirm_delete_run",
-          "panel/confirm_delete_jupyter"
+          "panel/confirm_delete_jupyter",
+          "panel/compare_runs",
+          "panel/show_health_status"
+        ],
+        "writes": [
+          "aistudio/start_workload",
+          "aistudio/start_jupyter",
+          "aistudio/stop_jupyter",
+          "aistudio/delete_run_results"
         ]
       }
     },
@@ -177,7 +199,8 @@
         "model": "claude-coder",
         "name": "coder",
         "purpose": "Make the requested change in a workspace checkout of the repo, run the tests, and explain the diff.",
-        "tools": []
+        "tools": [],
+        "writes": []
       }
     },
     "diagnostics": {
@@ -221,8 +244,10 @@
           "aistudio/node_exec",
           "panel/show_run",
           "panel/view_run_progress",
-          "panel/view_jupyter_progress"
-        ]
+          "panel/view_jupyter_progress",
+          "panel/show_health_status"
+        ],
+        "writes": []
       }
     },
     "diagnostics-claude": {
@@ -272,10 +297,35 @@
           "aistudio/check_node_docker",
           "aistudio/node_docker_logs",
           "aistudio/node_exec",
-          "panel/show_run",
+          "panel/show_health_status",
           "panel/view_run_progress",
           "panel/view_jupyter_progress"
-        ]
+        ],
+        "writes": []
+      }
+    },
+    "planner-claude": {
+      "source": "packs/aistudio/agents/planner-claude.yaml",
+      "spec": {
+        "budgets": {
+          "seconds": 120,
+          "steps": 8,
+          "tokens": 80000
+        },
+        "claude": {
+          "allowed_tools": [
+            "Read"
+          ],
+          "max_turns": 2,
+          "workspace": "none"
+        },
+        "engine": "claude-code",
+        "kind": "agent",
+        "model": "claude-chat",
+        "name": "planner-claude",
+        "purpose": "Splits a request into tasks for the Claude chat agents, and writes one answer from their reports.",
+        "tools": [],
+        "writes": []
       }
     },
     "reviewer": {
@@ -303,7 +353,8 @@
         "model": "claude-coder",
         "name": "reviewer",
         "purpose": "Review the change in a workspace checkout against its base and report findings; edits nothing.",
-        "tools": []
+        "tools": [],
+        "writes": []
       }
     }
   },
@@ -340,7 +391,7 @@
       }
     }
   },
-  "hash": "c048530c71ae2346bb7dcbd4f8599fa1df01bdede983549a93496f2126ff8cc1",
+  "hash": "c529efdbd6618b4188616a6f3533053810c99db0a8f534e2ba649bba99ce290f",
   "model": {
     "claude-chat": {
       "source": "packs/aistudio/models/claude-chat.yaml",
@@ -393,6 +444,21 @@
     }
   },
   "panel": {
+    "compare_runs": {
+      "description": "Show two or more benchmark runs side by side in the Benchmarks table (the table holds only those runs).",
+      "inputSchema": {
+        "properties": {
+          "run_ids": {
+            "description": "Run ids, comma-separated, e.g. h100-llama3-70b-c128,h100-llama3-70b-c256.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_ids"
+        ],
+        "type": "object"
+      }
+    },
     "confirm_delete_jupyter": {
       "description": "Ask the user to confirm stopping and deleting a Jupyter instance. Nothing happens unless the user confirms.",
       "inputSchema": {
@@ -420,6 +486,13 @@
         "required": [
           "run_id"
         ],
+        "type": "object"
+      }
+    },
+    "export_benchmarks_csv": {
+      "description": "Download the Benchmarks table, as currently filtered, as a CSV file in the user's browser.",
+      "inputSchema": {
+        "properties": {},
         "type": "object"
       }
     },
@@ -690,6 +763,36 @@
         },
         "required": [
           "view"
+        ],
+        "type": "object"
+      }
+    },
+    "show_health_status": {
+      "description": "Show a health result on the user's screen as a notice that stays until they close it: a node, a service or a check, with its state.",
+      "inputSchema": {
+        "properties": {
+          "detail": {
+            "description": "One or two sentences: what was found.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Its state.",
+            "enum": [
+              "ok",
+              "warning",
+              "down"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "description": "What was checked, e.g. node 10.6.91.204 or the API.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "status",
+          "detail"
         ],
         "type": "object"
       }

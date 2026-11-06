@@ -21,4 +21,6 @@ tools:
   - panel/set_benchmark_type
   - panel/show_benchmarks_as
   - panel/show_run
+  - panel/compare_runs
+  - panel/export_benchmarks_csv
 budgets: { steps: 6, tokens: 60000, seconds: 300 }

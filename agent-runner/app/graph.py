@@ -14,12 +14,12 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Send
+from langgraph.types import Send, interrupt
 
 from app import agent, claude, harness as harnesses, llm, mcp, workflow
 from app.config import settings
 from app.contract import Plan
-from app.prompts import PLANNER, PLANNER_RETRY, SUMMARIZER
+from app.prompts import PLANNER, PLANNER_JSON, PLANNER_RETRY, SUMMARIZER
 
 
 @dataclass
@@ -125,10 +125,39 @@ def framing(state: RunState) -> str:
             "\"the second one\"), and say those specifics in the tasks.\n\n" + "\n\n".join(parts))
 
 
+def claude_planner(rt: "Runtime"):
+    """The planner-claude agent when it plans this caller's runs, else None (the LLM plans)."""
+    h = harnesses.load().get(settings.planner_agent)
+    if h is None or settings.planner_engine == "llm":
+        return None
+    return h if claude.allowed(h, rt.user) else None
+
+
+async def _ask_claude(h, rt: "Runtime", run_id: str, step: str, prompt: str) -> str:
+    """One planner-claude step (plan or summary): no tools of its own, its text back."""
+    writer = get_stream_writer()
+
+    def emit(kind: str, **data):
+        writer({"type": kind, "task": step, "agent": h.name, **data})
+    return await claude.run(h, rt, run_id, step, emit, prompt, {}, framed=False)
+
+
+def _plan_json(text: str) -> dict:
+    """The plan in the Claude planner's reply: its outermost JSON object, checked against Plan."""
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        raise ValueError("no JSON object in the reply")
+    return Plan.model_validate(json.loads(text[start:end + 1])).model_dump()
+
+
 async def plan_node(state: RunState, config) -> dict:
     emit = get_stream_writer()
     rt = RUNTIME[_run_id(config)]
     agents = state.get("agents")
+    planner = claude_planner(rt)
+    if agents is None and planner and not state.get("harness"):
+        # Claude plans over the Claude chat agents: the LangGraph ones need the LLM it replaces.
+        agents = {n: h.purpose for n, h in harnesses.chat_claude(rt.user).items()}
     if agents is None:
         async with mcp.session(rt.token, _run_id(config)) as s:
             user_tools = await mcp.list_tools(s)
@@ -142,6 +171,17 @@ async def plan_node(state: RunState, config) -> dict:
         return {"agents": agents, "plan": plan}
 
     listing = "\n".join(f"- {n}: {p}" for n, p in agents.items()) or "(none)"
+    if planner:
+        prompt = (PLANNER.format(max_tasks=settings.max_tasks, agents=listing) + PLANNER_JSON
+                  + "\n\nRequest:\n" + state["message"] + framing(state))
+        if state.get("error"):
+            prompt += "\n\n" + PLANNER_RETRY.format(error=state["error"])
+        try:
+            text = await _ask_claude(planner, rt, _run_id(config), "plan", prompt)
+            return {"agents": agents, "plan": _plan_json(text)}
+        except (ValueError, TypeError) as exc:          # ValidationError and JSONDecodeError are ValueErrors
+            emit({"type": "error", "detail": "the planner's output was not a valid plan"})
+            return {"agents": agents, "plan": None, "error": f"output did not match the plan schema: {exc}"}
     messages = [SystemMessage(PLANNER.format(max_tasks=settings.max_tasks, agents=listing)),
                 HumanMessage(state["message"] + framing(state))]
     if state.get("error"):
@@ -241,12 +281,15 @@ async def task_node(arg: dict, config) -> dict:
             if rt.budget.exhausted():
                 result = {"status": "failed", "output": "the run's budget was used up"}
                 break
+            actions: list = []
             try:
                 async with asyncio.timeout(h.budgets.seconds), mcp.session(rt.token, run_id) as s:
-                    tools = harnesses.tools_for(h, await mcp.list_tools(s)) + harnesses.panel_tools(h)
+                    mine = await mcp.list_tools(s)
+                    tools = (harnesses.tools_for(h, mine) + harnesses.panel_tools(h)
+                             + harnesses.write_tools(h, mine))
                     output = await agent.run(h, tools, s, rt.budget, emit, t["task"], arg["inputs"],
-                                             rt.token)
-                result = {"status": "ok", "output": output}
+                                             rt.token, actions, t["id"])
+                result = {"status": "ok", "output": output, "actions": actions}
                 break
             except TimeoutError:
                 result = {"status": "failed", "output": f"timed out after {h.budgets.seconds}s"}
@@ -261,9 +304,11 @@ async def task_node(arg: dict, config) -> dict:
 
 async def _claude_task(h, rt: Runtime, run_id: str, t: dict, inputs: dict, emit) -> dict:
     """No retry: a step spends the subscription, and a failed one is usually a real failure."""
+    actions: list = []
     try:
         async with asyncio.timeout(h.budgets.seconds + 180):     # plus clone and diff
-            return {"status": "ok", "output": await claude.run(h, rt, run_id, t["id"], emit, t["task"], inputs)}
+            output = await claude.run(h, rt, run_id, t["id"], emit, t["task"], inputs, actions)
+            return {"status": "ok", "output": output, "actions": actions}
     except claude.LimitHit as exc:
         return {"status": "failed", "output": f"budget_exceeded: {exc}"}
     except TimeoutError as exc:
@@ -285,13 +330,74 @@ async def summarize_node(state: RunState, config) -> dict:
             + agent.as_data(f"task {t['id']}", results[t["id"]]["output"], settings.task_output_chars)
             for t in tasks)
         rt = RUNTIME[_run_id(config)]
-        response = await llm.ainvoke(llm.chat("summarizer", rt.token), [
-            SystemMessage(SUMMARIZER),
-            HumanMessage(f"Request: {state['message']}\n\nReports:\n\n{reports}")])
-        answer = str(response.content or "").strip()
+        request = f"Request: {state['message']}\n\nReports:\n\n{reports}"
+        planner = claude_planner(rt)
+        if planner:
+            answer = (await _ask_claude(planner, rt, _run_id(config), "summary",
+                                        f"{SUMMARIZER}\n\n{request}")).strip()
+        else:
+            response = await llm.ainvoke(llm.chat("summarizer", rt.token), [
+                SystemMessage(SUMMARIZER), HumanMessage(request)])
+            answer = str(response.content or "").strip()
     get_stream_writer()({"type": "message", "text": answer})
     ok = any(r["status"] == "ok" for r in results.values())
     return {"answer": answer, "status": "ok" if ok else "failed"}
+
+
+# ── writes the agents asked for ─────────────────────────────────────────────
+
+def _actions(state: RunState) -> list[dict]:
+    results = state.get("results") or {}
+    found = [a for t in _tasks(state) for a in (results.get(t["id"]) or {}).get("actions") or []]
+    return [{"id": f"a{i}", **a} for i, a in enumerate(found[:agent.MAX_ACTIONS], 1)]
+
+
+def after_summary(state: RunState) -> str:
+    return "propose" if _actions(state) else END
+
+
+async def propose_node(state: RunState) -> dict:
+    """Show the writes the agents asked for; the next node stops the run for the user's decision."""
+    get_stream_writer()({"type": "approval", "actions": [
+        {"id": a["id"], "tool": f"{a['connector']}/{a['tool']}", "args": a["args"], "agent": a["agent"]}
+        for a in _actions(state)]})
+    return {}
+
+
+async def act_node(state: RunState, config) -> dict:
+    """Stop until the user approves or rejects; on approve, make each call with the approver's own
+    token (POST /runs/{id}/approve resumes with it), so the gateway checks their role again."""
+    actions = _actions(state)
+    decision = interrupt({"actions": actions})
+    emit = get_stream_writer()
+    if not decision.get("approved"):
+        text = "Nothing was done: you rejected it." if len(actions) == 1 else "Nothing was done: you rejected them."
+        emit({"type": "message", "text": text})
+        return {"answer": f"{state.get('answer', '')}\n\n{text}"}
+    run_id = _run_id(config)
+    rt = RUNTIME[run_id]
+    lines, ok = [], False
+    async with mcp.session(rt.token, run_id) as s:
+        mine = {(t["connector"], t["tool"]): t for t in await mcp.list_tools(s)}
+        for a in actions:
+            tool = mine.get((a["connector"], a["tool"]))
+            emit({"type": "step_started", "task": "approved", "agent": a["agent"],
+                  "tool": f"{a['connector']}/{a['tool']}", "args": json.dumps(a["args"], default=str)[:500]})
+            if tool is None:
+                result = "Refused: your role can't use this tool."
+            else:
+                try:
+                    result = await mcp.call_tool(s, tool["name"], a["args"])
+                except Exception as exc:  # noqa: BLE001 - reported to the user
+                    result = f"Tool error: {exc}"
+            done = not result.startswith(("Refused", "Tool error"))
+            ok = ok or done
+            emit({"type": "step_result", "task": "approved", "agent": a["agent"],
+                  "tool": f"{a['connector']}/{a['tool']}", "result": result[:2000]})
+            lines.append(f"- **{a['tool']}** ({'done' if done else 'failed'}): {result.strip()[:600]}")
+    text = f"After your approval (by {decision.get('by') or 'you'}):\n" + "\n".join(lines)
+    emit({"type": "message", "text": text})
+    return {"answer": f"{state.get('answer', '')}\n\n{text}", "status": "ok" if ok else "failed"}
 
 
 def build(checkpointer):
@@ -302,6 +408,8 @@ def build(checkpointer):
     g.add_node("schedule", schedule_node)
     g.add_node("task", task_node)
     g.add_node("summarize", summarize_node)
+    g.add_node("propose", propose_node)
+    g.add_node("act", act_node)
     g.add_node("wf", workflow.node)
     # A workflow is a fixed sequence: no planner. One step per pass, so each is checkpointed.
     g.add_conditional_edges(START, lambda s: "wf" if s.get("workflow") else "plan", ["plan", "wf"])
@@ -311,5 +419,7 @@ def build(checkpointer):
     g.add_conditional_edges("schedule", dispatch, ["task", "summarize"])
     g.add_edge("task", "schedule")
     g.add_edge("fail", END)
-    g.add_edge("summarize", END)
+    g.add_conditional_edges("summarize", after_summary, ["propose", END])
+    g.add_edge("propose", "act")
+    g.add_edge("act", END)
     return g.compile(checkpointer=checkpointer)

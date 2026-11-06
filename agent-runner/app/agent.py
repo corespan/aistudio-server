@@ -25,7 +25,23 @@ _MAX_SPIN = 3
 
 _FINAL = "Your tool budget for this task is used up. Answer now with what you have found."
 # What a panel tool returns to the model: the browser runs it, and it changes only what the user sees.
-PANEL_DONE = "Sent to the user's panel: {tool}. The panel shows it; say what the user will see."
+PANEL_DONE = ("Sent to the user's panel: {tool}. You don't see whether it worked: the panel shows its own "
+              "result line with your answer. Say what you asked the panel to do, never that it is done.")
+# What a write request returns: the runner asks the user after the answer, and makes the call itself.
+REQUESTED = ("Recorded: {tool} waits for the user's approval. After your answer they see an "
+             "Approve/Reject card; nothing has happened yet. Don't call it again; say what you asked for.")
+MAX_ACTIONS = 5     # write requests per run
+
+
+def request(actions: list, tool: dict, args, task: str, agent: str) -> str:
+    """Record one write request for the approval card; the reply for the model."""
+    if not isinstance(args, dict) or len(json.dumps(args, default=str)) > 4000:
+        return f"{tool['tool']}: the arguments must be an object under 4000 characters."
+    if len(actions) >= MAX_ACTIONS:
+        return f"At most {MAX_ACTIONS} actions wait for approval in one run; ask for the rest next time."
+    actions.append({"connector": tool["target"], "tool": tool["tool"], "args": args,
+                    "task": task, "agent": agent})
+    return REQUESTED.format(tool=tool["tool"])
 
 
 @dataclass
@@ -58,12 +74,16 @@ def _schema(tool: dict) -> dict:
                                              "parameters": tool["inputSchema"]}}
 
 
-def build(harness: Harness, tools: list[dict], session, budget: Budget, emit: Callable, token: str):
-    """The compiled loop for one task. ``emit(type, **data)`` reports each tool call."""
+def build(harness: Harness, tools: list[dict], session, budget: Budget, emit: Callable, token: str,
+          actions: list | None = None, task_id: str = ""):
+    """The compiled loop for one task. ``emit(type, **data)`` reports each tool call; write
+    requests go in ``actions``."""
     model = llm.chat(harness.model, token)
     bound = model.bind_tools([_schema(t) for t in tools])
     names = {t["name"] for t in tools}
     panel = {t["name"]: t["tool"] for t in tools if t.get("connector") == "panel"}
+    writes = {t["name"]: t for t in tools if t.get("connector") == "approval"}
+    actions = actions if actions is not None else []
     seen: set[str] = set()
     # Leave time for one last call to answer, so running out of time ends in an answer, as running
     # out of steps does, not in a timed-out task.
@@ -85,6 +105,8 @@ def build(harness: Harness, tools: list[dict], session, budget: Budget, emit: Ca
             # The panel checks the arguments against the same schema before it runs anything.
             emit("panel", tool=panel[tc["name"]], args=tc["args"])
             return PANEL_DONE.format(tool=panel[tc["name"]])
+        if tc["name"] in writes:
+            return request(actions, writes[tc["name"]], tc["args"], task_id, harness.name)
         emit("step_started", tool=tc["name"], args=tc["args"])
         try:
             result = await mcp.call_tool(session, tc["name"], tc["args"])
@@ -132,9 +154,10 @@ def build(harness: Harness, tools: list[dict], session, budget: Budget, emit: Ca
 
 
 async def run(harness: Harness, tools: list[dict], session, budget: Budget, emit: Callable,
-              task: str, inputs: dict[str, str], token: str = "") -> str:
+              task: str, inputs: dict[str, str], token: str = "", actions: list | None = None,
+              task_id: str = "") -> str:
     """Run one task to its answer."""
-    graph = build(harness, tools, session, budget, emit, token)
+    graph = build(harness, tools, session, budget, emit, token, actions, task_id)
     text = task + "".join(
         "\n\n" + as_data(f"task {tid}", out, settings.task_output_chars) for tid, out in inputs.items())
     state = {"messages": [SystemMessage(AGENT.format(name=harness.name, purpose=harness.purpose)),

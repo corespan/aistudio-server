@@ -323,3 +323,74 @@ async def test_a_failed_claude_step_is_the_answer_without_calling_vllm(sandbox, 
     events = await run_coder()
     assert "budget_exceeded" in [e for e in events if e["type"] == "message"][-1]["text"]
     assert not calls          # no summarizer call
+
+
+def answers(fake_mcp, reply):
+    """workspace_claude's answer chosen from its prompt: ``reply(prompt) -> (stream, result text)``."""
+    busy = [0]
+
+    async def run_claude(args, progress):
+        busy[0] += 1
+        try:
+            assert busy[0] == 1, "sandbox-mcp refuses a second workspace step for the same user"
+            await asyncio.sleep(0.01)
+        finally:
+            busy[0] -= 1
+        stream, text = reply(args["prompt"])
+        for i, line in enumerate(stream):
+            await progress(i + 1, None, line)
+        return json.dumps({"exit_code": 0, "timed_out": False, "budget_exceeded": False, "weighted": 10,
+                           "result": {**RESULT, "result": text}, "snapshot": 1, "args": args})
+    fake_mcp["answers"]["workspace_claude"] = run_claude
+
+
+async def test_auto_plans_and_summarizes_on_claude_for_its_user(sandbox, fake_llm):
+    fake_mcp, _ = sandbox
+    plan = {"goal": "g", "tasks": [{"id": "t1", "agent": "analyst-claude", "task": "numbers"},
+                                   {"id": "t2", "agent": "diagnostics-claude", "task": "health"}]}
+
+    def reply(prompt):
+        if prompt.startswith("You plan the work"):
+            assert "analyst-claude" in prompt and "- analyst:" not in prompt   # only the Claude chat agents
+            return [], "Here is the plan:\n" + json.dumps(plan)
+        if prompt.startswith("You write the final answer"):
+            return [], "Both done."
+        return [], "report"
+    answers(fake_mcp, reply)
+    runs = RunManager(run_graph.build(InMemorySaver()), RunLog())
+    run = await runs.start(RSINGH, "how are things?", None)
+    events = []
+    async with asyncio.timeout(10):
+        async for line in runs.stream(run):
+            events.append(json.loads(line.split("data: ", 1)[1]))
+    _, llm_calls = fake_llm
+    assert not llm_calls                                         # no vLLM anywhere
+    assert [t["agent"] for t in [e for e in events if e["type"] == "plan"][0]["plan"]["tasks"]] == [
+        "analyst-claude", "diagnostics-claude"]
+    assert [e for e in events if e["type"] == "message"][-1]["text"] == "Both done."
+    assert events[-1]["status"] == "ok"
+
+
+async def test_a_claude_write_request_waits_for_approval(sandbox):
+    fake_mcp, _ = sandbox
+    want = {"model": "llama", "node_ip": "10.0.0.1"}
+
+    def reply(prompt):
+        assert "mcp__panel__request_start_workload" in prompt
+        return [turn("m1", [{"type": "tool_use", "id": "tu1", "name": "mcp__panel__request_start_workload",
+                             "input": want}], 30)], "Asked to start it."
+    answers(fake_mcp, reply)
+    runs = RunManager(run_graph.build(InMemorySaver()), RunLog())
+    run = await runs.start(RSINGH, "start llama on 10.0.0.1", "assistant-claude")
+    events = []
+    async with asyncio.timeout(10):
+        async for line in runs.stream(run):
+            events.append(json.loads(line.split("data: ", 1)[1]))
+    [card] = [e for e in events if e["type"] == "approval"]
+    assert card["actions"][0]["tool"] == "aistudio/start_workload" and card["actions"][0]["args"] == want
+    assert not [e for e in events if e["type"] == "panel"]
+    assert "start_workload" not in [name for name, _ in fake_mcp["calls"]]
+    [step] = [a for n, a in fake_mcp["calls"] if n == "workspace_claude"]
+    assert "mcp__panel__request_start_workload" in step["tools"]
+    assert [t["name"] for t in step["panel"] if t["name"].startswith("request_")] == ["request_start_workload"]
+    assert events[-1]["status"] == "awaiting_approval"

@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = "none"
     # Output cap per call: a model that loops can't run until its context is full.
     llm_max_tokens: int = 2048
+    # Who plans and summarizes a run with no agent named: "llm" (the vLLM above), "claude" (the
+    # planner-claude agent, on a subscription: only its users), or "auto": claude for its users,
+    # the LLM for everyone else.
+    planner_engine: str = "auto"
+    planner_agent: str = "planner-claude"
 
     # Caller JWT: Keycloak's (realm aistudio), audience agent-runner. Compose sets the URL and the
     # issuer (https://<MCP_PUBLIC_HOST>:8050/realms/aistudio); a JWKS file is for tests.

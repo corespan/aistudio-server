@@ -33,4 +33,5 @@ tools:
   - panel/show_run
   - panel/view_run_progress
   - panel/view_jupyter_progress
+  - panel/show_health_status
 budgets: { steps: 8, tokens: 80000, seconds: 300 }

@@ -16,7 +16,7 @@ def test_the_shipped_lock_file_is_up_to_date():
     assert registry.main(["registry", "check"]) == 0
     reg = registry.load()
     assert set(reg.agents) == {"analyst", "assistant", "diagnostics", "coder", "reviewer",
-                               "analyst-claude", "assistant-claude", "diagnostics-claude"}
+                               "analyst-claude", "assistant-claude", "diagnostics-claude", "planner-claude"}
     assert reg.agents["coder"].engine == "claude-code" and reg.repos == ["corespan/aistudio-server"]
     assert set(reg.connectors) == {"aistudio", "sandbox"}
     assert set(reg.models) == {"claude-coder", "claude-chat"}

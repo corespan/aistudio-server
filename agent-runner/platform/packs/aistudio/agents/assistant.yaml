@@ -26,4 +26,13 @@ tools:
   - panel/open_jupyter_assistant
   - panel/confirm_delete_run
   - panel/confirm_delete_jupyter
+  - panel/compare_runs
+  - panel/show_health_status
+# Writes it may ask for: the run stops at an Approve/Reject card, and only on Approve does the
+# runner make the call, with your token (your role still decides).
+writes:
+  - aistudio/start_workload
+  - aistudio/start_jupyter
+  - aistudio/stop_jupyter
+  - aistudio/delete_run_results
 budgets: { steps: 4, tokens: 40000, seconds: 180 }

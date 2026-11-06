@@ -181,6 +181,13 @@ def build(root: Path) -> dict:
             elif connector not in body["connector"]:
                 errors.append(f"{entry['source']}: tool {pattern!r} names connector {connector!r}, "
                               f"which no enabled pack has")
+        for pattern in spec.get("writes") or []:
+            connector, _, tool = pattern.partition("/")
+            if not tool or connector == "panel" or any(c in tool for c in "*?["):
+                errors.append(f"{entry['source']}: write {pattern!r} must be connector/tool, exactly")
+            elif connector not in body["connector"]:
+                errors.append(f"{entry['source']}: write {pattern!r} names connector {connector!r}, "
+                              f"which no enabled pack has")
     errors += [f"{e['source']}: {problem}" for e in body["workflow"].values()
                for problem in _workflow_problems(e["spec"], body)]
     if errors:

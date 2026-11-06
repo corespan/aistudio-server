@@ -5,6 +5,9 @@ logs, prefill a form. The browser runs them, not this server: agent-runner reads
 mcp__panel__* call from Claude Code's stream and sends it to the panel. This server only lists
 the tools it is given and acknowledges a call, so Claude Code can call them like any tool.
 
+request_<tool> tools are writes the agent asks for: the runner records the call and, after the
+answer, asks the user to approve it; only then does the runner make the real call.
+
 Runs with the workspace image's runner venv (it has the mcp package):
     /opt/runner-venv/bin/python /tmp/panel.py /tmp/panel.json
 """
@@ -29,8 +32,15 @@ async def list_tools() -> list[types.Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
-    text = (f"Sent to the user's panel: {name}. The panel shows it; say what the user will see."
-            if name in NAMES else f"{name} is not a panel tool.")
+    if name not in NAMES:
+        text = f"{name} is not a panel tool."
+    elif name.startswith("request_"):
+        text = (f"Recorded: {name.removeprefix('request_')} waits for the user's approval. After your "
+                "answer they see an Approve/Reject card; nothing has happened yet. Don't call it again; "
+                "say what you asked for.")
+    else:
+        text = (f"Sent to the user's panel: {name}. You don't see whether it worked: the panel shows its own "
+                "result line with your answer. Say what you asked the panel to do, never that it is done.")
     return [types.TextContent(type="text", text=text)]
 
 

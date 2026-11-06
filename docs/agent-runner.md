@@ -103,6 +103,34 @@ Tool names are `connector/tool` in agent files, with `fnmatch` patterns allowed 
 (`aistudio/get_*`). The model sees the tool's own name; only when two connectors offer the same
 name does it see `connector__tool`.
 
+## Panel tools, writes and the Claude planner
+
+**Panel tools** (`platform/panel-tools.json`, `panel/<name>` in an agent's `tools`) change what
+the user sees in the AI Studio panel: navigate, filter, show or compare runs, open logs, prefill a
+form, open a delete confirmation, show a health notice, download the table as CSV. The browser
+runs them: the runner streams a `panel` event (`tool`, `args`) and tells the model only that it
+was sent. A Claude agent calls them on a local stdio MCP server, `panel`, that sandbox-mcp starts
+in its workspace (`sandbox-mcp/app/panel_server.py`); it only acknowledges. The panel keeps a copy
+of the file, runs only the tools in it, and checks each call's arguments against its schema.
+Browser-only tools (`click_element`, `set_style`, `fill_input`, `list_fields`) are never offered.
+
+**Writes** (`writes:` in an agent file: exact `connector/tool` names). The agent never gets the
+tool itself: it gets `request_<tool>`, which only records the call (at most 5 a run). After the
+answer the runner streams an `approval` event (`actions`: `id`, `tool`, `args`, `agent`) and the
+run stops, `awaiting_approval`. `POST /runs/{id}/approve` resumes it with the approver's token and
+the runner makes each call itself, so the gateway checks that person's role again; `/reject` ends
+it with nothing done. Only the caller who started the run can decide. Assistant and
+assistant-claude may ask for `start_workload`, `start_jupyter`, `stop_jupyter` and
+`delete_run_results`. Writes count toward a Claude agent's 30 tools; they never reach the sandbox
+gateway's routes.
+
+**The planner without vLLM.** A run with no agent named is planned by an LLM. With
+`PLANNER_ENGINE=auto` (the default), a caller listed on `planner-claude`'s model gets Claude
+instead: `planner-claude` (no tools) writes the plan as JSON over the Claude chat agents, and the
+summary when there is more than one task. Everyone else gets the LLM (`/llm`, 503 without
+`LLM_HOST`). `PLANNER_ENGINE=llm` turns the Claude planner off, `claude` forces it. A user's Claude
+steps run one at a time: sandbox-mcp allows one workspace step per user.
+
 ## Harnesses
 
 A harness is an agent file in a pack (`kind: agent`): its purpose (the planner reads it), its
@@ -510,7 +538,9 @@ register themselves.
 
 Events (server-sent; each has `seq`, `type`, and task events also `task` and `agent`):
 `run`, `plan`, `task_queued`, `agent_started`, `step_started` (a tool call), `step_result`,
-`agent_done`, `message` (the answer), `error`, `done` (`status`: ok, failed, cancelled, timeout).
+`agent_done`, `panel` (a panel tool for the browser), `approval` (writes waiting for Approve),
+`message` (the answer), `error`, `done` (`status`: ok, failed, cancelled, timeout,
+awaiting_approval).
 
 ```bash
 T=$(make -s mcp-token ROLE=viewer CLIENT=panel)
@@ -581,11 +611,10 @@ caller's `sub`.
 
 ## Not yet
 
-- **Writes with approval** (next): plan approval, a confirm for writes whose arguments come from
-  another task, `Approval-Id` to the MCP server's audit log.
+- **Writes with approval**, beyond each action: plan approval before any agent runs, and an
+  `Approval-Id` in the MCP server's audit log.
 - **Per-task scheduling and the reviewer**: ready tasks start in waves today, so a task waits
   for its whole wave, not just its inputs. A Postgres task table (and a reviewer agent that
   checks joined results) comes with that.
-- **Frontend tools** (`ui.*`) and a panel contract package, once there is a panel.
 - **Token refresh**: there is no proxy here, so a run lasts as long as the caller's token;
   reattaching with a fresh token switches the run to it.

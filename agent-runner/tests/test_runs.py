@@ -223,3 +223,57 @@ async def test_a_quiet_stream_gets_a_ping_so_proxies_keep_it_open(monkeypatch):
     [q] = run.streams
     q.put_nowait({"seq": 1, "type": "done", "status": "succeeded"})
     assert "done" in await anext(stream)
+
+
+async def drain(runs, run, after: int = 0) -> list[dict]:
+    events = []
+    async with asyncio.timeout(10):
+        async for line in runs.stream(run, after):
+            events.append(json.loads(line.split("data: ", 1)[1]))
+    return events
+
+
+START = {"model": "llama", "node_ip": "10.0.0.1"}
+
+
+async def asked_to_start(fake_llm):
+    """An assistant run that asks for start_workload: the run and its events up to the card."""
+    scripts, _ = fake_llm
+    scripts["worker"] = lambda m: "I asked to start it." if tool_results(m) else call("request_start_workload", START)
+    runs = RunManager(run_graph.build(InMemorySaver()), RunLog())
+    run = await runs.start(ALICE, "start llama on 10.0.0.1", "assistant")
+    return runs, run, await drain(runs, run)
+
+
+async def test_a_write_waits_for_approval_then_runs_with_the_approvers_token(fake_llm, fake_mcp):
+    runs, run, events = await asked_to_start(fake_llm)
+    assert of(events, "approval")[0]["actions"] == [
+        {"id": "a1", "tool": "aistudio/start_workload", "args": START, "agent": "assistant"}]
+    assert of(events, "message")[0]["text"] == "I asked to start it."
+    assert events[-1] == {**events[-1], "type": "done", "status": "awaiting_approval"}
+    assert "start_workload" not in [name for name, _ in fake_mcp["calls"]]   # asked, not done
+
+    later = Identity(sub="alice", role="viewer", token="fresh")
+    seen = len(run.events)
+    run = await runs.decide(later, run.id, {"approved": True})
+    events = await drain(runs, run, seen)
+    assert ("start_workload", START) in fake_mcp["calls"]
+    assert "start_workload" in of(events, "message")[-1]["text"]
+    assert events[-1]["status"] == "ok"
+
+
+async def test_a_rejected_write_is_never_made(fake_llm, fake_mcp):
+    runs, run, _ = await asked_to_start(fake_llm)
+    seen = len(run.events)
+    run = await runs.decide(ALICE, run.id, {"approved": False})
+    events = await drain(runs, run, seen)
+    assert "start_workload" not in [name for name, _ in fake_mcp["calls"]]
+    assert of(events, "message")[-1]["text"].startswith("Nothing was done")
+
+
+async def test_an_agent_without_writes_cannot_ask_for_one(fake_llm, fake_mcp):
+    scripts, calls = fake_llm
+    scripts["worker"] = lambda m: "no" if tool_results(m) else call("request_start_workload", START)
+    events = await run_to_end("start llama", harness="analyst")
+    assert not of(events, "approval")
+    assert "request_start_workload" not in next(c[2] for c in calls if c[0] == "worker")

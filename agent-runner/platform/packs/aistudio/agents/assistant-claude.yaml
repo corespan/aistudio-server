@@ -2,7 +2,7 @@ kind: agent
 name: assistant-claude
 engine: claude-code
 # assistant's job and tools, on Claude Code and your subscription: only you, and only by name
-# (POST /runs with harness: assistant-claude). Reads only.
+# (POST /runs with harness: assistant-claude). Reads; writes only after you approve each.
 purpose: >-
   General questions about the platform and its runs that need a few lookups and no deep dive:
   status of a task, what ran recently, whether the services are up.
@@ -29,6 +29,15 @@ tools:
   - panel/open_jupyter_assistant
   - panel/confirm_delete_run
   - panel/confirm_delete_jupyter
+  - panel/compare_runs
+  - panel/show_health_status
+# Writes it may ask for: the run stops at an Approve/Reject card, and only on Approve does the
+# runner make the call, with your token (your role still decides).
+writes:
+  - aistudio/start_workload
+  - aistudio/start_jupyter
+  - aistudio/stop_jupyter
+  - aistudio/delete_run_results
 claude:
   allowed_tools: []                   # the platform tools only
   workspace: none                     # no code, so no clone

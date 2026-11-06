@@ -1,6 +1,6 @@
 {
   "connector": "panel",
-  "version": "2026-11-05.2",
+  "version": "2026-11-06.1",
   "runs_in": "browser",
   "notes": [
     "Panel tools: what an agent may ask the AI Studio panel (the browser) to do. MCP tool format: name, description, inputSchema.",
@@ -460,6 +460,61 @@
       },
       "x-status": "existing",
       "x-backend": "Frontend only."
+    },
+    {
+      "name": "panel/compare_runs",
+      "description": "Show two or more benchmark runs side by side in the Benchmarks table (the table holds only those runs).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_ids": {
+            "type": "string",
+            "description": "Run ids, comma-separated, e.g. h100-llama3-70b-c128,h100-llama3-70b-c256."
+          }
+        },
+        "required": [
+          "run_ids"
+        ]
+      }
+    },
+    {
+      "name": "panel/show_health_status",
+      "description": "Show a health result on the user's screen as a notice that stays until they close it: a node, a service or a check, with its state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "What was checked, e.g. node 10.6.91.204 or the API."
+          },
+          "status": {
+            "type": "string",
+            "description": "Its state.",
+            "enum": [
+              "ok",
+              "warning",
+              "down"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "description": "One or two sentences: what was found."
+          }
+        },
+        "required": [
+          "target",
+          "status",
+          "detail"
+        ]
+      }
+    },
+    {
+      "name": "panel/export_benchmarks_csv",
+      "description": "Download the Benchmarks table, as currently filtered, as a CSV file in the user's browser.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
     }
   ]
 }

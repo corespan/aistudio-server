@@ -33,7 +33,7 @@ tools:
   - aistudio/node_docker_logs
   - aistudio/node_exec
   # On the user's screen (panel-tools.json): the browser runs these; none writes.
-  - panel/show_run
+  - panel/show_health_status
   - panel/view_run_progress
   - panel/view_jupyter_progress
 claude:
